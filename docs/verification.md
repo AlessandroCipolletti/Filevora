@@ -46,3 +46,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M6
 
 `test/m6.test.ts` passed 2 tests. The client PUT went to the emulator origin, the secret string was not in the session JSON or the PUT URL, and the presigned download returned the same PNG bytes. A filesystem upload in the same file still verified. `filevora init --profile local-s3` wrote `docker-compose.yml` containing `minio/minio` and reported `started: false`. The full suite then reported 29 tests passed and 0 failed. Biome reported no errors.
+
+## M7
+
+`test/m7.test.ts` passed 1 test. Two `claimJob` calls against one PGlite database returned the job once. Two variant inserts left `COUNT(*) = 1`. `headObject` on the shared emulator key matched the byte length. No networked Postgres process was started. The full suite then reported 30 tests passed and 0 failed. Biome reported no errors.

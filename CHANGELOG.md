@@ -53,3 +53,9 @@
 - Tests upload through the browser client straight to an in-process path-style emulator. The secret is absent from the session JSON and the PUT URL. The downloaded bytes match the PNG.
 - Filesystem uploads still complete in the same test file.
 - `filevora init --profile local-s3` writes a MinIO Compose file and does not start Docker. MinIO itself was not run.
+
+### M7 — Postgres queue on PGlite
+
+- Placeholder conversion, schema, claim with `FOR UPDATE SKIP LOCKED`, and idempotent variant insert.
+- Two in-process claimers against one PGlite database take one job. Two publishers leave one variant row. Both see the same S3 object.
+- This did not start a networked Postgres server, and `createFiles` still opens SQLite.

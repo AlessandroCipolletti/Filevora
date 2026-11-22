@@ -53,6 +53,16 @@ export async function startS3Emulator(options: {
         return;
       }
       const uploadId = url.searchParams.get('uploadId');
+      if (req.method === 'PUT' && !uploadId) {
+        const body = await readBody(req);
+        objects.set(key, body);
+        res.writeHead(200, {
+          etag: `"${createHash('md5').update(body).digest('hex')}"`,
+          ...cors(),
+        });
+        res.end();
+        return;
+      }
       if (
         req.method === 'PUT' &&
         uploadId &&

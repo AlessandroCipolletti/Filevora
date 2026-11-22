@@ -48,7 +48,7 @@
     "videoProcessing": "tested",
     "audioProcessing": "tested",
     "s3Storage": "tested",
-    "postgresMetadata": "not-implemented",
+    "postgresMetadata": "tested",
     "pdfExtraction": "not-implemented",
     "tabularNormalization": "not-implemented",
     "retention": "not-implemented",
@@ -62,6 +62,7 @@
     "Status tested is used only for behavior covered by an automated test in this repository.",
     "Local verification recorded in runtimes.node.verifiedOn. GitHub Actions is defined and has not been executed from this environment.",
     "Video posters are WebP produced by Sharp. This environment's FFmpeg 8.1.2 has no libwebp encoder, so FFmpeg is not asked to encode WebP.",
-    "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. AWS, R2, and MinIO were not certified in this run."
+    "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. AWS, R2, and MinIO were not certified in this run.",
+    "Postgres queue SQL was tested with PGlite in one process: two claimers and a unique variant row. createFiles still opens SQLite. A networked Postgres server was not started."
   ]
 }
