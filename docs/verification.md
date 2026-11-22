@@ -42,3 +42,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M5
 
 `test/m5.test.ts` passed 2 tests. A 320×240 one-second clip was transcoded to H.264 by an FFmpeg process whose parent pid was the worker child, not the test process. `files.get` during that encode returned in under one second. The optimized height stayed at or below 240, there was no HD variant, and the poster was `image/webp`. A WAV became `audio/mp4`. A trim recipe from 0 to 0.4 seconds succeeded. A placebo 720p encode was killed by a 700ms timeout (`PROCESSING_TIMEOUT`) and by an abort signal (`CANCELLED`). FFmpeg was not asked to encode WebP. The full suite then reported 27 tests passed and 0 failed. Biome reported no errors.
+
+## M6
+
+`test/m6.test.ts` passed 2 tests. The client PUT went to the emulator origin, the secret string was not in the session JSON or the PUT URL, and the presigned download returned the same PNG bytes. A filesystem upload in the same file still verified. `filevora init --profile local-s3` wrote `docker-compose.yml` containing `minio/minio` and reported `started: false`. The full suite then reported 29 tests passed and 0 failed. Biome reported no errors.

@@ -25,7 +25,8 @@
     "image-processing",
     "ffmpeg",
     "video",
-    "self-hosted"
+    "self-hosted",
+    "s3"
   ],
   "bin": {
     "filevora": "./bin/filevora.js"
@@ -75,6 +76,8 @@
     "typescript": "^5.9.3"
   },
   "optionalDependencies": {
+    "@aws-sdk/client-s3": "^3.1175.0",
+    "@aws-sdk/s3-request-presigner": "^3.1175.0",
     "sharp": "^0.35.5"
   }
 }

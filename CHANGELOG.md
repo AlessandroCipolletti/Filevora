@@ -46,3 +46,10 @@
 - A 240p source does not get an HD variant. Audio presets write AAC in an M4A file.
 - Typed trim and transcode recipes are allowlisted. A timeout kills FFmpeg with `PROCESSING_TIMEOUT`. Aborting the signal kills it with `CANCELLED`.
 - The integration test records the FFmpeg pid and checks its parent is the worker child. A metadata read during that encode returned in under one second.
+
+### M6 — S3-compatible storage
+
+- The S3 driver signs multipart part URLs and download URLs. The AWS SDK is optional and is loaded only when the driver is selected.
+- Tests upload through the browser client straight to an in-process path-style emulator. The secret is absent from the session JSON and the PUT URL. The downloaded bytes match the PNG.
+- Filesystem uploads still complete in the same test file.
+- `filevora init --profile local-s3` writes a MinIO Compose file and does not start Docker. MinIO itself was not run.

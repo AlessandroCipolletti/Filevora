@@ -243,6 +243,7 @@ async function dispatch(
         ...session,
         partUrlTemplate: `${prefix}/sessions/${session.id}/parts/{partNumber}`,
         completeUrl: `${prefix}/sessions/${session.id}/complete`,
+        partUrls: await options.files.partUploadUrls(session.id, { principal }),
       },
       201,
       requestId,
@@ -264,7 +265,7 @@ async function dispatch(
       body,
       ctx,
     );
-    return json(part, 200, requestId);
+    return json(part, 200, requestId, { etag: part.etag });
   }
   if (route.name === 'complete' && route.sessionId) {
     const body = await readJson(request).catch(() => ({}));
@@ -439,13 +440,19 @@ function numberField(
   return typeof record[key] === 'number' ? record[key] : undefined;
 }
 
-function json(body: unknown, status: number, requestId: string): Response {
+function json(
+  body: unknown,
+  status: number,
+  requestId: string,
+  extra?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
       'x-request-id': requestId,
+      ...extra,
     },
   });
 }

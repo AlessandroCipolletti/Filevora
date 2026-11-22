@@ -112,6 +112,38 @@ export async function runCli(
       );
       return 0;
     }
+    if (command === 'init') {
+      const profile = readOption(args, '--profile');
+      const directory = readOption(args, '--dir') ?? '.';
+      if (profile !== 'local-s3') {
+        throw new Error(
+          'Only --profile local-s3 is available. It writes a MinIO Compose file and does not start Docker.',
+        );
+      }
+      const { mkdirSync, writeFileSync } = await import('node:fs');
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        path.join(directory, 'docker-compose.yml'),
+        [
+          '# Optional MinIO profile. The default test suite does not start Docker.',
+          'services:',
+          '  minio:',
+          '    image: minio/minio:RELEASE.2025-04-22T22-12-26Z',
+          '    command: server /data --console-address ":9001"',
+          '    ports:',
+          '      - "9000:9000"',
+          '      - "9001:9001"',
+          '    environment:',
+          '      MINIO_ROOT_USER: local',
+          '      MINIO_ROOT_PASSWORD: localpassword',
+          '',
+        ].join('\n'),
+      );
+      out.stdout(
+        `${JSON.stringify({ ok: true, profile, directory, started: false })}\n`,
+      );
+      return 0;
+    }
     if (command === 'doctor') {
       const report = runDoctor({}, env);
       out.stdout(`${JSON.stringify(report, null, json ? 2 : 0)}\n`);

@@ -78,6 +78,7 @@ interface SessionResponse extends ResumeRecord {
   id: string;
   status: string;
   receivedParts: Array<{ partNumber: number; bytes: number }>;
+  partUrls?: Record<string, string>;
 }
 
 /**
@@ -272,6 +273,7 @@ async function runUpload(
   ctx.onSession(session);
   if (session.status === 'verified') return readFile(ctx, session.fileId);
   const pending = missingParts(session);
+  const etags: Array<{ partNumber: number; etag: string }> = [];
   let uploadedBytes = uploadedByteCount(session, file.size);
   ctx.onProgress(progress(uploadedBytes, file.size));
   let cursor = 0;
@@ -287,7 +289,13 @@ async function runUpload(
         cursor += 1;
         if (partNumber === undefined) return;
         await waitIfPaused(ctx);
-        await sendPart(file, session as SessionResponse, partNumber, ctx);
+        const etag = await sendPart(
+          file,
+          session as SessionResponse,
+          partNumber,
+          ctx,
+        );
+        etags.push({ partNumber, etag });
         uploadedBytes += partBytes(
           file.size,
           (session as SessionResponse).partSize,
@@ -314,7 +322,7 @@ async function runUpload(
       ...(await headers(ctx.headers)),
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ checksum: uploadOptions.checksum }),
+    body: JSON.stringify({ checksum: uploadOptions.checksum, parts: etags }),
   });
   const fileRecord = (completed.file ?? completed) as UploadedFile;
   if (ctx.store) await ctx.store.delete(key);
@@ -394,28 +402,36 @@ async function sendPart(
   session: SessionResponse,
   partNumber: number,
   ctx: RunContext,
-): Promise<void> {
+): Promise<string> {
   const start = (partNumber - 1) * session.partSize;
   const end = Math.min(start + session.partSize, file.size);
   const chunk = file.slice(start, end);
-  const url = session.partUrlTemplate.replace(
-    '{partNumber}',
-    String(partNumber),
-  );
+  const url =
+    session.partUrls?.[String(partNumber)] ??
+    session.partUrlTemplate.replace('{partNumber}', String(partNumber));
   let attempt = 0;
   while (attempt < ctx.maxAttempts) {
     await waitIfPaused(ctx);
     const controller = new AbortController();
     ctx.setAbort(controller);
     try {
-      await request(ctx.doFetch, url, {
+      const response = await fetchRaw(ctx.doFetch, url, {
         method: 'PUT',
         headers: await headers(ctx.headers),
         body: chunk,
         signal: controller.signal,
       });
+      if (!response.ok) throw await errorFrom(response);
+      let etag = response.headers.get('etag') ?? '';
+      if (!etag) {
+        const body = (await response.json().catch(() => ({}))) as {
+          etag?: string;
+        };
+        etag = body.etag ?? '';
+      }
+      if (!etag) throw fail('UPLOAD_PART_MISSING');
       ctx.setAbort(undefined);
-      return;
+      return etag;
     } catch (error) {
       ctx.setAbort(undefined);
       if (ctx.control.cancelled) throw fail('CANCELLED');
@@ -432,6 +448,7 @@ async function sendPart(
       await delay(ctx.baseDelayMs * attempt);
     }
   }
+  throw fail('UPLOAD_PART_MISSING');
 }
 
 async function readFile(

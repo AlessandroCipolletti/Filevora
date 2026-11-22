@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M5. Video and audio presets run FFmpeg in the child worker. Posters are WebP via Sharp, not FFmpeg. S3, Postgres, PDF, CSV, and retention are not implemented. PDF and other unregistered types still fail with `PROCESSOR_UNAVAILABLE`.
+M6. S3 multipart uploads are tested with an in-process emulator. `filevora init --profile local-s3` only writes Compose. Postgres, PDF, CSV, and retention are not implemented.

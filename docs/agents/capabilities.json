@@ -47,7 +47,7 @@
     "imageProcessing": "tested",
     "videoProcessing": "tested",
     "audioProcessing": "tested",
-    "s3Storage": "not-implemented",
+    "s3Storage": "tested",
     "postgresMetadata": "not-implemented",
     "pdfExtraction": "not-implemented",
     "tabularNormalization": "not-implemented",
@@ -61,6 +61,7 @@
     "A Filevora account is not required and this package cannot create one.",
     "Status tested is used only for behavior covered by an automated test in this repository.",
     "Local verification recorded in runtimes.node.verifiedOn. GitHub Actions is defined and has not been executed from this environment.",
-    "Video posters are WebP produced by Sharp. This environment's FFmpeg 8.1.2 has no libwebp encoder, so FFmpeg is not asked to encode WebP."
+    "Video posters are WebP produced by Sharp. This environment's FFmpeg 8.1.2 has no libwebp encoder, so FFmpeg is not asked to encode WebP.",
+    "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. AWS, R2, and MinIO were not certified in this run."
   ]
 }

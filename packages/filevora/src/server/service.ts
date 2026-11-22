@@ -93,6 +93,8 @@ interface SessionRow {
   metadata_json: string;
   checksum: string | null;
   created_at: string;
+  storage_upload_id?: string | null;
+  object_key?: string | null;
 }
 
 interface PartRow {
@@ -125,15 +127,18 @@ export class FileService {
         context: { driver: this.config.metadata.driver },
       });
     }
-    if (this.config.storage.driver !== 'filesystem') {
+    if (this.config.storage.driver === 'filesystem') {
+      const root = path.resolve(this.config.storage.root);
+      mkdirSync(root, { recursive: true, mode: 0o700 });
+      this.storage = createFilesystemStorage(root);
+    } else if (this.config.storage.driver === 's3') {
+      // The S3 client is loaded on the first S3 call so filesystem installs do not require the AWS SDK.
+    } else {
       throw fail('FEATURE_NOT_AVAILABLE', {
-        message: 'Only filesystem storage is implemented.',
+        message: 'That storage driver is not available.',
         context: { driver: this.config.storage.driver },
       });
     }
-    const root = path.resolve(this.config.storage.root);
-    mkdirSync(root, { recursive: true, mode: 0o700 });
-    this.storage = createFilesystemStorage(root);
     this.sql = openSqlite(this.config.metadata.filename);
     migrate(this.sql);
     this.secret = this.loadSecret(this.sql);
@@ -322,12 +327,13 @@ export class FileService {
         `INSERT INTO upload_sessions (
           id, file_id, tenant_id, owner_id, status, transport, part_size, declared_bytes, part_count,
           expires_at, idempotency_key, declared_mime, filename, preset, metadata_json, checksum, created_at
-        ) VALUES (?, ?, ?, ?, 'authorized', 'chunked-http', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, 'authorized', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           sessionId,
           fileId,
           ctx.principal.tenantId,
           ctx.principal.id,
+          this.config.storage.driver === 's3' ? 's3-multipart' : 'chunked-http',
           partSize,
           input.bytes,
           partCount,
@@ -343,6 +349,22 @@ export class FileService {
       );
       this.audit(sql, ctx.principal, fileId, 'session.create', { sessionId });
     });
+    if (this.config.storage.driver === 's3') {
+      const key = `${tenantPath(ctx.principal.tenantId)}/files/${fileId}/original/${createId('obj')}`;
+      const storage = await this.s3();
+      const upload = await storage.createMultipartUpload?.({
+        key,
+        contentType: mimeType,
+      });
+      if (!upload)
+        throw fail('STORAGE_UNAVAILABLE', {
+          message: 'S3 did not open a multipart upload.',
+        });
+      sql.run(
+        'UPDATE upload_sessions SET storage_upload_id = ?, object_key = ? WHERE id = ?',
+        [upload.uploadId, key, sessionId],
+      );
+    }
     const created = sql.get<SessionRow>(
       'SELECT * FROM upload_sessions WHERE id = ?',
       [sessionId],
@@ -352,6 +374,128 @@ export class FileService {
         message: 'The upload session was not stored.',
       });
     return this.mapSession(created);
+  }
+
+  private async s3(): Promise<NonNullable<FileService['storage']>> {
+    if (this.storage?.capabilities().driver === 's3') return this.storage;
+    const { createS3Storage } = await import('../storage/s3.js');
+    this.storage = createS3Storage(this.config.storage.s3);
+    return this.storage;
+  }
+
+  async partUploadUrls(
+    sessionId: string,
+    ctx: RequestContext,
+  ): Promise<Record<string, string>> {
+    const session = this.requireSession(sessionId, ctx.principal);
+    if (
+      session.transport !== 's3-multipart' ||
+      !session.storage_upload_id ||
+      !session.object_key
+    )
+      return {};
+    const storage = await this.s3();
+    if (!storage.signUploadPart) return {};
+    const urls: Record<string, string> = {};
+    for (
+      let partNumber = 1;
+      partNumber <= session.part_count;
+      partNumber += 1
+    ) {
+      const signed = await storage.signUploadPart({
+        key: session.object_key,
+        uploadId: session.storage_upload_id,
+        partNumber,
+        expiresInSeconds: this.config.storage.s3.uploadGrantTtlSeconds,
+      });
+      urls[String(partNumber)] = signed.url;
+    }
+    return urls;
+  }
+
+  private async completeS3(
+    session: SessionRow,
+    input: {
+      parts?: Array<{ partNumber: number; etag: string }>;
+      checksum?: string;
+    },
+    ctx: RequestContext,
+  ): Promise<FileRecord> {
+    const claimed = [...(input.parts ?? [])].sort(
+      (left, right) => left.partNumber - right.partNumber,
+    );
+    const storage = await this.s3();
+    if (
+      claimed.length !== session.part_count ||
+      !session.object_key ||
+      !session.storage_upload_id ||
+      !storage.completeMultipartUpload
+    ) {
+      throw fail('UPLOAD_PART_MISSING');
+    }
+    const stored = await storage.completeMultipartUpload({
+      key: session.object_key,
+      uploadId: session.storage_upload_id,
+      parts: claimed,
+    });
+    if (stored.bytes !== session.declared_bytes)
+      throw fail('UPLOAD_SIZE_MISMATCH');
+    const stream = await storage.getObject(session.object_key);
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      chunks.push(next.value);
+      total += next.value.byteLength;
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const checksum = sha256(bytes);
+    const detected = sniffMime(bytes.subarray(0, 64));
+    if (!detected) throw fail('UNSUPPORTED_MIME');
+    if (
+      detected !== session.declared_mime &&
+      !(
+        session.declared_mime ===
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' &&
+        detected === 'application/zip'
+      )
+    ) {
+      throw fail('MIME_MISMATCH', {
+        context: { declared: session.declared_mime, detected },
+      });
+    }
+    if (input.checksum && input.checksum.toLowerCase() !== checksum)
+      throw fail('CHECKSUM_MISMATCH');
+    const now = nowIso();
+    this.db().transaction(() => {
+      this.db().run(
+        `UPDATE files SET detected_mime = ?, bytes = ?, checksum = ?, original_object_key = ?, upload_state = 'verified', updated_at = ? WHERE id = ?`,
+        [
+          detected,
+          stored.bytes,
+          checksum,
+          session.object_key,
+          now,
+          session.file_id,
+        ],
+      );
+      this.db().run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
+        'verified',
+        session.id,
+      ]);
+      this.audit(this.db(), ctx.principal, session.file_id, 'upload.complete', {
+        checksum,
+        transport: 's3-multipart',
+      });
+    });
+    return this.get(session.file_id, ctx);
   }
 
   async getUploadSession(
@@ -422,6 +566,8 @@ export class FileService {
     const session = this.requireSession(sessionId, ctx.principal);
     if (session.status === 'verified') return this.get(session.file_id, ctx);
     this.assertSessionOpen(session);
+    if (session.transport === 's3-multipart')
+      return this.completeS3(session, input, ctx);
     const parts = sql.all<PartRow>(
       'SELECT * FROM upload_parts WHERE upload_session_id = ? ORDER BY part_number ASC',
       [session.id],
@@ -614,6 +760,23 @@ export class FileService {
       exp,
     });
     const base = input.baseUrl.replace(/\/$/, '');
+    let originalUrl = `${base}/content/${token}`;
+    if (this.config.storage.driver === 's3') {
+      const stored = this.db().get<FileRow>(
+        'SELECT * FROM files WHERE id = ?',
+        [record.id],
+      );
+      const storage = await this.s3();
+      if (stored?.original_object_key && storage.signDownload) {
+        const signed = await storage.signDownload({
+          key: stored.original_object_key,
+          expiresInSeconds: ttl,
+          contentType: record.detectedMime ?? record.declaredMime,
+          fileName: record.originalName,
+        });
+        originalUrl = signed.url;
+      }
+    }
     const row = this.db().get<FileRow>('SELECT * FROM files WHERE id = ?', [
       record.id,
     ]);
@@ -638,7 +801,7 @@ export class FileService {
       id: record.id,
       status: record.processingState,
       original: {
-        url: `${base}/content/${token}`,
+        url: originalUrl,
         expiresAt: new Date(exp * 1000).toISOString(),
         mimeType: record.detectedMime ?? record.declaredMime,
         bytes: row?.bytes ?? record.bytes,
@@ -770,7 +933,8 @@ export class FileService {
       tenantId: row.tenant_id,
       ownerId: row.owner_id,
       status: row.status as UploadSession['status'],
-      transport: 'chunked-http',
+      transport:
+        row.transport === 's3-multipart' ? 's3-multipart' : 'chunked-http',
       partSize: row.part_size,
       declaredBytes: row.declared_bytes,
       partCount: row.part_count,
