@@ -66,3 +66,13 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M11
 
 `test/m11.test.ts` passed 1 test. Non-PNG bytes declared as `image/png` were rejected. The isolated run printed `benchmark_image_ms=46`. The full suite printed `benchmark_image_ms=81` and reported 36 tests passed and 0 failed. `npm pack --dry-run` reported `filevora@0.1.0`, 118 files, unpacked size 514.4 kB. The tarball was deleted and was not published.
+
+## Follow-up
+
+`pnpm --filter filevora test` on darwin, Node v26.5.0 reported 44 tests, 42 passed, 2 skipped, 0 failed. The skipped tests were networked S3 (`FILEVORA_S3_ENDPOINT` unset) and networked Postgres (`FILEVORA_POSTGRES_URL` unset). Docker was unavailable and `psql` was not installed. The same run printed `benchmark_image_ms=88`.
+
+`pdftoppm` 26.04.0 rendered the page-1 fixture to a 200×200 PNG. A missing binary name returned `PROCESSOR_UNAVAILABLE` and did not throw. `selectPosterEncoder` mapped a fixture encoder list containing `libwebp` to `libwebp`. `ffmpeg -encoders` on FFmpeg 8.1.2 listed no webp encoder, and `doctor` check `ffmpeg-webp` was `warn` with `ok: true`.
+
+`pnpm run ci` passed: typecheck, ESLint, Prettier, knip, and madge (`No circular dependency found`). GitHub Actions was not executed.
+
+After `rm -rf dist` and `pnpm --filter filevora build`, `npm pack --dry-run` reported `filevora@0.1.0`, 115 files, unpacked size 520.1 kB, shasum `a649bb820347927872a41f4875d58c5bcab7c8f5`. `packages/filevora/filevora-0.1.0.tgz` was deleted. The package was not published.

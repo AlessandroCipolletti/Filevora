@@ -8,10 +8,13 @@ From the repository root, with pnpm and Node `>=22.13`:
 
 ```bash
 pnpm install
+pnpm run ci
 pnpm verify
 ```
 
-`pnpm verify` builds the package, typechecks `src` and tests, typechecks `examples/fixture-app`, runs Biome, and runs `node --test`.
+`pnpm run ci` typechecks, runs ESLint and Prettier, runs knip, and runs madge for circular imports. The pre-commit hook runs that script and blocks the commit when it fails. pnpm treats bare `pnpm ci` as its own command, so use `pnpm run ci`.
+
+`pnpm verify` runs `pnpm run ci` and then the package tests.
 
 Useful pieces:
 
@@ -19,6 +22,8 @@ Useful pieces:
 pnpm build
 pnpm typecheck
 pnpm lint
+pnpm knip
+pnpm circular
 pnpm test
 node packages/filevora/bin/filevora.js --help
 ```
@@ -47,4 +52,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M11. Corrupt uploads are rejected. One image timing is recorded in `docs/benchmarks/baseline.md`. `npm pack --dry-run` was run and the package was not published.
+M0–M11 are in the tree. Follow-up work added GitHub Actions, gated networked S3 and Postgres tests, PDF page previews, and a conditional FFmpeg WebP poster. The package has not been published. Alessandro still needs to confirm the npm name `filevora` before any publish.

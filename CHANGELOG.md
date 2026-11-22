@@ -83,3 +83,14 @@
 - Declared PNG bytes that are not a PNG fail before a file is stored.
 - The 1×1 PNG fixture measured 46 ms in an isolated run and 81 ms in the full suite on darwin, Node v26.5.0. See `docs/benchmarks/baseline.md`.
 - `npm pack --dry-run` listed 118 files for `filevora@0.1.0`. The package was not published.
+
+### Follow-up — CI, previews, and release checks
+
+- GitHub Actions installs FFmpeg and Poppler, starts Postgres 16 and MinIO, and runs `pnpm verify`. The workflow file is in the repo. It was not executed on GitHub because this branch was not pushed.
+- Networked S3 runs when `FILEVORA_S3_ENDPOINT`, `FILEVORA_S3_BUCKET`, and the access keys are set. Networked Postgres runs when `FILEVORA_POSTGRES_URL` is set. On this machine both tests skipped: Docker was unavailable and `psql` was not installed. PGlite and the in-process S3 emulator remain the local proof. `createFiles` still opens SQLite.
+- PDF normalize stores a PNG of page 1 when `pdftoppm` succeeds. Poppler 26.04.0 rendered the fixture at 200×200. A missing binary returns `preview.available: false` with `PROCESSOR_UNAVAILABLE` and still returns extracted text.
+- Video posters are `image/webp`. FFmpeg encodes them only when `ffmpeg -encoders` lists libwebp. FFmpeg 8.1.2 on this machine does not, so Sharp encodes the poster. `doctor` check `ffmpeg-webp` warns and does not fail the report.
+- `pnpm run ci` typechecks, runs ESLint and Prettier, runs knip, and runs madge. The pre-commit hook runs that script. Bare `pnpm ci` is reserved by pnpm and does not run the script.
+- The full package suite on darwin, Node v26.5.0, reported 44 tests, 42 passed, 2 skipped, 0 failed. That run printed `benchmark_image_ms=88`.
+- After a clean `dist` rebuild, `npm pack --dry-run` listed 115 files, unpacked size 520.1 kB, shasum `a649bb820347927872a41f4875d58c5bcab7c8f5`. The tarball was deleted. The package was not published.
+- No new error codes. Existing `docs/errors/*.md` still match the catalog.

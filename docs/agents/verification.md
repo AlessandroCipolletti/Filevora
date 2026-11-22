@@ -6,7 +6,7 @@ Run from the repository root:
 pnpm verify
 ```
 
-That builds `packages/filevora`, typechecks the package tests and `examples/fixture-app`, runs Biome, and runs the Node test runner.
+That runs `pnpm run ci` (typecheck, ESLint, Prettier, knip, and a madge circular-import check) and then the Node test runner. The pre-commit hook runs `pnpm run ci` only.
 
 M0 checks:
 

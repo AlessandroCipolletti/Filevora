@@ -25,7 +25,7 @@ const files = createFiles({
 });
 ```
 
-Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, and FFmpeg. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video presets produce an H.264 MP4 and a WebP poster. The poster is encoded by Sharp because this FFmpeg build has no WebP encoder. Audio presets produce AAC in an M4A file. S3 uploads in tests go directly to an in-process emulator with presigned part URLs. The secret is not in those URLs. Postgres queue SQL is tested with PGlite in one process, not a networked server. `createFiles` still opens SQLite. PDF fixtures return literal text or `OCR_NOT_CONFIGURED`. CSV and XLSX return row counts and masked errors. Page images are not produced. Retention dry-run lists old files without deleting them. Pins are skipped. A file with no touch timestamp is not inactivity-eligible.
+Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, FFmpeg, libwebp, and pdftoppm. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video presets produce an H.264 MP4 and a WebP poster. FFmpeg encodes that poster only when `ffmpeg -encoders` lists libwebp. FFmpeg 8.1.2 on the local verification machine does not, so Sharp encodes the poster and `doctor` warns. Audio presets produce AAC in an M4A file. S3 uploads in the default tests go to an in-process emulator with presigned part URLs. The secret is absent from those URLs. Set `FILEVORA_S3_ENDPOINT`, `FILEVORA_S3_BUCKET`, `FILEVORA_S3_ACCESS_KEY_ID`, and `FILEVORA_S3_SECRET_ACCESS_KEY` to run the networked S3 test. Docker was unavailable here, so that test was skipped. Postgres queue SQL is tested with PGlite in one process. Set `FILEVORA_POSTGRES_URL` to run the networked Postgres test. `psql` was not installed here, so that test was skipped. `createFiles` still opens SQLite. PDF fixtures return literal text or `OCR_NOT_CONFIGURED`. When `pdftoppm` is on PATH, normalize stores a PNG of page 1. CSV and XLSX return row counts and masked errors. Retention dry-run lists old files without deleting them. Pins are skipped. A file with no touch timestamp is not inactivity-eligible.
 
 | Checked in this repo                 | Result                                             |
 | ------------------------------------ | -------------------------------------------------- |
@@ -35,10 +35,10 @@ Constructing `createFiles` validates configuration and does not spawn a worker. 
 | Resumable browser upload             | tested with an interrupted 5-part upload           |
 | Embedded worker crash recovery       | tested: one child pid, killed job finishes once    |
 | Sharp image variants                 | tested: 320, 1280, and 1920 WebP, no upscale       |
-| FFmpeg video and audio               | tested: H.264 MP4, AAC M4A, Sharp WebP poster      |
-| S3 multipart upload                  | tested against the in-process emulator             |
-| Postgres queue on PGlite             | tested in one process, not a networked server      |
-| PDF text and CSV/XLSX rows           | tested on fixtures; no page images                 |
+| FFmpeg video and audio               | tested: H.264 MP4, AAC M4A, Sharp WebP poster on FFmpeg 8.1.2 |
+| S3 multipart upload                  | emulator tested; networked test skipped without `FILEVORA_S3_ENDPOINT` |
+| Postgres queue                       | PGlite tested; networked test skipped without `FILEVORA_POSTGRES_URL` |
+| PDF text, page-1 PNG, CSV/XLSX       | text and rows tested; page PNG tested with pdftoppm 26.04.0 |
 | Retention dry-run and pins           | tested; missing touch evidence is not idle         |
 | Managed hosting, billing, accounts   | unsupported                                        |
 

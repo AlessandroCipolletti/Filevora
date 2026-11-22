@@ -62,7 +62,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp ../../README.md ./README.md",
+    "build": "rm -rf dist && tsc -p tsconfig.json && cp ../../README.md ./README.md",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "pnpm -w lint",
     "knip": "pnpm -w knip",
