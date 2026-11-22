@@ -182,9 +182,7 @@ export interface Page<T> {
 }
 
 export type InactivityEvidence =
-  | 'application-touch'
-  | 'url-issued'
-  | 'proxy-access';
+  'application-touch' | 'url-issued' | 'proxy-access';
 
 export interface RetentionReport {
   dryRun: boolean;

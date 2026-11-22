@@ -3,7 +3,6 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { lstat, mkdir, open, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { fail } from '../errors/error.js';
 import type {
   ObjectMetadata,
@@ -26,7 +25,7 @@ export function assertSafeKey(key: string): void {
   }
 }
 
-export function resolveInside(root: string, key: string): string {
+function resolveInside(root: string, key: string): string {
   assertSafeKey(key);
   const resolvedRoot = path.resolve(root);
   const target = path.resolve(resolvedRoot, key);
@@ -218,11 +217,4 @@ export async function writeBytes(
     await handle.close();
   }
   await rename(temp, target);
-}
-
-export async function hashFile(root: string, key: string): Promise<string> {
-  const target = resolveInside(root, key);
-  const hash = createHash('sha256');
-  await pipeline(createReadStream(target), hash);
-  return hash.digest('hex');
 }

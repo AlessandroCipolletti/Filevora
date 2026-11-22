@@ -64,6 +64,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && cp ../../README.md ./README.md",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "pnpm -w lint",
+    "knip": "pnpm -w knip",
+    "circular": "pnpm -w circular",
+    "ci": "pnpm -w ci",
     "test": "node --experimental-strip-types --test --test-reporter=spec \"test/**/*.test.ts\""
   },
   "dependencies": {

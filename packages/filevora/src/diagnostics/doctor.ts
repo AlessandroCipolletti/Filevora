@@ -6,9 +6,9 @@ import type { FilesOptions } from '../config/schema.js';
 import { isFileSdkError } from '../errors/error.js';
 import { migrate } from '../metadata/migrate.js';
 import { openSqlite } from '../metadata/sqlite.js';
-import { FILEVORA_VERSION } from '../version.js';
+import { FILEVORA_VERSION, METADATA_EXPORT_VERSION } from '../version.js';
 
-export interface DoctorCheck {
+interface DoctorCheck {
   id: string;
   status: 'pass' | 'fail' | 'warn';
   required: boolean;
@@ -18,6 +18,7 @@ export interface DoctorCheck {
 export interface DoctorReport {
   ok: boolean;
   version: string;
+  metadataExportVersion: number;
   checks: DoctorCheck[];
 }
 
@@ -114,6 +115,7 @@ export function runDoctor(
   return {
     ok: checks.every((check) => !check.required || check.status === 'pass'),
     version: FILEVORA_VERSION,
+    metadataExportVersion: METADATA_EXPORT_VERSION,
     checks,
   };
 }

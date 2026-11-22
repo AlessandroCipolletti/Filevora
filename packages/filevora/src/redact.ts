@@ -41,9 +41,3 @@ export function redactString(value: string): string {
   if (redacted.length <= MAX_STRING) return redacted;
   return `${redacted.slice(0, MAX_STRING)}…`;
 }
-
-/** True when a string still contains an obvious credential pattern. */
-export function containsSecret(value: string): boolean {
-  SECRET_VALUE.lastIndex = 0;
-  return SECRET_VALUE.test(value);
-}

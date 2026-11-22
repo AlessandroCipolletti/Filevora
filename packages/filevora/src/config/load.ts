@@ -133,7 +133,7 @@ function emptyToUndefined(value: string | undefined): string | undefined {
 }
 
 /** Map `FILES_*` environment variables into the typed options object. */
-export function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
+function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
     throw invalidConfig(parsed.error);

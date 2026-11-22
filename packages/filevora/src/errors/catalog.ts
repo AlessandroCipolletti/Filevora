@@ -1,4 +1,4 @@
-export const ERROR_CATEGORIES = [
+const ERROR_CATEGORIES = [
   'config',
   'auth',
   'upload',
@@ -574,6 +574,12 @@ export const ERROR_CATALOG = {
     ),
   },
 } as const satisfies Record<string, ErrorSpec>;
+
+for (const spec of Object.values(ERROR_CATALOG)) {
+  if (!(ERROR_CATEGORIES as readonly string[]).includes(spec.category)) {
+    throw new Error(`Unknown error category ${spec.category}`);
+  }
+}
 
 export type ErrorCode = keyof typeof ERROR_CATALOG;
 

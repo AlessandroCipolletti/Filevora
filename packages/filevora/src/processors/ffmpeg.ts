@@ -8,7 +8,7 @@ import type { Sql } from '../metadata/sqlite.js';
 import { redactString } from '../redact.js';
 import { writeBytes } from '../storage/filesystem.js';
 
-export interface ProbeStream {
+interface ProbeStream {
   codec_type?: string;
   codec_name?: string;
   width?: number;

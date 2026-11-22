@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { type FileSdkError, fail } from '../errors/error.js';
 import { redactValue } from '../redact.js';
 
-export interface Explanation {
+interface Explanation {
   suggestion: string;
 }
 

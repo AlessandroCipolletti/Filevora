@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["ffmpeg"],
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.ts"],
+      "project": ["scripts/**/*.ts"]
+    },
+    "packages/filevora": {
+      "entry": ["src/worker/child.ts", "src/cli/main.ts", "test/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.test.ts"]
+    },
+    "examples/fixture-app": {
+      "entry": ["src/run.ts"]
+    },
+    "examples/node-minimal": {
+      "entry": ["server.ts"]
+    }
+  }
+}

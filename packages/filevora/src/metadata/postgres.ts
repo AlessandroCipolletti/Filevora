@@ -1,4 +1,4 @@
-export interface ResultRow {
+interface ResultRow {
   [key: string]: unknown;
 }
 
@@ -11,7 +11,7 @@ export interface PostgresQueryable {
 }
 
 /** Turn `?` placeholders into `$1` style for Postgres. */
-export function toPostgres(sql: string): string {
+function toPostgres(sql: string): string {
   let index = 0;
   return sql.replace(/\?/g, () => {
     index += 1;
@@ -89,9 +89,9 @@ export function externalTargets(env: NodeJS.ProcessEnv): {
   return {
     s3: Boolean(
       env.FILEVORA_S3_ENDPOINT &&
-        env.FILEVORA_S3_BUCKET &&
-        env.FILEVORA_S3_ACCESS_KEY_ID &&
-        env.FILEVORA_S3_SECRET_ACCESS_KEY,
+      env.FILEVORA_S3_BUCKET &&
+      env.FILEVORA_S3_ACCESS_KEY_ID &&
+      env.FILEVORA_S3_SECRET_ACCESS_KEY,
     ),
     postgres: Boolean(env.FILEVORA_POSTGRES_URL),
   };

@@ -15,12 +15,7 @@ export interface UploadProgress {
 }
 
 export type UploadState =
-  | 'queued'
-  | 'uploading'
-  | 'paused'
-  | 'completed'
-  | 'cancelled'
-  | 'failed';
+  'queued' | 'uploading' | 'paused' | 'completed' | 'cancelled' | 'failed';
 
 export interface UploadClientOptions {
   /** Base URL of `createFilesHandler`, for example `/api/files` or `https://app.example/api/files`. */
@@ -579,7 +574,7 @@ async function fetchRaw(
 }
 
 async function errorFrom(response: Response): Promise<FileSdkError> {
-  let body: { code?: string; message?: string } = {};
+  let body: { code?: string; message?: string };
   try {
     body = (await response.json()) as { code?: string; message?: string };
   } catch {

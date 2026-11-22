@@ -21,7 +21,7 @@ import {
 } from '../processors/normalize.js';
 import { insertJob, type JobRow } from '../queue/jobs.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
-import { readToken, signToken } from '../security/token.js';
+import { assertUnexpired, readToken, signToken } from '../security/token.js';
 import {
   concatFiles,
   createFilesystemStorage,
@@ -983,16 +983,12 @@ export class FileService {
     const kind = payload?.n;
     const fileId = payload?.f;
     const exp = payload?.exp;
-    if (
-      typeof kind !== 'string' ||
-      typeof fileId !== 'string' ||
-      typeof exp !== 'number' ||
-      exp * 1000 < Date.now()
-    ) {
+    if (typeof kind !== 'string' || typeof fileId !== 'string') {
       throw fail('UNAUTHORIZED', {
         message: 'The delivery token is expired or invalid.',
       });
     }
+    assertUnexpired(exp);
     const row = sql.get<FileRow>(
       'SELECT * FROM files WHERE id = ? AND deleted_at IS NULL',
       [fileId],

@@ -183,7 +183,7 @@ export const filesOptionsSchema = z
 
 export type FilesOptions = z.input<typeof filesOptionsSchema>;
 
-export const envShape = {
+const envShape = {
   FILES_ENV: z.enum(['development', 'test', 'production']).optional(),
   FILES_PROVIDER: z
     .enum(['embedded', 'distributed', 'managed', 'hybrid'])

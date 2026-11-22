@@ -9,14 +9,25 @@
   "scripts": {
     "build": "pnpm --filter filevora build",
     "typecheck": "pnpm build && pnpm --filter filevora exec tsc -p tsconfig.test.json --noEmit && pnpm --filter fixture-app typecheck",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
+    "knip": "knip",
+    "circular": "madge --circular --extensions ts --ts-config packages/filevora/tsconfig.json packages/filevora/src examples/fixture-app/src examples/node-minimal scripts",
+    "ci": "pnpm typecheck && pnpm lint && pnpm knip && pnpm circular",
     "test": "pnpm build && pnpm --filter filevora test",
-    "verify": "pnpm typecheck && pnpm lint && pnpm --filter filevora test"
+    "verify": "pnpm ci && pnpm --filter filevora test",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.7",
-    "typescript": "^5.9.3"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "knip": "^6.48.0",
+    "madge": "^8.0.0",
+    "prettier": "^3.10.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.73.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

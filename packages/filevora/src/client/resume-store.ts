@@ -118,8 +118,7 @@ export function createIndexedDbResumeStore(dbName = 'filevora'): ResumeStore {
   return {
     async get(key) {
       return (await run('readonly', (store) => store.get(key))) as
-        | ResumeRecord
-        | undefined;
+        ResumeRecord | undefined;
     },
     async set(key, value) {
       await run('readwrite', (store) => store.put(value, key));

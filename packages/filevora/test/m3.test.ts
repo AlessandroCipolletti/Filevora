@@ -47,45 +47,49 @@ async function waitFor(
   throw new Error('timed out waiting for the worker');
 }
 
-test('a second supervisor call does not spawn another worker, and a killed job finishes once', {
-  timeout: 20_000,
-}, async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'filevora-m3-'));
-  const files = filesFor(dir, 'on-demand');
-  try {
-    const record = await uploaded(files);
-    const job = await files.process(
-      record.id,
-      { delayMs: 1_500 },
-      { principal },
-    );
-    const firstPid = files.ensureWorker();
-    const secondPid = files.ensureWorker();
-    assert.equal(firstPid, secondPid);
-    assert.ok(firstPid > 0);
-    assert.notEqual(firstPid, process.pid);
-    await waitFor(async () => {
-      const current = await files.getJob(job.id, { principal });
-      return current.state === 'processing' && current.attempts >= 1;
-    });
-    process.kill(firstPid, 'SIGKILL');
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
-    const recoveredPid = files.ensureWorker();
-    assert.notEqual(recoveredPid, firstPid);
-    await waitFor(
-      async () =>
-        (await files.getJob(job.id, { principal })).state === 'succeeded',
-    );
-    const finished = await files.getJob(job.id, { principal });
-    assert.equal(finished.attempts >= 2, true);
-    assert.equal(finished.result?.held, true);
-    const again = await files.getJob(job.id, { principal });
-    assert.equal(again.state, 'succeeded');
-  } finally {
-    await files.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+test(
+  'a second supervisor call does not spawn another worker, and a killed job finishes once',
+  {
+    timeout: 20_000,
+  },
+  async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'filevora-m3-'));
+    const files = filesFor(dir, 'on-demand');
+    try {
+      const record = await uploaded(files);
+      const job = await files.process(
+        record.id,
+        { delayMs: 1_500 },
+        { principal },
+      );
+      const firstPid = files.ensureWorker();
+      const secondPid = files.ensureWorker();
+      assert.equal(firstPid, secondPid);
+      assert.ok(firstPid > 0);
+      assert.notEqual(firstPid, process.pid);
+      await waitFor(async () => {
+        const current = await files.getJob(job.id, { principal });
+        return current.state === 'processing' && current.attempts >= 1;
+      });
+      process.kill(firstPid, 'SIGKILL');
+      await new Promise((resolve) => setTimeout(resolve, 2_500));
+      const recoveredPid = files.ensureWorker();
+      assert.notEqual(recoveredPid, firstPid);
+      await waitFor(
+        async () =>
+          (await files.getJob(job.id, { principal })).state === 'succeeded',
+      );
+      const finished = await files.getJob(job.id, { principal });
+      assert.equal(finished.attempts >= 2, true);
+      assert.equal(finished.result?.held, true);
+      const again = await files.getJob(job.id, { principal });
+      assert.equal(again.state, 'succeeded');
+    } finally {
+      await files.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test('an image preset publishes variants, and doctor reports json', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'filevora-m3-doctor-'));
