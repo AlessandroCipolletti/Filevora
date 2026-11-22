@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.files/
+*.sqlite
+*.sqlite-*
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+coverage/
+.DS_Store
+.pnpm-store/
+*.log
+packages/filevora/README.md
+examples/**/.next/
+examples/**/dist/

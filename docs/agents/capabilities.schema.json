@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AlessandroCipolletti/Filevora/docs/agents/capabilities.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "name",
+    "package",
+    "version",
+    "needsAccount",
+    "managedProvider",
+    "billing",
+    "accounts",
+    "hostedControlPlane",
+    "imports",
+    "cli",
+    "runtimes",
+    "features"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "const": "filevora" },
+    "package": { "const": "filevora" },
+    "version": { "type": "string" },
+    "needsAccount": { "const": false },
+    "managedProvider": { "enum": ["unsupported", "reserved", "tested"] },
+    "billing": { "enum": ["unsupported"] },
+    "accounts": { "enum": ["unsupported"] },
+    "hostedControlPlane": { "enum": ["unsupported"] },
+    "imports": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "cli": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "runtimes": { "type": "object" },
+    "features": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": ["tested", "not-implemented", "unsupported", "reserved"]
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  }
+}

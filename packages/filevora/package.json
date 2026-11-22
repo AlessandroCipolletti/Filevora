@@ -1,0 +1,70 @@
+{
+  "name": "filevora",
+  "version": "0.1.0",
+  "description": "Headless TypeScript SDK for resumable uploads, storage, processing, and delivery. Runs locally or on your infrastructure with no Filevora account.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlessandroCipolletti/Filevora.git",
+    "directory": "packages/filevora"
+  },
+  "bugs": {
+    "url": "https://github.com/AlessandroCipolletti/Filevora/issues"
+  },
+  "homepage": "https://github.com/AlessandroCipolletti/Filevora#readme",
+  "keywords": [
+    "typescript",
+    "sdk",
+    "file-upload"
+  ],
+  "bin": {
+    "filevora": "./bin/filevora.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "capabilities.json",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "exports": {
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js",
+      "browser": "./dist/client/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker/index.d.ts",
+      "import": "./dist/worker/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp ../../README.md ./README.md",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types --test --test-reporter=spec \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "esbuild": "^0.25.11",
+    "typescript": "^5.9.3"
+  }
+}

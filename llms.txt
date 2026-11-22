@@ -1,0 +1,15 @@
+# Filevora
+
+Navigation index for coding agents. This is not a capability claim. Trust `docs/agents/capabilities.json` and the tests.
+
+- [README](README.md)
+- [Install](docs/agents/install.md)
+- [Decision guide](docs/agents/decision-guide.md)
+- [Troubleshooting](docs/agents/troubleshooting.md)
+- [Verification](docs/agents/verification.md)
+- [Capabilities](docs/agents/capabilities.json)
+- [Configuration](docs/configuration.md)
+- [Architecture](docs/architecture.md)
+- [Security](docs/security.md)
+- [Changelog](CHANGELOG.md)
+- [Agents](AGENTS.md)
