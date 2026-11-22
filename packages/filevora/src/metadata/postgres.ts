@@ -72,8 +72,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS variants_recipe ON variants (file_id, name, re
 export async function applyPostgresSchema(
   db: PostgresQueryable,
 ): Promise<void> {
-  if (db.exec) await db.exec(SCHEMA);
-  else await db.query(SCHEMA);
+  const statements = SCHEMA.split(';')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+  for (const statement of statements) {
+    if (db.exec) await db.exec(statement);
+    else await db.query(statement);
+  }
+}
+
+/** Networked S3 and Postgres tests run only when these variables are set. */
+export function externalTargets(env: NodeJS.ProcessEnv): {
+  s3: boolean;
+  postgres: boolean;
+} {
+  return {
+    s3: Boolean(
+      env.FILEVORA_S3_ENDPOINT &&
+        env.FILEVORA_S3_BUCKET &&
+        env.FILEVORA_S3_ACCESS_KEY_ID &&
+        env.FILEVORA_S3_SECRET_ACCESS_KEY,
+    ),
+    postgres: Boolean(env.FILEVORA_POSTGRES_URL),
+  };
 }
 
 export async function enqueueJob(
