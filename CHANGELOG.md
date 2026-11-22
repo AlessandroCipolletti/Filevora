@@ -71,3 +71,9 @@
 - Dry-run reports an old file and leaves it readable. A pin removes it from the eligible set.
 - A real sweep with a zero grace period deletes the bytes.
 - A file with no touch timestamp is not eligible for inactivity deletion.
+
+### M10 — Diagnostics and webhooks
+
+- `explainError` redacts the report, keeps the original error code, and drops the suggestion if the explainer throws.
+- Webhook HMAC signatures expire after five minutes. Production rejects loopback and private targets.
+- A missing FFmpeg binary throws `FFMPEG_NOT_FOUND` with its catalog path. No live model API was called.

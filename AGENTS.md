@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M9. Retention dry-run, pins, and missing inactivity evidence are tested. Webhook delivery and the AI explainer are not.
+M10. Webhook signatures and the optional explainer are tested. The explainer cannot change an error code. No live model provider was called.

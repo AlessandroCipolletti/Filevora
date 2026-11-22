@@ -58,3 +58,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M9
 
 `test/m9.test.ts` passed 1 test. Dry-run returned one `max-age` candidate and `files.get` still succeeded. After pinning, eligibility was 0. After unpinning, the sweep deleted 1 file. `planRetention` returned no item for a file with `unusedAfterDays` and a null touch timestamp. The full suite then reported 32 tests passed and 0 failed. Biome reported no errors.
+
+## M10
+
+`test/m10.test.ts` passed 3 tests. The explainer saw a redacted report and could not replace `FFMPEG_NOT_FOUND`. A provider exception left the code unchanged. Webhook verification failed 301 seconds later, and `http://127.0.0.1` plus `https://10.1.1.5` were rejected when loopback was not allowed. `runFfmpeg('definitely-not-a-filevora-ffmpeg')` threw `FFMPEG_NOT_FOUND`. The full suite then reported 35 tests passed and 0 failed. Biome reported no errors.
