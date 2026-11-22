@@ -67,6 +67,7 @@
     "test": "node --experimental-strip-types --test --test-reporter=spec \"test/**/*.test.ts\""
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

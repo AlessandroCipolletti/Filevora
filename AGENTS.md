@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M7. Postgres leasing is tested with PGlite. `createFiles` remains SQLite. PDF, CSV, and retention are not implemented.
+M8. PDF text, CSV, and XLSX fixtures are tested. Page previews and OCR are not. Retention is not implemented.

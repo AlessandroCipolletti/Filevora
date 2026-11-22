@@ -14,6 +14,11 @@ import {
   sniffMime,
 } from '../mime.js';
 import { assertRecipe, type MediaTransform } from '../processors/ffmpeg.js';
+import {
+  normalizeCsv,
+  normalizeXlsx,
+  readPdf,
+} from '../processors/normalize.js';
 import { insertJob, type JobRow } from '../queue/jobs.js';
 import { readToken, signToken } from '../security/token.js';
 import {
@@ -212,6 +217,78 @@ export class FileService {
     );
     this.ensureWorker();
     return mapJob(job);
+  }
+
+  async normalize(
+    fileId: string,
+    input: {
+      kind: 'tabular' | 'pdf';
+      schema?: {
+        columns: Record<string, import('../types/index.js').NormalizeColumn>;
+      };
+      invalidRows?: 'collect' | 'fail';
+      sheet?: string;
+    },
+    ctx: RequestContext,
+  ) {
+    const record = await this.get(fileId, ctx);
+    const row = this.db().get<FileRow>(
+      'SELECT * FROM files WHERE id = ? AND tenant_id = ?',
+      [fileId, ctx.principal.tenantId],
+    );
+    if (!row?.original_object_key) throw fail('NOT_FOUND');
+    if (this.config.storage.driver !== 'filesystem') {
+      throw fail('FEATURE_NOT_AVAILABLE', {
+        message: 'Normalization currently reads filesystem originals.',
+      });
+    }
+    const bytes = await import('node:fs/promises').then((fs) =>
+      fs.readFile(path.join(this.root(), row.original_object_key ?? '')),
+    );
+    let body: Record<string, unknown>;
+    if (input.kind === 'pdf' || row.detected_mime === 'application/pdf') {
+      const pdf = readPdf(bytes);
+      body = {
+        text: pdf.text,
+        pageCount: pdf.pageCount,
+        ...(pdf.code ? { code: pdf.code } : {}),
+      };
+    } else if (
+      row.detected_mime === 'text/csv' ||
+      record.declaredMime === 'text/csv'
+    ) {
+      const table = normalizeCsv(
+        bytes.toString('utf8'),
+        input.schema?.columns ?? {},
+        input.invalidRows ?? 'collect',
+      );
+      body = { ...table };
+    } else if (
+      row.detected_mime === 'application/zip' ||
+      record.declaredMime.includes('spreadsheetml')
+    ) {
+      const table = await normalizeXlsx(
+        bytes,
+        input.schema?.columns ?? {},
+        input.sheet,
+      );
+      body = { ...table };
+    } else throw fail('UNSUPPORTED_MIME');
+    const payload = Buffer.from(JSON.stringify(body));
+    const id = createId('variant');
+    const key = `${tenantPath(ctx.principal.tenantId)}/files/${fileId}/variants/${id}/normalized.json`;
+    await writeBytes(this.root(), key, payload);
+    this.db().run(
+      `INSERT INTO variants (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, status, created_at)
+       VALUES (?, ?, 'normalized', 'normalize', 1, ?, 'application/json', ?, ?, 'ready', ?)`,
+      [id, fileId, key, payload.byteLength, sha256(payload), nowIso()],
+    );
+    return {
+      fileId,
+      schemaVersion: 1,
+      output: { format: 'json', variantId: id },
+      body,
+    };
   }
 
   async cancelJob(jobId: string, ctx: RequestContext): Promise<ProcessingJob> {
@@ -598,7 +675,13 @@ export class FileService {
     if (assembled.bytes !== session.declared_bytes)
       throw fail('UPLOAD_SIZE_MISMATCH');
     const prefix = await readPrefix(this.root(), originalKey);
-    const detected = sniffMime(prefix);
+    let detected = sniffMime(prefix);
+    if (
+      !detected &&
+      session.declared_mime === 'text/csv' &&
+      isMostlyText(prefix)
+    )
+      detected = 'text/csv';
     if (!detected) {
       await this.storage?.deleteObject(originalKey);
       throw fail('UNSUPPORTED_MIME', {
@@ -1068,6 +1151,14 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } {
   if (splitAt <= 0)
     throw fail('INVALID_CONFIG', { message: 'The list cursor is invalid.' });
   return { createdAt: raw.slice(0, splitAt), id: raw.slice(splitAt + 1) };
+}
+
+function isMostlyText(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return false;
+  for (const byte of bytes) {
+    if (byte === 0) return false;
+  }
+  return true;
 }
 
 function compatibleMime(declared: string, detected: string): boolean {

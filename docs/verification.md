@@ -50,3 +50,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M7
 
 `test/m7.test.ts` passed 1 test. Two `claimJob` calls against one PGlite database returned the job once. Two variant inserts left `COUNT(*) = 1`. `headObject` on the shared emulator key matched the byte length. No networked Postgres process was started. The full suite then reported 30 tests passed and 0 failed. Biome reported no errors.
+
+## M8
+
+`test/m8.test.ts` passed 1 test covering the text PDF, the no-text PDF, the encrypted PDF, a CSV with one invalid email, and an XLSX sheet with one accepted row. The full suite then reported 31 tests passed and 0 failed. Biome reported no errors.

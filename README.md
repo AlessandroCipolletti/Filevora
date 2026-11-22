@@ -25,7 +25,7 @@ const files = createFiles({
 });
 ```
 
-Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, and FFmpeg. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video presets produce an H.264 MP4 and a WebP poster. The poster is encoded by Sharp because this FFmpeg build has no WebP encoder. Audio presets produce AAC in an M4A file. S3 uploads in tests go directly to an in-process emulator with presigned part URLs. The secret is not in those URLs. Postgres queue SQL is tested with PGlite in one process, not a networked server. `createFiles` still opens SQLite. PDF and retention are not implemented.
+Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, and FFmpeg. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video presets produce an H.264 MP4 and a WebP poster. The poster is encoded by Sharp because this FFmpeg build has no WebP encoder. Audio presets produce AAC in an M4A file. S3 uploads in tests go directly to an in-process emulator with presigned part URLs. The secret is not in those URLs. Postgres queue SQL is tested with PGlite in one process, not a networked server. `createFiles` still opens SQLite. PDF fixtures return literal text or `OCR_NOT_CONFIGURED`. CSV and XLSX return row counts and masked errors. Page images are not produced. Retention is not implemented.
 
 | Checked in this repo                 | Result                                             |
 | ------------------------------------ | -------------------------------------------------- |
@@ -38,7 +38,8 @@ Constructing `createFiles` validates configuration and does not spawn a worker. 
 | FFmpeg video and audio               | tested: H.264 MP4, AAC M4A, Sharp WebP poster      |
 | S3 multipart upload                  | tested against the in-process emulator             |
 | Postgres queue on PGlite             | tested in one process, not a networked server      |
-| PDF and retention                    | not implemented yet                                |
+| PDF text and CSV/XLSX rows           | tested on fixtures; no page images                 |
+| Retention                            | not implemented yet                                |
 | Managed hosting, billing, accounts   | unsupported                                        |
 
 ```bash

@@ -369,6 +369,8 @@ test('capabilities manifest matches the schema and does not mark untested featur
     'audioProcessing',
     's3Storage',
     'postgresMetadata',
+    'pdfExtraction',
+    'tabularNormalization',
   ]);
   for (const [id, status] of Object.entries(manifest.features)) {
     if (status === 'tested')

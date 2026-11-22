@@ -59,3 +59,9 @@
 - Placeholder conversion, schema, claim with `FOR UPDATE SKIP LOCKED`, and idempotent variant insert.
 - Two in-process claimers against one PGlite database take one job. Two publishers leave one variant row. Both see the same S3 object.
 - This did not start a networked Postgres server, and `createFiles` still opens SQLite.
+
+### M8 — PDF and tabular fixtures
+
+- A fixture PDF with a `Tj` string returns `Hello Filevora`. A page with no text returns `OCR_NOT_CONFIGURED` and an empty string. An `/Encrypt` dictionary throws `PDF_ENCRYPTED`.
+- CSV and XLSX normalization return accepted and rejected row counts. Invalid values are masked as `***`.
+- This extractor is not a general PDF renderer and does not write page images.
