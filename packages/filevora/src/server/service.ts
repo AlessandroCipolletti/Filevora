@@ -25,6 +25,7 @@ import {
 import type {
   DeliveryResult,
   FileRecord,
+  FileVariant,
   Page,
   Principal,
   ProcessingJob,
@@ -514,7 +515,9 @@ export class FileService {
       [fileId, ctx.principal.tenantId],
     );
     if (!row || row.upload_state === 'aborted') throw fail('NOT_FOUND');
-    return mapFile(row);
+    const record = mapFile(row);
+    record.variants = loadVariants(this.db(), row.id);
+    return record;
   }
 
   async list(
@@ -535,7 +538,11 @@ export class FileService {
       `SELECT * FROM files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
       params,
     );
-    const page = rows.slice(0, limit).map((row) => mapFile(row));
+    const page = rows.slice(0, limit).map((row) => {
+      const record = mapFile(row);
+      record.variants = loadVariants(this.db(), row.id);
+      return record;
+    });
     const last = page[page.length - 1];
     const next =
       rows.length > limit && last
@@ -586,6 +593,23 @@ export class FileService {
     const row = this.db().get<FileRow>('SELECT * FROM files WHERE id = ?', [
       record.id,
     ]);
+    const variants: DeliveryResult['variants'] = {};
+    for (const variant of loadVariants(this.db(), record.id)) {
+      const variantToken = signToken(this.secret ?? '', {
+        f: record.id,
+        n: variant.id,
+        exp,
+      });
+      variants[variant.name] = {
+        url: `${base}/content/${variantToken}`,
+        expiresAt: new Date(exp * 1000).toISOString(),
+        mimeType: variant.mimeType,
+        bytes: variant.bytes,
+        variantId: variant.id,
+        ...(variant.width ? { width: variant.width } : {}),
+        ...(variant.height ? { height: variant.height } : {}),
+      };
+    }
     return {
       id: record.id,
       status: record.processingState,
@@ -595,7 +619,7 @@ export class FileService {
         mimeType: record.detectedMime ?? record.declaredMime,
         bytes: row?.bytes ?? record.bytes,
       },
-      variants: {},
+      variants,
     };
   }
 
@@ -608,6 +632,7 @@ export class FileService {
     start: number;
     end: number;
     total: number;
+    contentType: string;
   }> {
     const sql = this.db();
     const payload = readToken(this.secret ?? '', token);
@@ -615,7 +640,7 @@ export class FileService {
     const fileId = payload?.f;
     const exp = payload?.exp;
     if (
-      kind !== 'original' ||
+      typeof kind !== 'string' ||
       typeof fileId !== 'string' ||
       typeof exp !== 'number' ||
       exp * 1000 < Date.now()
@@ -629,7 +654,23 @@ export class FileService {
       [fileId],
     );
     if (!row?.original_object_key) throw fail('NOT_FOUND');
-    const total = row.bytes;
+    let objectKey = row.original_object_key;
+    let total = row.bytes;
+    let contentType = row.detected_mime ?? row.declared_mime;
+    if (kind !== 'original') {
+      const variant = sql.get<{
+        storage_key: string;
+        bytes: number;
+        mime: string;
+      }>(
+        `SELECT storage_key, bytes, mime FROM variants WHERE id = ? AND file_id = ? AND status = 'ready'`,
+        [kind, fileId],
+      );
+      if (!variant) throw fail('NOT_FOUND');
+      objectKey = variant.storage_key;
+      total = variant.bytes;
+      contentType = variant.mime;
+    }
     const start = range?.start ?? 0;
     const end = range?.end ?? total - 1;
     if (start < 0 || start >= total || end < start || end >= total) {
@@ -638,17 +679,19 @@ export class FileService {
       });
     }
     if (range) {
-      const body = await readObjectRange(
-        this.root(),
-        row.original_object_key,
-        start,
-        end,
-      );
-      return { record: mapFile(row), body, start, end, total };
+      const body = await readObjectRange(this.root(), objectKey, start, end);
+      return { record: mapFile(row), body, start, end, total, contentType };
     }
-    const stream = await this.storage?.getObject(row.original_object_key);
+    const stream = await this.storage?.getObject(objectKey);
     if (!stream) throw fail('STORAGE_UNAVAILABLE');
-    return { record: mapFile(row), body: stream, start, end, total };
+    return {
+      record: mapFile(row),
+      body: stream,
+      start,
+      end,
+      total,
+      contentType,
+    };
   }
 
   private requireSession(id: string, principal: Principal): SessionRow {
@@ -764,6 +807,44 @@ function mapJob(row: JobRow): ProcessingJob {
     updatedAt: row.updated_at,
     runAfter: row.run_after,
   };
+}
+
+function loadVariants(sql: Sql, fileId: string): FileVariant[] {
+  return sql
+    .all<{
+      id: string;
+      file_id: string;
+      name: string;
+      recipe_id: string;
+      recipe_version: number;
+      mime: string;
+      bytes: number;
+      width: number | null;
+      height: number | null;
+      duration_ms: number | null;
+      checksum: string;
+      status: string;
+      created_at: string;
+    }>(
+      `SELECT id, file_id, name, recipe_id, recipe_version, mime, bytes, width, height, duration_ms, checksum, status, created_at
+       FROM variants WHERE file_id = ? AND status = 'ready' ORDER BY name ASC`,
+      [fileId],
+    )
+    .map((row) => ({
+      id: row.id,
+      fileId: row.file_id,
+      name: row.name,
+      recipeId: row.recipe_id,
+      recipeVersion: row.recipe_version,
+      mimeType: row.mime,
+      bytes: row.bytes,
+      ...(row.width ? { width: row.width } : {}),
+      ...(row.height ? { height: row.height } : {}),
+      ...(row.duration_ms ? { durationMs: row.duration_ms } : {}),
+      checksum: row.checksum,
+      status: 'ready' as const,
+      createdAt: row.created_at,
+    }));
 }
 
 function mapFile(row: FileRow): FileRecord {

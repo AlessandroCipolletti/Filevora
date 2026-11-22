@@ -22,6 +22,7 @@
     "file-upload",
     "resumable-upload",
     "sqlite",
+    "image-processing",
     "self-hosted"
   ],
   "bin": {
@@ -70,5 +71,8 @@
     "esbuild": "^0.25.11",
     "fake-indexeddb": "^6.2.8",
     "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.35.5"
   }
 }

@@ -87,7 +87,7 @@ test('a second supervisor call does not spawn another worker, and a killed job f
   }
 });
 
-test('preset jobs fail closed until a processor exists, and doctor reports json', async () => {
+test('an image preset publishes variants, and doctor reports json', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'filevora-m3-doctor-'));
   const files = filesFor(dir, 'never');
   try {
@@ -95,8 +95,10 @@ test('preset jobs fail closed until a processor exists, and doctor reports json'
     const job = await files.process(record.id, {}, { principal });
     await runWorker({ once: true, options: workerConfigOptions(files.config) });
     const finished = await files.getJob(job.id, { principal });
-    assert.equal(finished.state, 'failed');
-    assert.equal(finished.errorCode, 'PROCESSOR_UNAVAILABLE');
+    assert.equal(finished.state, 'succeeded');
+    const ready = await files.get(record.id, { principal });
+    assert.equal(ready.processingState, 'ready');
+    assert.equal(ready.variants.length, 3);
     const lines: string[] = [];
     const code = await runCli(
       ['doctor', '--json'],

@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M3. The embedded worker is a single child process with lease recovery. Preset jobs fail with `PROCESSOR_UNAVAILABLE` until a processor milestone lands. S3 and Postgres are still unavailable.
+M4. Image presets publish three WebP variants and keep the original checksum. Video, S3, Postgres, PDF, CSV, and retention are not implemented. Non-image presets fail with `PROCESSOR_UNAVAILABLE`.

@@ -13,7 +13,7 @@ import type {
   StoredObject,
 } from '../types/index.js';
 
-const KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/_-]{0,500}$/;
+const KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/_.-]{0,500}$/;
 
 export function assertSafeKey(key: string): void {
   if (

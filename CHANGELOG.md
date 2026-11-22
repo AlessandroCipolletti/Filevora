@@ -31,3 +31,10 @@
 - Killing that child releases the lease. The job succeeds once, with `attempts >= 2`.
 - Preset jobs fail with `PROCESSOR_UNAVAILABLE` because no image or video processor is registered.
 - `filevora doctor --json` reports Node, config, storage, SQLite, and FFmpeg. FFmpeg is a warning when missing.
+
+### M4 — Image variants
+
+- Sharp writes `thumbnail` (320), `optimized` (1280), and `hd` (1920) WebP variants.
+- Variants are not enlarged past the source. A second job does not publish duplicate rows.
+- Private delivery tokens return the WebP bytes. The original checksum is unchanged.
+- Images over `imageMaxPixels` fail the job and leave no variant. The original remains.

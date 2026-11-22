@@ -37,6 +37,11 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
       mode: 'inline',
       spawn: 'never',
       concurrency: config.processing.concurrency,
+      imageMaxPixels: config.processing.imageMaxPixels,
+      videoMaxDurationSeconds: config.processing.videoMaxDurationSeconds,
+      videoMaxOutputHeight: config.processing.videoMaxOutputHeight,
+      ffmpegPath: config.processing.ffmpegPath,
+      ffprobePath: config.processing.ffprobePath,
     },
     defaults: {
       maxFileBytes: config.defaults.maxFileBytes,

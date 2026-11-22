@@ -341,7 +341,7 @@ async function sendContent(
   const range = rangeHeader ? parseRange(rangeHeader) : undefined;
   const opened = await files.openOriginal(decodeURIComponent(token), range);
   const headers = new Headers({
-    'content-type': opened.record.detectedMime ?? opened.record.declaredMime,
+    'content-type': opened.contentType,
     'x-content-type-options': 'nosniff',
     'cache-control': 'private, no-store',
     'content-disposition': `attachment; filename="${opened.record.originalName.replace(/"/g, '')}"`,

@@ -3,6 +3,7 @@ import type { FilesOptions } from '../config/schema.js';
 import { fail, isFileSdkError } from '../errors/error.js';
 import { migrate } from '../metadata/migrate.js';
 import { openSqlite } from '../metadata/sqlite.js';
+import { publishImagePreset } from '../processors/image.js';
 import {
   claimJob,
   failJob,
@@ -45,7 +46,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
         200,
       );
       try {
-        const result = await executeJob(job, config.env);
+        const result = await executeJob(sql, job, config);
         finishJob(sql, job.id, result);
         if (job.type === 'test.hold') {
           sql.run(
@@ -84,24 +85,45 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
 }
 
 async function executeJob(
+  sql: ReturnType<typeof openSqlite>,
   job: JobRow,
-  env: string,
+  config: ReturnType<typeof resolveConfig>,
 ): Promise<Record<string, unknown>> {
   if (job.schema_version > JOB_SCHEMA_VERSION)
     throw fail('JOB_VERSION_UNSUPPORTED');
   const payload = JSON.parse(job.payload_json) as { delayMs?: number };
   if (job.type === 'test.hold') {
-    if (env !== 'test')
+    if (config.env !== 'test') {
       throw fail('INVALID_RECIPE', {
         message: 'test.hold is only available when env is test.',
       });
+    }
     const delayMs = Math.min(payload.delayMs ?? 0, 10_000);
     await delay(delayMs);
     return { held: true };
   }
   if (job.type === 'preset') {
+    const file = sql.get<{
+      id: string;
+      tenant_id: string;
+      detected_mime: string | null;
+      original_object_key: string | null;
+    }>(
+      'SELECT id, tenant_id, detected_mime, original_object_key FROM files WHERE id = ?',
+      [job.file_id],
+    );
+    if (!file) throw fail('NOT_FOUND');
+    if (file.detected_mime?.startsWith('image/')) {
+      const names = await publishImagePreset(
+        sql,
+        config.storage.root,
+        file,
+        config.processing.imageMaxPixels,
+      );
+      return { variants: names, processingState: 'ready' };
+    }
     throw fail('PROCESSOR_UNAVAILABLE', {
-      message: 'No media processor is registered yet.',
+      message: 'No processor is registered for this file type.',
     });
   }
   throw fail('INVALID_RECIPE', { message: `Unknown job type ${job.type}.` });

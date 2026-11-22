@@ -108,9 +108,31 @@ CREATE TABLE IF NOT EXISTS supervisor_leases (
 );
 `;
 
+const MIGRATION_3 = `
+CREATE TABLE IF NOT EXISTS variants (
+  id TEXT PRIMARY KEY,
+  file_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  recipe_id TEXT NOT NULL,
+  recipe_version INTEGER NOT NULL,
+  storage_key TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  bytes INTEGER NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  duration_ms INTEGER,
+  checksum TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS variants_recipe
+  ON variants (file_id, name, recipe_id, recipe_version);
+`;
+
 const MIGRATIONS: Array<{ id: number; sql: string }> = [
   { id: 1, sql: MIGRATION_1 },
   { id: 2, sql: MIGRATION_2 },
+  { id: 3, sql: MIGRATION_3 },
 ];
 
 export function migrate(db: Sql): void {

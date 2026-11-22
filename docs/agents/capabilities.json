@@ -44,7 +44,7 @@
     "durableQueue": "tested",
     "embeddedWorker": "tested",
     "doctor": "tested",
-    "imageProcessing": "not-implemented",
+    "imageProcessing": "tested",
     "videoProcessing": "not-implemented",
     "audioProcessing": "not-implemented",
     "s3Storage": "not-implemented",

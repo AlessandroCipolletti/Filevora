@@ -33,4 +33,8 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 
 ## M3
 
-`test/m3.test.ts` passed 2 tests. The supervisor returned the same child pid twice. After `SIGKILL`, a new child finished the same job once (`attempts >= 2`, `result.held === true`). A preset job failed with `PROCESSOR_UNAVAILABLE`. `filevora doctor --json` exited 0 for a valid temp config and 1 for `FILES_PROVIDER=managed`.
+`test/m3.test.ts` passed 2 tests. The supervisor returned the same child pid twice. After `SIGKILL`, a new child finished the same job once (`attempts >= 2`, `result.held === true`). A preset job failed with `PROCESSOR_UNAVAILABLE`. `filevora doctor --json` exited 0 for a valid temp config and 1 for `FILES_PROVIDER=managed`. The full suite then reported 23 tests passed and 0 failed. Biome reported no errors.
+
+## M4
+
+`test/m4.test.ts` passed 2 tests. A 2000×1000 PNG produced WebP widths 320, 1280, and 1920. A 40×20 PNG stayed at or below 40 pixels wide. The original SHA-256 did not change. A 50×50 image with a 100-pixel cap failed `INVALID_RECIPE` and stored no variant. Re-running the preset left three variant rows. The full suite then reported 25 tests passed and 0 failed. Biome reported no errors.

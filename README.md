@@ -25,7 +25,7 @@ const files = createFiles({
 });
 ```
 
-Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, and FFmpeg. A queued job starts one child worker. Image and video processors are not registered yet, so a preset job fails with `PROCESSOR_UNAVAILABLE`.
+Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, and FFmpeg. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video, S3, Postgres, PDF, and retention are not implemented. Non-image presets fail with `PROCESSOR_UNAVAILABLE`.
 
 | Checked in this repo                 | Result                                             |
 | ------------------------------------ | -------------------------------------------------- |
@@ -34,7 +34,8 @@ Constructing `createFiles` validates configuration and does not spawn a worker. 
 | Filesystem upload and SQLite restart | tested on darwin Node v26.5.0                      |
 | Resumable browser upload             | tested with an interrupted 5-part upload           |
 | Embedded worker crash recovery       | tested: one child pid, killed job finishes once    |
-| Image, video, S3, Postgres           | not implemented yet                                |
+| Sharp image variants                 | tested: 320, 1280, and 1920 WebP, no upscale       |
+| Video, S3, Postgres, PDF, retention  | not implemented yet                                |
 | Managed hosting, billing, accounts   | unsupported                                        |
 
 ```bash
