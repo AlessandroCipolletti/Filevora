@@ -64,7 +64,7 @@
     "Video posters are WebP produced by Sharp. This environment's FFmpeg 8.1.2 has no libwebp encoder, so FFmpeg is not asked to encode WebP.",
     "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. AWS, R2, and MinIO were not certified in this run.",
     "Postgres queue SQL was tested with PGlite in one process: two claimers and a unique variant row. createFiles still opens SQLite. A networked Postgres server was not started.",
-    "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer, and page images are not produced. OCR returns OCR_NOT_CONFIGURED.",
+    "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary or a PDF Poppler cannot read leaves the preview unavailable and still returns extracted text. OCR returns OCR_NOT_CONFIGURED.",
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini."
   ]
 }

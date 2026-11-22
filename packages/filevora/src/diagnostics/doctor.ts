@@ -112,6 +112,20 @@ export function runDoctor(
         ? (ffmpeg.stdout.split('\n')[0] ?? 'FFmpeg found')
         : 'FFmpeg was not found. Video jobs cannot run.',
   });
+  const pdftoppm = spawnSync('pdftoppm', ['-v'], { encoding: 'utf8' });
+  const pdftoppmLine =
+    `${pdftoppm.stderr ?? ''}\n${pdftoppm.stdout ?? ''}`
+      .split('\n')
+      .find((line) => line.trim().length > 0) ?? 'pdftoppm found';
+  checks.push({
+    id: 'pdftoppm',
+    status: pdftoppm.status === 0 ? 'pass' : 'warn',
+    required: false,
+    message:
+      pdftoppm.status === 0
+        ? pdftoppmLine
+        : 'pdftoppm was not found. PDF text extraction still runs. Page images are skipped.',
+  });
   return {
     ok: checks.every((check) => !check.required || check.status === 'pass'),
     version: FILEVORA_VERSION,

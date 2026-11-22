@@ -19,6 +19,7 @@ import {
   normalizeXlsx,
   readPdf,
 } from '../processors/normalize.js';
+import { renderPdfFirstPage } from '../processors/pdf-preview.js';
 import { insertJob, type JobRow } from '../queue/jobs.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
 import { assertUnexpired, readToken, signToken } from '../security/token.js';
@@ -322,9 +323,41 @@ export class FileService {
     let body: Record<string, unknown>;
     if (input.kind === 'pdf' || row.detected_mime === 'application/pdf') {
       const pdf = readPdf(bytes);
+      const preview = await renderPdfFirstPage(bytes);
+      let previewBody: Record<string, unknown> = {
+        available: false,
+        code: 'PROCESSOR_UNAVAILABLE' as const,
+      };
+      if (preview.available) {
+        const previewId = createId('variant');
+        const previewKey = `${tenantPath(ctx.principal.tenantId)}/files/${fileId}/variants/${previewId}/page-1.png`;
+        await writeBytes(this.root(), previewKey, preview.png);
+        this.db().run(
+          `INSERT INTO variants (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, width, height, status, created_at)
+           VALUES (?, ?, 'page-1', 'pdf-preview', 1, ?, 'image/png', ?, ?, ?, ?, 'ready', ?)`,
+          [
+            previewId,
+            fileId,
+            previewKey,
+            preview.png.byteLength,
+            sha256(preview.png),
+            preview.width,
+            preview.height,
+            nowIso(),
+          ],
+        );
+        previewBody = {
+          available: true,
+          variantId: previewId,
+          width: preview.width,
+          height: preview.height,
+          mime: 'image/png',
+        };
+      }
       body = {
         text: pdf.text,
         pageCount: pdf.pageCount,
+        preview: previewBody,
         ...(pdf.code ? { code: pdf.code } : {}),
       };
     } else if (
