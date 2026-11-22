@@ -23,6 +23,8 @@
     "resumable-upload",
     "sqlite",
     "image-processing",
+    "ffmpeg",
+    "video",
     "self-hosted"
   ],
   "bin": {

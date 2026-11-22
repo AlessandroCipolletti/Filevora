@@ -29,7 +29,7 @@
     },
     "browser": {
       "status": "tested",
-      "notes": "The client entry bundles without Node built-ins. Upload methods are not implemented yet."
+      "notes": "The client entry bundles without Node built-ins. Resumable upload is covered by tests."
     }
   },
   "features": {
@@ -45,8 +45,8 @@
     "embeddedWorker": "tested",
     "doctor": "tested",
     "imageProcessing": "tested",
-    "videoProcessing": "not-implemented",
-    "audioProcessing": "not-implemented",
+    "videoProcessing": "tested",
+    "audioProcessing": "tested",
     "s3Storage": "not-implemented",
     "postgresMetadata": "not-implemented",
     "pdfExtraction": "not-implemented",
@@ -60,6 +60,7 @@
   "notes": [
     "A Filevora account is not required and this package cannot create one.",
     "Status tested is used only for behavior covered by an automated test in this repository.",
-    "Local verification recorded in runtimes.node.verifiedOn. GitHub Actions is defined and has not been executed from this environment."
+    "Local verification recorded in runtimes.node.verifiedOn. GitHub Actions is defined and has not been executed from this environment.",
+    "Video posters are WebP produced by Sharp. This environment's FFmpeg 8.1.2 has no libwebp encoder, so FFmpeg is not asked to encode WebP."
   ]
 }

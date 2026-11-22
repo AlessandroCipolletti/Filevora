@@ -13,6 +13,7 @@ import {
   sanitizeFilename,
   sniffMime,
 } from '../mime.js';
+import { assertRecipe, type MediaTransform } from '../processors/ffmpeg.js';
 import { insertJob, type JobRow } from '../queue/jobs.js';
 import { readToken, signToken } from '../security/token.js';
 import {
@@ -172,7 +173,7 @@ export class FileService {
    */
   async process(
     fileId: string,
-    input: { delayMs?: number } = {},
+    input: { delayMs?: number; transforms?: MediaTransform[] } = {},
     ctx: RequestContext,
   ): Promise<ProcessingJob> {
     await this.get(fileId, ctx);
@@ -181,7 +182,13 @@ export class FileService {
         message: 'delayMs is only available when env is test.',
       });
     }
-    const type = input.delayMs === undefined ? 'preset' : 'test.hold';
+    if (input.transforms) assertRecipe(input.transforms);
+    const type =
+      input.delayMs !== undefined
+        ? 'test.hold'
+        : input.transforms
+          ? 'recipe'
+          : 'preset';
     const job = insertJob(this.db(), {
       fileId,
       tenantId: ctx.principal.tenantId,
@@ -189,6 +196,7 @@ export class FileService {
       payload: {
         schemaVersion: 1,
         ...(input.delayMs === undefined ? {} : { delayMs: input.delayMs }),
+        ...(input.transforms ? { transforms: input.transforms } : {}),
       },
       maxAttempts: this.config.queue.maxAttempts,
       idempotencyKey: createId('idem'),
@@ -199,6 +207,22 @@ export class FileService {
     );
     this.ensureWorker();
     return mapJob(job);
+  }
+
+  async cancelJob(jobId: string, ctx: RequestContext): Promise<ProcessingJob> {
+    const job = await this.getJob(jobId, ctx);
+    if (
+      job.state === 'succeeded' ||
+      job.state === 'failed' ||
+      job.state === 'cancelled'
+    )
+      return job;
+    const now = nowIso();
+    this.db().run(
+      `UPDATE jobs SET state = 'cancelled', error_code = 'CANCELLED', updated_at = ?, finished_at = ? WHERE id = ?`,
+      [now, now, jobId],
+    );
+    return this.getJob(jobId, ctx);
   }
 
   async getJob(jobId: string, ctx: RequestContext): Promise<ProcessingJob> {

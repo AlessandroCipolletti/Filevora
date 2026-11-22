@@ -25,7 +25,7 @@ const files = createFiles({
 });
 ```
 
-Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, and FFmpeg. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video, S3, Postgres, PDF, and retention are not implemented. Non-image presets fail with `PROCESSOR_UNAVAILABLE`.
+Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, and FFmpeg. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video presets produce an H.264 MP4 and a WebP poster. The poster is encoded by Sharp because this FFmpeg build has no WebP encoder. Audio presets produce AAC in an M4A file. S3, Postgres, PDF, and retention are not implemented.
 
 | Checked in this repo                 | Result                                             |
 | ------------------------------------ | -------------------------------------------------- |
@@ -35,7 +35,8 @@ Constructing `createFiles` validates configuration and does not spawn a worker. 
 | Resumable browser upload             | tested with an interrupted 5-part upload           |
 | Embedded worker crash recovery       | tested: one child pid, killed job finishes once    |
 | Sharp image variants                 | tested: 320, 1280, and 1920 WebP, no upscale       |
-| Video, S3, Postgres, PDF, retention  | not implemented yet                                |
+| FFmpeg video and audio               | tested: H.264 MP4, AAC M4A, Sharp WebP poster      |
+| S3, Postgres, PDF, retention         | not implemented yet                                |
 | Managed hosting, billing, accounts   | unsupported                                        |
 
 ```bash

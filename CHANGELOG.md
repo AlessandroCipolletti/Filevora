@@ -38,3 +38,11 @@
 - Variants are not enlarged past the source. A second job does not publish duplicate rows.
 - Private delivery tokens return the WebP bytes. The original checksum is unchanged.
 - Images over `imageMaxPixels` fail the job and leave no variant. The original remains.
+
+### M5 — Video and audio
+
+- FFmpeg and ffprobe are spawned with argument arrays and `shell: false`. A missing binary fails with `FFMPEG_NOT_FOUND`.
+- Video presets write an H.264 MP4 capped at the source size and a WebP poster. Sharp encodes the poster. FFmpeg is not asked for a WebP encoder.
+- A 240p source does not get an HD variant. Audio presets write AAC in an M4A file.
+- Typed trim and transcode recipes are allowlisted. A timeout kills FFmpeg with `PROCESSING_TIMEOUT`. Aborting the signal kills it with `CANCELLED`.
+- The integration test records the FFmpeg pid and checks its parent is the worker child. A metadata read during that encode returned in under one second.

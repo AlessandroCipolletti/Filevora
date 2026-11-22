@@ -38,3 +38,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M4
 
 `test/m4.test.ts` passed 2 tests. A 2000×1000 PNG produced WebP widths 320, 1280, and 1920. A 40×20 PNG stayed at or below 40 pixels wide. The original SHA-256 did not change. A 50×50 image with a 100-pixel cap failed `INVALID_RECIPE` and stored no variant. Re-running the preset left three variant rows. The full suite then reported 25 tests passed and 0 failed. Biome reported no errors.
+
+## M5
+
+`test/m5.test.ts` passed 2 tests. A 320×240 one-second clip was transcoded to H.264 by an FFmpeg process whose parent pid was the worker child, not the test process. `files.get` during that encode returned in under one second. The optimized height stayed at or below 240, there was no HD variant, and the poster was `image/webp`. A WAV became `audio/mp4`. A trim recipe from 0 to 0.4 seconds succeeded. A placebo 720p encode was killed by a 700ms timeout (`PROCESSING_TIMEOUT`) and by an abort signal (`CANCELLED`). FFmpeg was not asked to encode WebP. The full suite then reported 27 tests passed and 0 failed. Biome reported no errors.

@@ -129,10 +129,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS variants_recipe
   ON variants (file_id, name, recipe_id, recipe_version);
 `;
 
+const MIGRATION_4 = `
+ALTER TABLE jobs ADD COLUMN runner_pid INTEGER;
+`;
+
 const MIGRATIONS: Array<{ id: number; sql: string }> = [
   { id: 1, sql: MIGRATION_1 },
   { id: 2, sql: MIGRATION_2 },
   { id: 3, sql: MIGRATION_3 },
+  { id: 4, sql: MIGRATION_4 },
 ];
 
 export function migrate(db: Sql): void {
