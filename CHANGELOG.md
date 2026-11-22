@@ -65,3 +65,9 @@
 - A fixture PDF with a `Tj` string returns `Hello Filevora`. A page with no text returns `OCR_NOT_CONFIGURED` and an empty string. An `/Encrypt` dictionary throws `PDF_ENCRYPTED`.
 - CSV and XLSX normalization return accepted and rejected row counts. Invalid values are masked as `***`.
 - This extractor is not a general PDF renderer and does not write page images.
+
+### M9 — Retention
+
+- Dry-run reports an old file and leaves it readable. A pin removes it from the eligible set.
+- A real sweep with a zero grace period deletes the bytes.
+- A file with no touch timestamp is not eligible for inactivity deletion.

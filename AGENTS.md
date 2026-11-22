@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M8. PDF text, CSV, and XLSX fixtures are tested. Page previews and OCR are not. Retention is not implemented.
+M9. Retention dry-run, pins, and missing inactivity evidence are tested. Webhook delivery and the AI explainer are not.

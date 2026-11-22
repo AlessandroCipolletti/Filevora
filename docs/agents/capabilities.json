@@ -51,7 +51,7 @@
     "postgresMetadata": "tested",
     "pdfExtraction": "tested",
     "tabularNormalization": "tested",
-    "retention": "not-implemented",
+    "retention": "tested",
     "webhooks": "not-implemented",
     "aiDiagnostics": "reserved",
     "semanticSearch": "unsupported",

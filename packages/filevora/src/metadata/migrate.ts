@@ -138,12 +138,18 @@ ALTER TABLE upload_sessions ADD COLUMN storage_upload_id TEXT;
 ALTER TABLE upload_sessions ADD COLUMN object_key TEXT;
 `;
 
+const MIGRATION_6 = `
+ALTER TABLE files ADD COLUMN grace_until TEXT;
+ALTER TABLE files ADD COLUMN last_touch_at TEXT;
+`;
+
 const MIGRATIONS: Array<{ id: number; sql: string }> = [
   { id: 1, sql: MIGRATION_1 },
   { id: 2, sql: MIGRATION_2 },
   { id: 3, sql: MIGRATION_3 },
   { id: 4, sql: MIGRATION_4 },
   { id: 5, sql: MIGRATION_5 },
+  { id: 6, sql: MIGRATION_6 },
 ];
 
 export function migrate(db: Sql): void {

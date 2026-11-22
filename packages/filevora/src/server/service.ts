@@ -20,6 +20,7 @@ import {
   readPdf,
 } from '../processors/normalize.js';
 import { insertJob, type JobRow } from '../queue/jobs.js';
+import { planRetention, type RetentionRow } from '../retention/plan.js';
 import { readToken, signToken } from '../security/token.js';
 import {
   concatFiles,
@@ -217,6 +218,79 @@ export class FileService {
     );
     this.ensureWorker();
     return mapJob(job);
+  }
+
+  async touch(fileId: string, ctx: RequestContext): Promise<void> {
+    await this.get(fileId, ctx);
+    const now = nowIso();
+    this.db().run(
+      'UPDATE files SET last_touch_at = ?, updated_at = ? WHERE id = ?',
+      [now, now, fileId],
+    );
+  }
+
+  async retentionSweep(opts: { dryRun?: boolean } = {}, ctx: RequestContext) {
+    const rows = this.db().all<RetentionRow>(
+      `SELECT id, bytes, pinned, created_at, deleted_at, grace_until, last_touch_at, original_object_key
+       FROM files WHERE tenant_id = ?`,
+      [ctx.principal.tenantId],
+    );
+    const plan = planRetention(rows, this.config.retention, Date.now());
+    let filesDeleted = 0;
+    if (!opts.dryRun) {
+      for (const item of plan) {
+        const row = rows.find((candidate) => candidate.id === item.fileId);
+        if (!row) continue;
+        const now = nowIso();
+        const immediate =
+          item.reason === 'grace-elapsed' ||
+          this.config.retention.gracePeriodDays === 0;
+        if (
+          immediate &&
+          row.original_object_key &&
+          this.config.storage.driver === 'filesystem'
+        ) {
+          const { rm } = await import('node:fs/promises');
+          await rm(path.join(this.root(), row.original_object_key), {
+            force: true,
+          });
+          filesDeleted += 1;
+        }
+        const grace = new Date(
+          Date.now() + this.config.retention.gracePeriodDays * 86_400_000,
+        ).toISOString();
+        this.db().run(
+          `UPDATE files SET deleted_at = COALESCE(deleted_at, ?), grace_until = ?, original_object_key = CASE WHEN ? THEN NULL ELSE original_object_key END,
+           processing_state = CASE WHEN ? THEN 'deleted' ELSE processing_state END, updated_at = ? WHERE id = ?`,
+          [
+            now,
+            immediate ? now : grace,
+            immediate ? 1 : 0,
+            immediate ? 1 : 0,
+            now,
+            row.id,
+          ],
+        );
+        this.audit(
+          this.db(),
+          ctx.principal,
+          row.id,
+          immediate ? 'retention.delete' : 'retention.soft',
+          { reason: item.reason },
+        );
+      }
+    }
+    return {
+      dryRun: Boolean(opts.dryRun),
+      filesEligible: plan.length,
+      bytesEligible: plan.reduce((sum, item) => sum + item.bytes, 0),
+      filesDeleted,
+      items: plan.map((item) => ({
+        fileId: item.fileId,
+        bytes: item.bytes,
+        reason: item.reason,
+      })),
+    };
   }
 
   async normalize(

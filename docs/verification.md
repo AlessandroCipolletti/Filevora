@@ -54,3 +54,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M8
 
 `test/m8.test.ts` passed 1 test covering the text PDF, the no-text PDF, the encrypted PDF, a CSV with one invalid email, and an XLSX sheet with one accepted row. The full suite then reported 31 tests passed and 0 failed. Biome reported no errors.
+
+## M9
+
+`test/m9.test.ts` passed 1 test. Dry-run returned one `max-age` candidate and `files.get` still succeeded. After pinning, eligibility was 0. After unpinning, the sweep deleted 1 file. `planRetention` returned no item for a file with `unusedAfterDays` and a null touch timestamp. The full suite then reported 32 tests passed and 0 failed. Biome reported no errors.
