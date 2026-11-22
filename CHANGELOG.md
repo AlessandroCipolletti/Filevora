@@ -77,3 +77,9 @@
 - `explainError` redacts the report, keeps the original error code, and drops the suggestion if the explainer throws.
 - Webhook HMAC signatures expire after five minutes. Production rejects loopback and private targets.
 - A missing FFmpeg binary throws `FFMPEG_NOT_FOUND` with its catalog path. No live model API was called.
+
+### M11 — Hardening notes
+
+- Declared PNG bytes that are not a PNG fail before a file is stored.
+- The 1×1 PNG fixture measured 46 ms in an isolated run and 81 ms in the full suite on darwin, Node v26.5.0. See `docs/benchmarks/baseline.md`.
+- `npm pack --dry-run` listed 118 files for `filevora@0.1.0`. The package was not published.

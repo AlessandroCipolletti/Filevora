@@ -10,13 +10,12 @@ Current:
 - Production refuses unacknowledged local durability and temp-dir object roots.
 - The browser entry is built without Node modules.
 
-Required before the feature is called done:
+Tested in this repository:
 
-- Sniffed MIME and byte length, not the client's filename.
-- Opaque object keys inside a resolved root. No symlink escape.
-- Signed, short-lived delivery tokens. S3 URLs are presigned and cannot be revoked before expiry; filesystem tokens are checked against deletion.
-- FFmpeg receives an argument array built from an allowlist. No shell.
-- Webhooks use HMAC and reject private targets in production.
-- Optional AI diagnostics receive a redacted report and cannot change error codes.
+- Sniffed bytes reject a declared PNG that is not a PNG.
+- Object keys reject `..`. Filesystem delivery tokens stop working after deletion. S3 presigned URLs in the emulator test did not contain the secret.
+- FFmpeg is spawned with `shell: false` and an allowlisted recipe. Abort and timeout kill the process.
+- Webhook HMAC verification rejects an old timestamp, and private or loopback targets are rejected when loopback is not allowed.
+- The optional explainer receives a redacted report and cannot replace the error code.
 
-Threat review for the implemented attack surface is updated in M11.
+Not tested here: symlink races, a live S3 bucket, malware scanning, and a networked Postgres server. The package was not published.

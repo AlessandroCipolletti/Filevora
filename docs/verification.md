@@ -62,3 +62,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M10
 
 `test/m10.test.ts` passed 3 tests. The explainer saw a redacted report and could not replace `FFMPEG_NOT_FOUND`. A provider exception left the code unchanged. Webhook verification failed 301 seconds later, and `http://127.0.0.1` plus `https://10.1.1.5` were rejected when loopback was not allowed. `runFfmpeg('definitely-not-a-filevora-ffmpeg')` threw `FFMPEG_NOT_FOUND`. The full suite then reported 35 tests passed and 0 failed. Biome reported no errors.
+
+## M11
+
+`test/m11.test.ts` passed 1 test. Non-PNG bytes declared as `image/png` were rejected. The isolated run printed `benchmark_image_ms=46`. The full suite printed `benchmark_image_ms=81` and reported 36 tests passed and 0 failed. `npm pack --dry-run` reported `filevora@0.1.0`, 118 files, unpacked size 514.4 kB. The tarball was deleted and was not published.

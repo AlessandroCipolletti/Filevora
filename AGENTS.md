@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M10. Webhook signatures and the optional explainer are tested. The explainer cannot change an error code. No live model provider was called.
+M11. Corrupt uploads are rejected. One image timing is recorded in `docs/benchmarks/baseline.md`. `npm pack --dry-run` was run and the package was not published.
