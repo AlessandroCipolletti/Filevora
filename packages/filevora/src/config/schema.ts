@@ -85,7 +85,7 @@ export const filesOptionsSchema = z
         driver: z.enum(['metadata']).optional(),
         pollIntervalMs: z.number().int().positive().optional(),
         maxAttempts: z.number().int().min(1).max(20).optional(),
-        leaseSeconds: z.number().int().min(5).max(3600).optional(),
+        leaseSeconds: z.number().int().min(1).max(3600).optional(),
         timeoutSeconds: z.number().int().min(1).max(86_400).optional(),
         backoffBaseMs: z.number().int().min(100).max(60_000).optional(),
       })

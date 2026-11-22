@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -12,6 +13,7 @@ import {
   sanitizeFilename,
   sniffMime,
 } from '../mime.js';
+import { insertJob, type JobRow } from '../queue/jobs.js';
 import { readToken, signToken } from '../security/token.js';
 import {
   concatFiles,
@@ -25,11 +27,13 @@ import type {
   FileRecord,
   Page,
   Principal,
+  ProcessingJob,
   StorageDriver,
   UploadPartRecord,
   UploadSession,
   Visibility,
 } from '../types/index.js';
+import { ensureEmbeddedWorker } from '../worker/supervisor.js';
 
 export interface RequestContext {
   principal: Principal;
@@ -107,6 +111,7 @@ export class FileService {
   private sql: Sql | undefined;
   private storage: StorageDriver | undefined;
   private secret: string | undefined;
+  private worker: ChildProcess | undefined;
 
   constructor(readonly config: ResolvedConfig) {}
 
@@ -154,8 +159,60 @@ export class FileService {
   }
 
   async close(): Promise<void> {
+    if (this.worker && !this.worker.killed) this.worker.kill('SIGTERM');
     this.sql?.close();
     this.sql = undefined;
+  }
+
+  /**
+   * Queue a job and, in embedded worker mode, start the child if one is not
+   * already alive. `delayMs` is a test-only hold so crash recovery can be
+   * observed. Image and video processors are not registered yet.
+   */
+  async process(
+    fileId: string,
+    input: { delayMs?: number } = {},
+    ctx: RequestContext,
+  ): Promise<ProcessingJob> {
+    await this.get(fileId, ctx);
+    if (input.delayMs !== undefined && this.config.env !== 'test') {
+      throw fail('INVALID_RECIPE', {
+        message: 'delayMs is only available when env is test.',
+      });
+    }
+    const type = input.delayMs === undefined ? 'preset' : 'test.hold';
+    const job = insertJob(this.db(), {
+      fileId,
+      tenantId: ctx.principal.tenantId,
+      type,
+      payload: {
+        schemaVersion: 1,
+        ...(input.delayMs === undefined ? {} : { delayMs: input.delayMs }),
+      },
+      maxAttempts: this.config.queue.maxAttempts,
+      idempotencyKey: createId('idem'),
+    });
+    this.db().run(
+      `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ?`,
+      [nowIso(), fileId],
+    );
+    this.ensureWorker();
+    return mapJob(job);
+  }
+
+  async getJob(jobId: string, ctx: RequestContext): Promise<ProcessingJob> {
+    const row = this.db().get<JobRow>(
+      'SELECT * FROM jobs WHERE id = ? AND tenant_id = ?',
+      [jobId, ctx.principal.tenantId],
+    );
+    if (!row) throw fail('NOT_FOUND');
+    return mapJob(row);
+  }
+
+  ensureWorker(): number {
+    const started = ensureEmbeddedWorker(this.db(), this.config);
+    if (started.child) this.worker = started.child;
+    return started.pid;
   }
 
   async createUploadSession(
@@ -685,6 +742,27 @@ function mapPart(row: PartRow): UploadPartRecord {
     bytes: row.bytes,
     checksum: row.checksum,
     completedAt: row.completed_at,
+  };
+}
+
+function mapJob(row: JobRow): ProcessingJob {
+  return {
+    id: row.id,
+    fileId: row.file_id,
+    tenantId: row.tenant_id,
+    type: row.type,
+    state: row.state as ProcessingJob['state'],
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    schemaVersion: row.schema_version,
+    errorCode: row.error_code,
+    errorMessage: row.error_message,
+    result: row.result_json
+      ? (JSON.parse(row.result_json) as Record<string, unknown>)
+      : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    runAfter: row.run_after,
   };
 }
 

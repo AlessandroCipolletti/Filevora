@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { redactConfig, resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
+import { runDoctor } from '../diagnostics/doctor.js';
 import { isFileSdkError } from '../errors/error.js';
 import { FILEVORA_VERSION } from '../version.js';
 
@@ -36,10 +37,12 @@ function helpText(): string {
     'Usage:',
     '  filevora capabilities --json',
     '  filevora config validate --json',
+    '  filevora doctor --json',
+    '  filevora worker',
     '  filevora --help',
     '  filevora --version',
     '',
-    'doctor, worker, inspect, and init are added in later milestones.',
+    'inspect and init are added in later milestones.',
     `version ${FILEVORA_VERSION}`,
   ].join('\n');
 }
@@ -106,6 +109,17 @@ export async function runCli(
       const config = resolveConfig(fileOptions, env);
       out.stdout(
         `${JSON.stringify({ ok: true, config: redactConfig(config) }, null, json ? 2 : 0)}\n`,
+      );
+      return 0;
+    }
+    if (command === 'doctor') {
+      const report = runDoctor({}, env);
+      out.stdout(`${JSON.stringify(report, null, json ? 2 : 0)}\n`);
+      return report.ok ? 0 : 1;
+    }
+    if (command === 'worker' && (sub === '--help' || args.includes('--help'))) {
+      out.stdout(
+        'filevora worker\nPoll the durable queue in this process. Does not spawn another worker.\n',
       );
       return 0;
     }

@@ -23,3 +23,11 @@
 - A second client with the same resume store finishes an interrupted upload. The checksum matches and the file is not duplicated.
 - Expired and unknown sessions fail with catalog errors.
 - Two files can be in flight together. IndexedDB resume records round-trip in the test environment.
+
+### M3 — Queue and embedded worker
+
+- SQLite jobs use leases, retries, and idempotency keys.
+- The first queued job spawns one child worker. A second call reuses the live pid.
+- Killing that child releases the lease. The job succeeds once, with `attempts >= 2`.
+- Preset jobs fail with `PROCESSOR_UNAVAILABLE` because no image or video processor is registered.
+- `filevora doctor --json` reports Node, config, storage, SQLite, and FFmpeg. FFmpeg is a warning when missing.

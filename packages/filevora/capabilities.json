@@ -15,7 +15,12 @@
     "filevora/worker",
     "filevora/types"
   ],
-  "cli": ["capabilities --json", "config validate --json"],
+  "cli": [
+    "capabilities --json",
+    "config validate --json",
+    "doctor --json",
+    "worker --help"
+  ],
   "runtimes": {
     "node": {
       "status": "tested",
@@ -36,9 +41,9 @@
     "sqliteMetadata": "tested",
     "httpUpload": "tested",
     "resumableUpload": "tested",
-    "durableQueue": "not-implemented",
-    "embeddedWorker": "not-implemented",
-    "doctor": "not-implemented",
+    "durableQueue": "tested",
+    "embeddedWorker": "tested",
+    "doctor": "tested",
     "imageProcessing": "not-implemented",
     "videoProcessing": "not-implemented",
     "audioProcessing": "not-implemented",

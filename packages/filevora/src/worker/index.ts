@@ -1,17 +1,22 @@
 import type { FilesOptions } from '../config/schema.js';
-import { fail } from '../errors/error.js';
+import { runWorker, type WorkerRunOptions } from './run.js';
 
-export interface WorkerOptions {
-  config?: FilesOptions;
-}
+export type { WorkerRunOptions as WorkerOptions };
 
 /**
- * Process queued jobs. Importing this module does not start a worker.
- * The worker runtime arrives in M3. Calling it now fails closed.
+ * Poll the durable queue. Importing this module does not start a worker.
+ * Pass a config file via `FILEVORA_CONFIG_PATH` or explicit options.
  */
-export async function runWorker(_options: WorkerOptions = {}): Promise<void> {
-  throw fail('FEATURE_NOT_AVAILABLE', {
-    message: 'The Filevora worker is not implemented yet.',
-    context: { feature: 'worker' },
+export async function startWorker(
+  options: WorkerRunOptions & { config?: FilesOptions } = {},
+): Promise<void> {
+  await runWorker({
+    ...(options.options ? { options: options.options } : {}),
+    ...(options.config ? { options: options.config } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.once ? { once: true } : {}),
   });
 }
+
+export { ensureEmbeddedWorker } from './supervisor.js';
+export { runWorker };

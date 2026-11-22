@@ -30,3 +30,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 ## M2
 
 `test/m2.test.ts` passed 3 tests: a 5-part upload paused after 2 parts and resumed with 3 further part requests, expired and unknown sessions, and two simultaneous files plus an IndexedDB resume record. The full suite then reported 21 tests passed and 0 failed. Biome reported no errors.
+
+## M3
+
+`test/m3.test.ts` passed 2 tests. The supervisor returned the same child pid twice. After `SIGKILL`, a new child finished the same job once (`attempts >= 2`, `result.held === true`). A preset job failed with `PROCESSOR_UNAVAILABLE`. `filevora doctor --json` exited 0 for a valid temp config and 1 for `FILES_PROVIDER=managed`.

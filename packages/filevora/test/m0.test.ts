@@ -283,7 +283,7 @@ test('handler and worker fail closed until their milestones', async () => {
   assert.equal(typeof handler, 'function');
   await assert.rejects(runWorker(), (error: unknown) => {
     assert.ok(error instanceof FileSdkError);
-    assert.equal(error.code, 'FEATURE_NOT_AVAILABLE');
+    assert.equal(error.code, 'INVALID_CONFIG');
     return true;
   });
   assert.throws(
@@ -361,6 +361,9 @@ test('capabilities manifest matches the schema and does not mark untested featur
     'sqliteMetadata',
     'httpUpload',
     'resumableUpload',
+    'durableQueue',
+    'embeddedWorker',
+    'doctor',
   ]);
   for (const [id, status] of Object.entries(manifest.features)) {
     if (status === 'tested')

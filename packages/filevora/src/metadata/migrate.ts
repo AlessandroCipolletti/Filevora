@@ -73,8 +73,44 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 `;
 
+const MIGRATION_2 = `
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  file_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  state TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL,
+  run_after TEXT NOT NULL,
+  lease_owner TEXT,
+  lease_until TEXT,
+  idempotency_key TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  result_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_idempotency
+  ON jobs (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS jobs_ready ON jobs (state, run_after);
+CREATE TABLE IF NOT EXISTS supervisor_leases (
+  id TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+`;
+
 const MIGRATIONS: Array<{ id: number; sql: string }> = [
   { id: 1, sql: MIGRATION_1 },
+  { id: 2, sql: MIGRATION_2 },
 ];
 
 export function migrate(db: Sql): void {

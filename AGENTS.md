@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M2. The browser client resumes an interrupted upload. The worker, S3, and Postgres are still unavailable.
+M3. The embedded worker is a single child process with lease recovery. Preset jobs fail with `PROCESSOR_UNAVAILABLE` until a processor milestone lands. S3 and Postgres are still unavailable.
