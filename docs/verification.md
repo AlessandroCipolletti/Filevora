@@ -69,7 +69,7 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 
 ## Follow-up
 
-`pnpm --filter filevora test` on darwin, Node v26.5.0 reported 44 tests, 42 passed, 2 skipped, 0 failed. The skipped tests were networked S3 (`FILEVORA_S3_ENDPOINT` unset) and networked Postgres (`FILEVORA_POSTGRES_URL` unset). Docker was unavailable and `psql` was not installed. The same run printed `benchmark_image_ms=88`.
+`pnpm --filter filevora test` on darwin, Node v26.5.0 reported 44 tests, 42 passed, 2 skipped, 0 failed. The skipped tests were networked S3 (`FILEVORA_S3_ENDPOINT` unset) and networked Postgres (`FILEVORA_POSTGRES_URL` unset). Docker was unavailable and `psql` was not installed. The first of those full suites printed `benchmark_image_ms=88`. A second full suite after the docs commit printed `benchmark_image_ms=107`, with the same 42 passed, 2 skipped, and 0 failed.
 
 `pdftoppm` 26.04.0 rendered the page-1 fixture to a 200×200 PNG. A missing binary name returned `PROCESSOR_UNAVAILABLE` and did not throw. `selectPosterEncoder` mapped a fixture encoder list containing `libwebp` to `libwebp`. `ffmpeg -encoders` on FFmpeg 8.1.2 listed no webp encoder, and `doctor` check `ffmpeg-webp` was `warn` with `ok: true`.
 

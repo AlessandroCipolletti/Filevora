@@ -91,6 +91,6 @@
 - PDF normalize stores a PNG of page 1 when `pdftoppm` succeeds. Poppler 26.04.0 rendered the fixture at 200×200. A missing binary returns `preview.available: false` with `PROCESSOR_UNAVAILABLE` and still returns extracted text.
 - Video posters are `image/webp`. FFmpeg encodes them only when `ffmpeg -encoders` lists libwebp. FFmpeg 8.1.2 on this machine does not, so Sharp encodes the poster. `doctor` check `ffmpeg-webp` warns and does not fail the report.
 - `pnpm run ci` typechecks, runs ESLint and Prettier, runs knip, and runs madge. The pre-commit hook runs that script. Bare `pnpm ci` is reserved by pnpm and does not run the script.
-- The full package suite on darwin, Node v26.5.0, reported 44 tests, 42 passed, 2 skipped, 0 failed. That run printed `benchmark_image_ms=88`.
+- The full package suite on darwin, Node v26.5.0, reported 44 tests, 42 passed, 2 skipped, 0 failed. One run printed `benchmark_image_ms=88`. A later run printed `benchmark_image_ms=107`. See `docs/benchmarks/baseline.md`.
 - After a clean `dist` rebuild, `npm pack --dry-run` listed 115 files, unpacked size 520.1 kB, shasum `a649bb820347927872a41f4875d58c5bcab7c8f5`. The tarball was deleted. The package was not published.
 - No new error codes. Existing `docs/errors/*.md` still match the catalog.
