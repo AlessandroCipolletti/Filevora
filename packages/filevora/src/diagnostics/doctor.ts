@@ -6,6 +6,10 @@ import type { FilesOptions } from '../config/schema.js';
 import { isFileSdkError } from '../errors/error.js';
 import { migrate } from '../metadata/migrate.js';
 import { openSqlite } from '../metadata/sqlite.js';
+import {
+  probeFfmpegEncoders,
+  selectPosterEncoder,
+} from '../processors/ffmpeg.js';
 import { FILEVORA_VERSION, METADATA_EXPORT_VERSION } from '../version.js';
 
 interface DoctorCheck {
@@ -111,6 +115,18 @@ export function runDoctor(
       ffmpeg.status === 0
         ? (ffmpeg.stdout.split('\n')[0] ?? 'FFmpeg found')
         : 'FFmpeg was not found. Video jobs cannot run.',
+  });
+  const posterEncoder = selectPosterEncoder(
+    probeFfmpegEncoders(config?.processing.ffmpegPath ?? 'ffmpeg'),
+  );
+  checks.push({
+    id: 'ffmpeg-webp',
+    status: posterEncoder === 'libwebp' ? 'pass' : 'warn',
+    required: false,
+    message:
+      posterEncoder === 'libwebp'
+        ? 'FFmpeg can encode WebP posters with libwebp.'
+        : 'FFmpeg has no libwebp encoder. Video posters are encoded by Sharp.',
   });
   const pdftoppm = spawnSync('pdftoppm', ['-v'], { encoding: 'utf8' });
   const pdftoppmLine =

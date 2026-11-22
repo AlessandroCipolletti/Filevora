@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,20 @@ import { createId, nowIso, sha256, tenantPath } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
 import { redactString } from '../redact.js';
 import { writeBytes } from '../storage/filesystem.js';
+
+/** Use FFmpeg libwebp only when that encoder is listed. Otherwise Sharp encodes the poster. */
+export function selectPosterEncoder(encoderList: string): 'libwebp' | 'sharp' {
+  return /(^|\s)libwebp(\s|$)/m.test(encoderList) ? 'libwebp' : 'sharp';
+}
+
+/** stdout and stderr of `ffmpeg -encoders`, or an empty string when the binary is missing. */
+export function probeFfmpegEncoders(ffmpeg = 'ffmpeg'): string {
+  const result = spawnSync(ffmpeg, ['-hide_banner', '-encoders'], {
+    encoding: 'utf8',
+  });
+  if (result.error) return '';
+  return `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+}
 
 interface ProbeStream {
   codec_type?: string;
@@ -419,22 +433,51 @@ async function publishMedia(
       });
       names.push('optimized');
     } else {
-      const posterPng = path.join(work, 'poster.png');
-      await runFfmpeg(
-        paths.ffmpeg,
-        ['-y', '-ss', '0', '-i', input, '-frames:v', '1', posterPng],
-        {
-          timeoutMs: limits.timeoutMs,
-          signal: hooks.signal,
-          onPid: (pid) => setRunner(sql, hooks.jobId, pid),
-        },
+      const posterEncoder = selectPosterEncoder(
+        probeFfmpegEncoders(paths.ffmpeg),
       );
       const sharp = (await import('sharp')).default;
-      const poster = await sharp(posterPng)
-        .rotate()
-        .resize({ width: 320, withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toBuffer();
+      let poster: Buffer;
+      if (posterEncoder === 'libwebp') {
+        const posterWebp = path.join(work, 'poster.webp');
+        await runFfmpeg(
+          paths.ffmpeg,
+          [
+            '-y',
+            '-ss',
+            '0',
+            '-i',
+            input,
+            '-frames:v',
+            '1',
+            '-c:v',
+            'libwebp',
+            posterWebp,
+          ],
+          {
+            timeoutMs: limits.timeoutMs,
+            signal: hooks.signal,
+            onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+          },
+        );
+        poster = readFileSync(posterWebp);
+      } else {
+        const posterPng = path.join(work, 'poster.png');
+        await runFfmpeg(
+          paths.ffmpeg,
+          ['-y', '-ss', '0', '-i', input, '-frames:v', '1', posterPng],
+          {
+            timeoutMs: limits.timeoutMs,
+            signal: hooks.signal,
+            onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+          },
+        );
+        poster = await sharp(posterPng)
+          .rotate()
+          .resize({ width: 320, withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer();
+      }
       const posterInfo = await sharp(poster).metadata();
       await storeVariant(sql, root, file, {
         name: 'thumbnail',

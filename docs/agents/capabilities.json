@@ -61,7 +61,7 @@
     "A Filevora account is not required and this package cannot create one.",
     "Status tested is used only for behavior covered by an automated test in this repository.",
     "Local verification recorded in runtimes.node.verifiedOn. GitHub Actions is defined and has not been executed from this environment.",
-    "Video posters are WebP produced by Sharp. This environment's FFmpeg 8.1.2 has no libwebp encoder, so FFmpeg is not asked to encode WebP.",
+    "Video posters are image/webp. selectPosterEncoder uses FFmpeg libwebp only when ffmpeg -encoders lists it. FFmpeg 8.1.2 on the machine used for local verification has no libwebp encoder, so posters are encoded by Sharp. doctor check ffmpeg-webp warns in that case and does not fail the report.",
     "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. AWS, R2, and MinIO were not certified in this run.",
     "Postgres queue SQL was tested with PGlite in one process: two claimers and a unique variant row. createFiles still opens SQLite. A networked Postgres server was not started.",
     "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary or a PDF Poppler cannot read leaves the preview unavailable and still returns extracted text. OCR returns OCR_NOT_CONFIGURED.",
