@@ -28,6 +28,12 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/node-minimal:
+    dependencies:
+      filevora:
+        specifier: workspace:*
+        version: link:../../packages/filevora
+
   packages/filevora:
     dependencies:
       zod:

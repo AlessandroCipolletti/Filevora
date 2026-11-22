@@ -47,4 +47,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M0. `createFiles` validates config. Upload routes, the browser client, and the worker throw `FEATURE_NOT_AVAILABLE`.
+M1. Filesystem storage, SQLite, and the HTTP adapter can upload and privately download an original. The browser client and the worker still throw `FEATURE_NOT_AVAILABLE`. S3 and Postgres configuration fail the same way.

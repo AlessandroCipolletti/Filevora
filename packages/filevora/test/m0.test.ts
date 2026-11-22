@@ -280,14 +280,7 @@ test('handler and worker fail closed until their milestones', async () => {
     authorize: async () => true,
     policy: async () => ({}),
   });
-  await assert.rejects(
-    handler(new Request('http://localhost/files')),
-    (error: unknown) => {
-      assert.ok(error instanceof FileSdkError);
-      assert.equal(error.code, 'FEATURE_NOT_AVAILABLE');
-      return true;
-    },
-  );
+  assert.equal(typeof handler, 'function');
   await assert.rejects(runWorker(), (error: unknown) => {
     assert.ok(error instanceof FileSdkError);
     assert.equal(error.code, 'FEATURE_NOT_AVAILABLE');
@@ -370,6 +363,9 @@ test('capabilities manifest matches the schema and does not mark untested featur
     'errorCatalog',
     'browserServerSplit',
     'managedProviderRejected',
+    'filesystemStorage',
+    'sqliteMetadata',
+    'httpUpload',
   ]);
   for (const [id, status] of Object.entries(manifest.features)) {
     if (status === 'tested')

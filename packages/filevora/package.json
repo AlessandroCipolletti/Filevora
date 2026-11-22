@@ -19,7 +19,9 @@
   "keywords": [
     "typescript",
     "sdk",
-    "file-upload"
+    "file-upload",
+    "sqlite",
+    "self-hosted"
   ],
   "bin": {
     "filevora": "./bin/filevora.js"

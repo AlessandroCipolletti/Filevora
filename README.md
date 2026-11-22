@@ -14,7 +14,7 @@ npm install filevora
 
 **Cloud account:** none. `provider: "managed"` fails with `FEATURE_NOT_AVAILABLE`.
 
-**Runs locally:** yes. The intended default is a filesystem directory plus SQLite. That storage path is not implemented yet (see the capability manifest).
+**Runs locally:** yes. Filesystem storage and SQLite are implemented and covered by tests. The browser upload helper and the worker are not.
 
 ```ts
 import { createFiles } from 'filevora/server';
@@ -25,14 +25,15 @@ const files = createFiles({
 });
 ```
 
-Constructing `createFiles` validates configuration. It does not open the database or spawn a worker.
+Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` is not implemented yet.
 
-| Checked in this repo               | Result                                             |
-| ---------------------------------- | -------------------------------------------------- |
-| Node                               | `>=22.13`, verified locally on darwin Node v26.5.0 |
-| Browser entry                      | bundles without Node built-ins                     |
-| Upload, storage, processing        | not implemented yet                                |
-| Managed hosting, billing, accounts | unsupported                                        |
+| Checked in this repo                 | Result                                             |
+| ------------------------------------ | -------------------------------------------------- |
+| Node                                 | `>=22.13`, verified locally on darwin Node v26.5.0 |
+| Browser entry                        | bundles without Node built-ins                     |
+| Filesystem upload and SQLite restart | tested on darwin Node v26.5.0                      |
+| Browser client, worker, processing   | not implemented yet                                |
+| Managed hosting, billing, accounts   | unsupported                                        |
 
 ```bash
 npx filevora capabilities --json

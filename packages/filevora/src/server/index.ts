@@ -1,12 +1,17 @@
 import { type ResolvedConfig, resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
+import { FileService } from './service.js';
+
+export type Files = FileService;
 
 /**
- * Server handle for Filevora.
+ * Create a Filevora server instance.
  *
- * Constructing this object validates configuration and returns. It does not
- * open a database, touch storage, or spawn a worker. Later milestones add
- * upload and processing methods on this same object.
+ * Configuration is validated immediately. SQLite and the object directory are
+ * opened on the first file operation, not during construction, and no worker
+ * is spawned.
+ *
+ * A Filevora account is not used and cannot be configured here.
  *
  * @example
  * ```ts
@@ -18,25 +23,9 @@ import type { FilesOptions } from '../config/schema.js';
  * });
  * ```
  */
-export interface Files {
-  /** Resolved configuration with defaults applied. Treat this as immutable. */
-  readonly config: ResolvedConfig;
-  /** Release resources. Safe to call when nothing has been opened yet. */
-  close(): Promise<void>;
-}
-
-/**
- * Create a Filevora server instance.
- * A Filevora account is not used and cannot be configured here.
- */
 export function createFiles(options: FilesOptions = {}): Files {
-  const config = resolveConfig(options, process.env);
-  return {
-    config,
-    async close() {
-      // M0 opens nothing. Later milestones close SQLite, pools, and child workers here.
-    },
-  };
+  return new FileService(resolveConfig(options, process.env));
 }
 
+export type { CreateSessionInput, RequestContext } from './service.js';
 export type { FilesOptions, ResolvedConfig };
