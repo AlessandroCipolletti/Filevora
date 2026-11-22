@@ -16,3 +16,10 @@
 - HTTP chunked upload and HMAC download tokens. A signed URL stops working after delete.
 - `examples/node-minimal` uploads a PNG and reads it back after a process restart.
 - S3, Postgres, the browser client, and the worker remain unavailable.
+
+### M2 — Browser client and resumable uploads
+
+- `createUploadClient` sends parts, reports progress, and can pause, resume, cancel, and retry.
+- A second client with the same resume store finishes an interrupted upload. The checksum matches and the file is not duplicated.
+- Expired and unknown sessions fail with catalog errors.
+- Two files can be in flight together. IndexedDB resume records round-trip in the test environment.

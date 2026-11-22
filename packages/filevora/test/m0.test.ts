@@ -294,14 +294,8 @@ test('handler and worker fail closed until their milestones', async () => {
       return true;
     },
   );
-  assert.throws(
-    () => createUploadClient({ endpoint: '/api/files' }),
-    (error: unknown) => {
-      assert.ok(error instanceof FileSdkError);
-      assert.equal(error.code, 'FEATURE_NOT_AVAILABLE');
-      return true;
-    },
-  );
+  const client = createUploadClient({ endpoint: '/api/files' });
+  assert.equal(typeof client.upload, 'function');
   await files.close();
 });
 
@@ -366,6 +360,7 @@ test('capabilities manifest matches the schema and does not mark untested featur
     'filesystemStorage',
     'sqliteMetadata',
     'httpUpload',
+    'resumableUpload',
   ]);
   for (const [id, status] of Object.entries(manifest.features)) {
     if (status === 'tested')

@@ -20,6 +20,7 @@
     "typescript",
     "sdk",
     "file-upload",
+    "resumable-upload",
     "sqlite",
     "self-hosted"
   ],
@@ -67,6 +68,7 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "esbuild": "^0.25.11",
+    "fake-indexeddb": "^6.2.8",
     "typescript": "^5.9.3"
   }
 }

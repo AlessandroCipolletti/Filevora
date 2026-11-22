@@ -26,3 +26,7 @@ pnpm --filter filevora test
 ```
 
 The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/idempotency failures, and `examples/node-minimal/server.ts` upload followed by a new process reading the same SQLite file. The full suite after that change reported 18 tests passed and 0 failed. Biome reported no errors.
+
+## M2
+
+`test/m2.test.ts` passed 3 tests: a 5-part upload paused after 2 parts and resumed with 3 further part requests, expired and unknown sessions, and two simultaneous files plus an IndexedDB resume record. The full suite then reported 21 tests passed and 0 failed. Biome reported no errors.

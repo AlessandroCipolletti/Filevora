@@ -35,7 +35,7 @@
     "filesystemStorage": "tested",
     "sqliteMetadata": "tested",
     "httpUpload": "tested",
-    "resumableUpload": "not-implemented",
+    "resumableUpload": "tested",
     "durableQueue": "not-implemented",
     "embeddedWorker": "not-implemented",
     "doctor": "not-implemented",
