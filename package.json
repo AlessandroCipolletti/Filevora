@@ -17,7 +17,7 @@
     "circular": "madge --circular --extensions ts --ts-config packages/filevora/tsconfig.json packages/filevora/src examples/fixture-app/src examples/node-minimal scripts",
     "ci": "pnpm typecheck && pnpm lint && pnpm knip && pnpm circular",
     "test": "pnpm build && pnpm --filter filevora test",
-    "verify": "pnpm ci && pnpm --filter filevora test",
+    "verify": "pnpm run ci && pnpm --filter filevora test",
     "prepare": "husky"
   },
   "devDependencies": {

@@ -40,7 +40,7 @@ test('GitHub Actions runs verify against Postgres and MinIO when the workflow is
     path.join(repoRoot, '.github/workflows/ci.yml'),
     'utf8',
   );
-  assert.match(workflow, /pnpm verify/);
+  assert.match(workflow, /pnpm run verify/);
   assert.match(workflow, /poppler-utils/);
   assert.match(workflow, /FILEVORA_POSTGRES_URL/);
   assert.match(workflow, /FILEVORA_S3_ENDPOINT/);

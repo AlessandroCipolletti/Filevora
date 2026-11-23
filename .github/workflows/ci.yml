@@ -65,4 +65,4 @@ jobs:
           process.exit(1);
           "
       - name: Typecheck, lint, and test
-        run: pnpm verify
+        run: pnpm run verify

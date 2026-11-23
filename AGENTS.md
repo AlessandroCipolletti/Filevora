@@ -11,7 +11,7 @@ pnpm install
 pnpm dev
 pnpm dev:client
 pnpm run ci
-pnpm verify
+pnpm run verify
 ```
 
 `pnpm dev` runs Vite in library mode with `--watch`. Each file under `packages/filevora/src` is emitted as its own ES module in `dist/`, which is what the tests, the CLI, and the worker child import. `pnpm dev:client` is the Vite dev server for the browser entry only (`packages/filevora/dev/index.html` on `http://127.0.0.1:5173`). That page is not published.
@@ -20,7 +20,7 @@ pnpm verify
 
 `pnpm run ci` typechecks, runs ESLint and Prettier, runs knip, and runs madge for circular imports. The pre-commit hook runs that script and blocks the commit when it fails. pnpm treats bare `pnpm ci` as its own command, so use `pnpm run ci`.
 
-`pnpm verify` runs `pnpm run ci` and then the package tests.
+`pnpm run verify` runs `pnpm run ci` and then the package tests. Do not call bare `pnpm ci`. pnpm reserves that word and does not run the script.
 
 Useful pieces:
 
