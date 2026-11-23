@@ -14,3 +14,7 @@ Production rules that are already enforced:
 - Distributed mode requires S3 and Postgres, and it does not auto-spawn a worker.
 
 `FILES_CLOUD_API_KEY`, `FILES_CLOUD_ENDPOINT`, and `FILES_CLOUD_PROJECT_ID` are reserved. They do not enable a service.
+
+`.env.example` lists the embedded defaults, the commented S3, Postgres, and cloud blocks, and `FILES_SINGLE_HOST_ACK`. Upload size and session lifetime are `FILES_UPLOAD_CHUNK_BYTES` (default 8388608) and `FILES_UPLOAD_SESSION_TTL_SECONDS` (default 86400).
+
+`FILEVORA_RESUME_STRATEGY`, `FILEVORA_RESUME_PERSIST_BLOB`, `FILEVORA_RESUME_MAX_PERSISTED_BYTES`, `FILEVORA_PROGRESS_CHANNEL`, and `FILEVORA_PROGRESS_POLL_MS` are for the host process. Pass them through `uploadClientOptionsFromEnv`. The browser bundle does not read `process.env`.
