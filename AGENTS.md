@@ -8,9 +8,15 @@ From the repository root, with pnpm and Node `>=22.13`:
 
 ```bash
 pnpm install
+pnpm dev
+pnpm dev:client
 pnpm run ci
 pnpm verify
 ```
+
+`pnpm dev` runs Vite in library mode with `--watch`. Each file under `packages/filevora/src` is emitted as its own ES module in `dist/`, which is what the tests, the CLI, and the worker child import. `pnpm dev:client` is the Vite dev server for the browser entry only (`packages/filevora/dev/index.html` on `http://127.0.0.1:5173`). That page is not published.
+
+`pnpm build` is `vite build`. Vite writes the JavaScript and, through `vite-plugin-dts`, the `.d.ts` files. `tsc` still typechecks (`pnpm typecheck` runs `tsc --noEmit` on `src`, `vite.config.ts`, the tests, and the fixture). `tsc` does not emit the JavaScript.
 
 `pnpm run ci` typechecks, runs ESLint and Prettier, runs knip, and runs madge for circular imports. The pre-commit hook runs that script and blocks the commit when it fails. pnpm treats bare `pnpm ci` as its own command, so use `pnpm run ci`.
 
@@ -28,12 +34,13 @@ pnpm test
 node packages/filevora/bin/filevora.js --help
 ```
 
-Tests use Node's built-in runner and TypeScript strip types. Do not use Bun.
+Tests use Node's built-in runner and TypeScript strip types. Do not use Bun. The browser check bundles both `src/client/index.ts` and `dist/client/index.js` with esbuild and rejects Node built-ins.
 
 ## Layout
 
 - `packages/filevora` is the only published package. Public imports are `filevora/server`, `filevora/client`, `filevora/http`, `filevora/worker`, and `filevora/types`.
-- `src/client` must not import Node built-ins, `sharp`, or cloud SDKs. `packages/filevora/test/m0.test.ts` bundles it with esbuild to enforce that.
+- `src/client` must not import Node built-ins, `sharp`, or cloud SDKs. `packages/filevora/test/m0.test.ts` bundles the source and the Vite output with esbuild to enforce that.
+- Do not point `new URL('./file.js', import.meta.url)` at a local module. Vite rewrites that into an inlined asset. The worker child path is `path.join(dirname, 'child.js')` so `dist/worker/child.js` stays a real file.
 - Examples under `examples/` are host-app wiring. The SDK does not ship a UI.
 - Architecture choices live in `adr/`. Change a decision with a new ADR, not a silent edit.
 

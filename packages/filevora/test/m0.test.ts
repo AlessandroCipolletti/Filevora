@@ -300,21 +300,22 @@ test('handler and worker fail closed until their milestones', async () => {
 });
 
 test('browser bundle of the client entry does not contain Node built-ins', async () => {
-  const result = await esbuild.build({
-    absWorkingDir: packageRoot,
-    entryPoints: ['src/client/index.ts'],
-    bundle: true,
-    write: false,
-    format: 'esm',
-    platform: 'browser',
-    logLevel: 'silent',
-  });
-  const text = result.outputFiles[0]?.text ?? '';
-  assert.equal(text.length > 0, true);
-  assert.doesNotMatch(
-    text,
-    /from ["']node:|require\(["']node:|node:fs|node:sqlite|node:child_process|from ["']sharp|from ["']@aws-sdk|from ["']pg["']/,
-  );
+  const forbidden =
+    /from ["']node:|require\(["']node:|node:fs|node:sqlite|node:child_process|from ["']sharp|from ["']@aws-sdk|from ["']pg["']/;
+  for (const entry of ['src/client/index.ts', 'dist/client/index.js']) {
+    const result = await esbuild.build({
+      absWorkingDir: packageRoot,
+      entryPoints: [entry],
+      bundle: true,
+      write: false,
+      format: 'esm',
+      platform: 'browser',
+      logLevel: 'silent',
+    });
+    const text = result.outputFiles[0]?.text ?? '';
+    assert.equal(text.length > 0, true, entry);
+    assert.doesNotMatch(text, forbidden, entry);
+  }
 });
 
 test('capabilities manifest matches the schema and does not mark untested features as tested', () => {

@@ -94,3 +94,9 @@
 - The full package suite on darwin, Node v26.5.0, reported 44 tests, 42 passed, 2 skipped, 0 failed. One run printed `benchmark_image_ms=88`. A later run printed `benchmark_image_ms=107`. See `docs/benchmarks/baseline.md`.
 - After a clean `dist` rebuild, `npm pack --dry-run` listed 115 files, unpacked size 520.1 kB, shasum `a649bb820347927872a41f4875d58c5bcab7c8f5`. The tarball was deleted. The package was not published.
 - No new error codes. Existing `docs/errors/*.md` still match the catalog.
+
+### Vite library build
+
+- `pnpm build` emits JavaScript with Vite 8 library mode, one ES module per source file, and writes `.d.ts` during that build. `tsc` typechecks and no longer emits JavaScript.
+- `pnpm dev` watches the library build. `pnpm dev:client` serves the browser client at `http://127.0.0.1:5173`. That page is not published.
+- Public imports are unchanged. The worker child is still `dist/worker/child.js`. The published client bundle still has no Node built-ins.

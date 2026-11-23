@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "pnpm --filter filevora build",
-    "typecheck": "pnpm build && pnpm --filter filevora exec tsc -p tsconfig.test.json --noEmit && pnpm --filter fixture-app typecheck",
+    "dev": "pnpm --filter filevora dev",
+    "dev:client": "pnpm --filter filevora dev:client",
+    "typecheck": "pnpm --filter filevora typecheck && pnpm build && pnpm --filter filevora exec tsc -p tsconfig.test.json --noEmit && pnpm --filter fixture-app typecheck",
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "knip": "knip",

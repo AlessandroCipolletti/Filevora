@@ -14,7 +14,7 @@ npm install filevora
 
 **Cloud account:** none. `provider: "managed"` fails with `FEATURE_NOT_AVAILABLE`.
 
-**Runs locally:** yes. Filesystem storage and SQLite are implemented and covered by tests. The browser upload helper and the worker are not.
+**Runs locally:** yes. Filesystem storage, SQLite, the browser upload helper, and the worker are covered by tests.
 
 ```ts
 import { createFiles } from 'filevora/server';
@@ -47,6 +47,18 @@ npx filevora capabilities --json
 npx filevora config validate --json
 npx filevora doctor --json
 ```
+
+**Develop this repository:**
+
+```bash
+pnpm install
+pnpm dev
+pnpm dev:client
+pnpm run ci
+pnpm test
+```
+
+`pnpm dev` is Vite library mode in watch. It rewrites `packages/filevora/dist` as one ES module per source file. `pnpm dev:client` serves the browser client at `http://127.0.0.1:5173` and does not start a Node server. `pnpm build` is that same library build, and it also writes the `.d.ts` files. `tsc` still typechecks the sources. It no longer emits the JavaScript. Public imports stay `filevora/server`, `filevora/client`, `filevora/http`, `filevora/worker`, and `filevora/types`.
 
 Agent notes: [docs/agents/install.md](docs/agents/install.md), [docs/agents/decision-guide.md](docs/agents/decision-guide.md), [docs/agents/capabilities.json](docs/agents/capabilities.json).
 

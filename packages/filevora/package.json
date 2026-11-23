@@ -62,8 +62,10 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.json && cp ../../README.md ./README.md",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "rm -rf dist && vite build && cp ../../README.md ./README.md",
+    "dev": "vite build --watch",
+    "dev:client": "vite",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
     "lint": "pnpm -w lint",
     "knip": "pnpm -w knip",
     "circular": "pnpm -w circular",
@@ -78,9 +80,11 @@
     "@electric-sql/pglite": "^0.5.17",
     "@types/node": "^24.10.1",
     "@types/pg": "^8.23.1",
-    "esbuild": "^0.25.11",
+    "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.8",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vite-plugin-dts": "^5.1.2"
   },
   "optionalDependencies": {
     "@aws-sdk/client-s3": "^3.1175.0",

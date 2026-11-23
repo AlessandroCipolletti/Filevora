@@ -6,7 +6,7 @@ Run from the repository root:
 pnpm verify
 ```
 
-That runs `pnpm run ci` (typecheck, ESLint, Prettier, knip, and a madge circular-import check) and then the Node test runner. The pre-commit hook runs `pnpm run ci` only.
+That runs `pnpm run ci` (typecheck, ESLint, Prettier, knip, and a madge circular-import check) and then the Node test runner. Typecheck runs `tsc --noEmit` and then `vite build`. The pre-commit hook runs `pnpm run ci` only.
 
 M0 checks:
 

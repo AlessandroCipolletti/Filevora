@@ -76,3 +76,11 @@ The M1 file reported 3 tests passed: in-process upload and restart, mime/quota/i
 `pnpm run ci` passed: typecheck, ESLint, Prettier, knip, and madge (`No circular dependency found`). GitHub Actions was not executed.
 
 After `rm -rf dist` and `pnpm --filter filevora build`, `npm pack --dry-run` reported `filevora@0.1.0`, 115 files, unpacked size 520.1 kB, shasum `a649bb820347927872a41f4875d58c5bcab7c8f5`. `packages/filevora/filevora-0.1.0.tgz` was deleted. The package was not published.
+
+## Vite library build
+
+`pnpm run ci` passed. Typecheck ran `tsc --noEmit` and then `vite build` (Vite 8.3.8). ESLint, Prettier, knip, and madge passed. Madge reported no circular dependency.
+
+`pnpm --filter filevora test` on darwin, Node v26.5.0, against that Vite `dist` reported 44 tests, 42 passed, 2 skipped, 0 failed. The skipped tests were still networked S3 and networked Postgres. The run printed `benchmark_image_ms=156`. The browser test bundled both `src/client/index.ts` and `dist/client/index.js` and found no Node built-ins. The worker test spawned `dist/worker/child.js`.
+
+`pnpm dev:client` served `http://127.0.0.1:5173/`. The transformed `src/client/upload-client.ts` response contained no `node:` import.

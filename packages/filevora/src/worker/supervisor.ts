@@ -95,7 +95,10 @@ export function ensureEmbeddedWorker(
     ) {
       return { pid: existing.pid };
     }
-    const childPath = fileURLToPath(new URL('./child.js', import.meta.url));
+    const childPath = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'child.js',
+    );
     const child = spawn(process.execPath, [childPath], {
       cwd: process.cwd(),
       env: {

@@ -7,6 +7,8 @@ pnpm install
 pnpm --filter filevora build
 ```
 
+That build is Vite library mode. It writes one ES module per source file under `packages/filevora/dist`, plus the `.d.ts` files. `pnpm dev` watches that build. `pnpm dev:client` serves the browser client for local development and is not part of the published package.
+
 A host app depends on `filevora` and imports:
 
 ```ts
