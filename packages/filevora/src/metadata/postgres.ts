@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   idempotency_key TEXT,
   error_code TEXT,
   result_json TEXT,
+  progress_ratio DOUBLE PRECISION,
+  eta_ms INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

@@ -10,6 +10,7 @@ export interface ResumeRecord {
   partUrlTemplate: string;
   completeUrl: string;
   expiresAt: string;
+  filename?: string;
   blob?: Blob;
 }
 
@@ -17,6 +18,7 @@ export interface ResumeStore {
   get(key: string): Promise<ResumeRecord | undefined>;
   set(key: string, value: ResumeRecord): Promise<void>;
   delete(key: string): Promise<void>;
+  list?(): Promise<ResumeRecord[]>;
 }
 
 export function resumeKey(endpoint: string, fingerprint: string): string {
@@ -38,6 +40,12 @@ export function createMemoryResumeStore(): ResumeStore {
     },
     async delete(key) {
       records.delete(key);
+    },
+    async list() {
+      return [...records.values()].map((value) => ({
+        ...value,
+        uploadedParts: [...value.uploadedParts],
+      }));
     },
   };
 }
@@ -63,6 +71,7 @@ interface IdbDatabase {
 interface IdbTransaction {
   objectStore(name: string): {
     get(key: string): IdbRequest;
+    getAll(): IdbRequest;
     put(value: ResumeRecord, key: string): IdbRequest;
     delete(key: string): IdbRequest;
   };
@@ -125,6 +134,11 @@ export function createIndexedDbResumeStore(dbName = 'filevora'): ResumeStore {
     },
     async delete(key) {
       await run('readwrite', (store) => store.delete(key));
+    },
+    async list() {
+      const rows = (await run('readonly', (store) => store.getAll())) as
+        ResumeRecord[] | undefined;
+      return rows ?? [];
     },
   };
 }

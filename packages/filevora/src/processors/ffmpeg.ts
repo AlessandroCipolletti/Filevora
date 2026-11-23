@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fail } from '../errors/error.js';
 import { createId, nowIso, sha256, tenantPath } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
+import { reportProcessingRatio } from '../queue/jobs.js';
 import { redactString } from '../redact.js';
 import { writeBytes } from '../storage/filesystem.js';
 
@@ -518,6 +519,7 @@ async function publishMedia(
           signal: hooks.signal,
           durationMs: probe.durationMs,
           onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+          onProgress: jobProgress(sql, hooks.jobId),
         },
       );
       const optimizedProbe = await probeMedia(
@@ -566,6 +568,7 @@ async function publishMedia(
             signal: hooks.signal,
             durationMs: probe.durationMs,
             onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+            onProgress: jobProgress(sql, hooks.jobId),
           },
         );
         const hdProbe = await probeMedia(paths.ffprobe, hd, limits.timeoutMs);
@@ -625,6 +628,7 @@ async function encodeAudio(
         signal: hooks.signal,
         durationMs,
         onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+        onProgress: jobProgress(sql, hooks.jobId),
       },
     );
     return output;
@@ -651,6 +655,7 @@ async function encodeAudio(
         signal: hooks.signal,
         durationMs,
         onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+        onProgress: jobProgress(sql, hooks.jobId),
       },
     );
     return output;
@@ -676,9 +681,21 @@ async function encodeAudio(
       signal: hooks.signal,
       durationMs,
       onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+      onProgress: jobProgress(sql, hooks.jobId),
     },
   );
   return output;
+}
+
+function jobProgress(sql: Sql, jobId: string): (ratio: number) => void {
+  let started = 0;
+  let last = -1;
+  return (ratio) => {
+    if (!started) started = Date.now();
+    if (ratio < 0.999 && last >= 0 && ratio - last < 0.05) return;
+    last = ratio;
+    reportProcessingRatio(sql, jobId, ratio, started);
+  };
 }
 
 function setRunner(sql: Sql, jobId: string, pid: number | null): void {

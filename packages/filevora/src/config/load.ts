@@ -156,6 +156,19 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
     ...(e.FILES_PUBLIC_BASE_URL
       ? { publicBaseUrl: e.FILES_PUBLIC_BASE_URL }
       : {}),
+    ...(e.FILES_UPLOAD_CHUNK_BYTES !== undefined ||
+    e.FILES_UPLOAD_SESSION_TTL_SECONDS !== undefined
+      ? {
+          upload: {
+            ...(e.FILES_UPLOAD_CHUNK_BYTES !== undefined
+              ? { chunkBytes: e.FILES_UPLOAD_CHUNK_BYTES }
+              : {}),
+            ...(e.FILES_UPLOAD_SESSION_TTL_SECONDS !== undefined
+              ? { sessionTtlSeconds: e.FILES_UPLOAD_SESSION_TTL_SECONDS }
+              : {}),
+          },
+        }
+      : {}),
     ...(e.FILES_SIGNING_SECRET
       ? { signingSecret: e.FILES_SIGNING_SECRET }
       : {}),

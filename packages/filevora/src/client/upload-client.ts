@@ -1,5 +1,6 @@
 import { ERROR_CODES, type ErrorCode } from '../errors/catalog.js';
 import { FileSdkError, fail } from '../errors/error.js';
+import { type ProcessingUpdate, readEventStream } from './progress-stream.js';
 import {
   createIndexedDbResumeStore,
   createMemoryResumeStore,
@@ -26,6 +27,7 @@ export interface UploadClientOptions {
   fileConcurrency?: number;
   retry?: { maxAttempts?: number; baseDelayMs?: number };
   resumeStore?: ResumeStore;
+  progress?: { channel?: 'sse' | 'poll'; pollMs?: number };
 }
 
 export interface UploadOptions {
@@ -39,6 +41,31 @@ export interface UploadOptions {
   };
   checksum?: string;
   signal?: AbortSignal;
+  onProgress?: (progress: UploadProgress) => void;
+}
+
+export interface HistoryVariant {
+  name: string;
+  url: string;
+  mimeType: string;
+}
+
+export interface UploadHistoryItem {
+  localId: string;
+  filename: string;
+  status: UploadState;
+  bytesUploaded: number;
+  totalBytes: number;
+  percentage: number;
+  fileId?: string;
+  originalUrl?: string;
+  variants?: HistoryVariant[];
+}
+
+export interface UploadHistory {
+  inFlight: UploadHistoryItem[];
+  sinceLoad: UploadHistoryItem[];
+  completed: UploadHistoryItem[];
 }
 
 export interface UploadTask {
@@ -94,7 +121,11 @@ export function createUploadClient(options: UploadClientOptions) {
   const maxAttempts = options.retry?.maxAttempts ?? 5;
   const baseDelayMs = options.retry?.baseDelayMs ?? 10;
   const gate = createGate(fileConcurrency);
+  const progressChannel = options.progress?.channel ?? 'sse';
+  const progressPollMs = options.progress?.pollMs ?? 1000;
   let store = options.resumeStore;
+  const sinceLoad: UploadHistoryItem[] = [];
+  let historySeq = 0;
 
   function storeFor(uploadOptions: UploadOptions | undefined): ResumeStore {
     if (store) return store;
@@ -111,12 +142,22 @@ export function createUploadClient(options: UploadClientOptions) {
 
   function upload(file: File, uploadOptions: UploadOptions = {}): UploadTask {
     const listeners: ListenerMap = { progress: new Set(), state: new Set() };
+    const item: UploadHistoryItem = {
+      localId: `upl_${(historySeq += 1)}`,
+      filename: file.name,
+      status: 'queued',
+      bytesUploaded: 0,
+      totalBytes: file.size,
+      percentage: 0,
+    };
+    sinceLoad.push(item);
     let state: UploadState = 'queued';
     const control = { paused: false, cancelled: false };
     let currentAbort: AbortController | undefined;
     let session: SessionResponse | undefined;
     const setState = (next: UploadState) => {
       state = next;
+      item.status = next;
       for (const listener of listeners.state) listener(next);
     };
     const task: UploadTask = {
@@ -177,6 +218,10 @@ export function createUploadClient(options: UploadClientOptions) {
             currentAbort = controller;
           },
           onProgress: (progress) => {
+            item.bytesUploaded = progress.bytesUploaded;
+            item.totalBytes = progress.totalBytes;
+            item.percentage = progress.percentage;
+            uploadOptions.onProgress?.(progress);
             for (const listener of listeners.progress) listener(progress);
           },
           onSession: (value) => {
@@ -187,6 +232,7 @@ export function createUploadClient(options: UploadClientOptions) {
               ? undefined
               : storeFor(uploadOptions),
         });
+        item.fileId = record.id;
         setState('completed');
         return record;
       } catch (error) {
@@ -231,7 +277,132 @@ export function createUploadClient(options: UploadClientOptions) {
     throw fail('PROCESSING_TIMEOUT');
   }
 
-  return { endpoint, upload, waitForProcessing };
+  async function watchProcessing(
+    fileId: string,
+    listener: (update: ProcessingUpdate) => void,
+    watch: {
+      signal?: AbortSignal;
+      channel?: 'sse' | 'poll';
+      pollMs?: number;
+    } = {},
+  ): Promise<void> {
+    const channel = watch.channel ?? progressChannel;
+    const pollMs = watch.pollMs ?? progressPollMs;
+    if (channel === 'sse') {
+      try {
+        await watchSse(fileId, listener, watch.signal);
+        return;
+      } catch (error) {
+        if (watch.signal?.aborted) throw error;
+      }
+    }
+    await watchPoll(fileId, listener, pollMs, watch.signal);
+  }
+
+  async function watchSse(
+    fileId: string,
+    listener: (update: ProcessingUpdate) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await fetchRaw(
+      doFetch,
+      `${endpoint}/files/${encodeURIComponent(fileId)}/progress`,
+      { headers: await headers(options.headers), signal },
+    );
+    if (!response.ok) throw await errorFrom(response);
+    await readEventStream(response, listener);
+  }
+
+  async function watchPoll(
+    fileId: string,
+    listener: (update: ProcessingUpdate) => void,
+    pollMs: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    for (;;) {
+      if (signal?.aborted) throw fail('CANCELLED');
+      const update = (await request(
+        doFetch,
+        `${endpoint}/files/${encodeURIComponent(fileId)}/progress`,
+        {
+          headers: {
+            ...(await headers(options.headers)),
+            accept: 'application/json',
+          },
+          signal,
+        },
+      )) as unknown as ProcessingUpdate;
+      listener(update);
+      if (update.terminal) return;
+      await delay(pollMs);
+    }
+  }
+
+  async function history(): Promise<UploadHistory> {
+    const completed: UploadHistoryItem[] = [];
+    for (const item of sinceLoad) {
+      if (item.status !== 'completed' || !item.fileId) continue;
+      const delivery = (await request(
+        doFetch,
+        `${endpoint}/files/${encodeURIComponent(item.fileId)}/delivery`,
+        {
+          method: 'POST',
+          headers: {
+            ...(await headers(options.headers)),
+            'content-type': 'application/json',
+          },
+          body: '{}',
+        },
+      )) as {
+        original?: { url: string };
+        variants?: Record<string, { url: string; mimeType: string }>;
+      };
+      item.originalUrl = delivery.original?.url;
+      item.variants = Object.entries(delivery.variants ?? {}).map(
+        ([name, variant]) => ({
+          name,
+          url: variant.url,
+          mimeType: variant.mimeType,
+        }),
+      );
+      completed.push({
+        ...item,
+        variants: item.variants?.map((variant) => ({ ...variant })),
+      });
+    }
+    const inFlight = sinceLoad
+      .filter(
+        (item) =>
+          item.status === 'queued' ||
+          item.status === 'uploading' ||
+          item.status === 'paused',
+      )
+      .map((item) => ({ ...item }));
+    return {
+      inFlight,
+      sinceLoad: sinceLoad.map((item) => ({
+        ...item,
+        variants: item.variants?.map((variant) => ({ ...variant })),
+      })),
+      completed,
+    };
+  }
+
+  async function pending(): Promise<ResumeRecord[]> {
+    const current = options.resumeStore ?? store;
+    if (!current?.list) return [];
+    const rows = await current.list();
+    return rows.filter((row) => !row.endpoint || row.endpoint === endpoint);
+  }
+
+  return {
+    endpoint,
+    upload,
+    waitForProcessing,
+    watchProcessing,
+    history,
+    pending,
+  };
 }
 
 interface RunContext {
@@ -301,7 +472,12 @@ async function runUpload(
         if (ctx.store)
           await ctx.store.set(
             key,
-            persistable(session as SessionResponse, file, uploadOptions),
+            persistable(
+              session as SessionResponse,
+              file,
+              uploadOptions,
+              ctx.endpoint,
+            ),
           );
         ctx.onProgress(progress(Math.min(uploadedBytes, file.size), file.size));
       }
@@ -387,7 +563,7 @@ async function createSession(
   if (ctx.store)
     await ctx.store.set(
       resumeKey(ctx.endpoint, fingerprint(file)),
-      persistable(created, file, uploadOptions),
+      persistable(created, file, uploadOptions, ctx.endpoint),
     );
   return created;
 }
@@ -463,6 +639,7 @@ function persistable(
   session: SessionResponse,
   file: File,
   uploadOptions: UploadOptions,
+  endpoint: string,
 ): ResumeRecord {
   const mode = uploadOptions.resume?.persistBlob ?? 'auto';
   const maxBytes = uploadOptions.resume?.maxPersistedBytes ?? 32 * 1024 * 1024;
@@ -470,7 +647,8 @@ function persistable(
     mode === 'always' || (mode === 'auto' && file.size <= maxBytes);
   return {
     fingerprint: fingerprint(file),
-    endpoint: '',
+    endpoint,
+    filename: file.name,
     sessionId: session.id ?? session.sessionId,
     fileId: session.fileId,
     idempotencyKey: session.idempotencyKey,

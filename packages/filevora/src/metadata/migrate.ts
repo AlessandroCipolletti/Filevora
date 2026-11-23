@@ -143,6 +143,11 @@ ALTER TABLE files ADD COLUMN grace_until TEXT;
 ALTER TABLE files ADD COLUMN last_touch_at TEXT;
 `;
 
+const MIGRATION_7 = `
+ALTER TABLE jobs ADD COLUMN progress_ratio REAL;
+ALTER TABLE jobs ADD COLUMN eta_ms INTEGER;
+`;
+
 const MIGRATIONS: Array<{ id: number; sql: string }> = [
   { id: 1, sql: MIGRATION_1 },
   { id: 2, sql: MIGRATION_2 },
@@ -150,6 +155,7 @@ const MIGRATIONS: Array<{ id: number; sql: string }> = [
   { id: 4, sql: MIGRATION_4 },
   { id: 5, sql: MIGRATION_5 },
   { id: 6, sql: MIGRATION_6 },
+  { id: 7, sql: MIGRATION_7 },
 ];
 
 export function migrate(db: Sql): void {

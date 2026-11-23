@@ -20,6 +20,7 @@ import {
   readPdf,
 } from '../processors/normalize.js';
 import { renderPdfFirstPage } from '../processors/pdf-preview.js';
+import { streamsDetailedProgress } from '../progress/estimate.js';
 import { insertJob, type JobRow } from '../queue/jobs.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
 import { assertUnexpired, readToken, signToken } from '../security/token.js';
@@ -412,6 +413,44 @@ export class FileService {
       [now, now, jobId],
     );
     return this.getJob(jobId, ctx);
+  }
+
+  async processingSnapshot(fileId: string, ctx: RequestContext) {
+    const record = await this.get(fileId, ctx);
+    const job = this.db().get<{
+      state: string;
+      progress_ratio: number | null;
+      eta_ms: number | null;
+    }>(
+      `SELECT state, progress_ratio, eta_ms FROM jobs
+       WHERE file_id = ? AND tenant_id = ?
+       ORDER BY created_at DESC LIMIT 1`,
+      [fileId, ctx.principal.tenantId],
+    );
+    const quiet = !streamsDetailedProgress(record.detectedMime);
+    const fileDone =
+      record.processingState === 'none' ||
+      record.processingState === 'ready' ||
+      record.processingState === 'partially_ready' ||
+      record.processingState === 'failed' ||
+      record.processingState === 'deleted';
+    const jobDone =
+      !job ||
+      job.state === 'succeeded' ||
+      job.state === 'failed' ||
+      job.state === 'cancelled' ||
+      job.state === 'dead';
+    return {
+      fileId,
+      state: record.processingState,
+      percentage:
+        job?.progress_ratio == null
+          ? null
+          : Math.round(job.progress_ratio * 100),
+      etaMs: quiet ? null : (job?.eta_ms ?? null),
+      quiet,
+      terminal: quiet ? fileDone : fileDone && jobDone,
+    };
   }
 
   async getJob(jobId: string, ctx: RequestContext): Promise<ProcessingJob> {

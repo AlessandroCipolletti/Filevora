@@ -117,7 +117,8 @@ interface Route {
     | 'list'
     | 'get'
     | 'delete'
-    | 'delivery';
+    | 'delivery'
+    | 'progress';
   sessionId?: string;
   fileId?: string;
   partNumber?: number;
@@ -173,6 +174,14 @@ function matchRoute(method: string, pathname: string): Route | null {
       name: 'delete',
       fileId: decodeURIComponent(file[1]),
     };
+  const progress = /^\/files\/([^/]+)\/progress$/.exec(pathname);
+  if (progress?.[1] && method === 'GET') {
+    return {
+      operation: 'job.read',
+      name: 'progress',
+      fileId: decodeURIComponent(progress[1]),
+    };
+  }
   const delivery = /^\/files\/([^/]+)\/delivery$/.exec(pathname);
   if (delivery?.[1] && method === 'POST') {
     return {
@@ -311,6 +320,63 @@ async function dispatch(
   if (route.name === 'delete' && route.fileId) {
     await options.files.delete(route.fileId, ctx);
     return json({ deleted: true }, 200, requestId);
+  }
+  if (route.name === 'progress' && route.fileId) {
+    const wantsJson = (request.headers.get('accept') ?? '').includes(
+      'application/json',
+    );
+    if (wantsJson) {
+      return json(
+        await options.files.processingSnapshot(route.fileId, ctx),
+        200,
+        requestId,
+      );
+    }
+    const fileId = route.fileId;
+    const encoder = new TextEncoder();
+    let closed = false;
+    const stream = new ReadableStream({
+      async start(controller) {
+        let previous = '';
+        try {
+          for (;;) {
+            const snapshot = await options.files.processingSnapshot(
+              fileId,
+              ctx,
+            );
+            const line = JSON.stringify(snapshot);
+            const emit = !snapshot.quiet || snapshot.terminal;
+            if (emit && line !== previous) {
+              controller.enqueue(encoder.encode(`data: ${line}\n\n`));
+              previous = line;
+            }
+            if (snapshot.terminal) break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : 'progress failed';
+          controller.enqueue(
+            encoder.encode(
+              `event: error\ndata: ${JSON.stringify({ message })}\n\n`,
+            ),
+          );
+        } finally {
+          if (!closed) controller.close();
+        }
+      },
+      cancel() {
+        closed = true;
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-store',
+        'x-request-id': requestId,
+      },
+    });
   }
   if (route.name === 'delivery' && route.fileId) {
     const body = await readJson(request).catch(() => ({}));

@@ -258,6 +258,8 @@ const envShape = {
   FILES_CLOUD_ENDPOINT: z.string().optional(),
   FILES_CLOUD_PROJECT_ID: z.string().optional(),
   FILES_WEBHOOKS_ALLOW_LOOPBACK: boolString.optional(),
+  FILES_UPLOAD_CHUNK_BYTES: byteString.optional(),
+  FILES_UPLOAD_SESSION_TTL_SECONDS: byteString.optional(),
 };
 
 export const envSchema = z.object(envShape).strip();

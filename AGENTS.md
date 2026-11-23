@@ -41,6 +41,7 @@ Tests use Node's built-in runner and TypeScript strip types. Do not use Bun. The
 - `packages/filevora` is the only published package. Public imports are `filevora/server`, `filevora/client`, `filevora/http`, `filevora/worker`, and `filevora/types`.
 - `src/client` must not import Node built-ins, `sharp`, or cloud SDKs. `packages/filevora/test/m0.test.ts` bundles the source and the Vite output with esbuild to enforce that.
 - Do not point `new URL('./file.js', import.meta.url)` at a local module. Vite rewrites that into an inlined asset. The worker child path is `path.join(dirname, 'child.js')` so `dist/worker/child.js` stays a real file.
+- Processing progress is SSE consumed with `fetch`, so the host `Authorization` header is preserved. Polling is the fallback. Do not store signed URLs in the resume store. `history()` refetches them. See `adr/0017-processing-progress-channel.md` and `adr/0018-upload-history-storage.md`.
 - Examples under `examples/` are host-app wiring. The SDK does not ship a UI.
 - Architecture choices live in `adr/`. Change a decision with a new ADR, not a silent edit.
 

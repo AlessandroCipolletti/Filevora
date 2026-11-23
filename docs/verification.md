@@ -84,3 +84,7 @@ After `rm -rf dist` and `pnpm --filter filevora build`, `npm pack --dry-run` rep
 `pnpm --filter filevora test` on darwin, Node v26.5.0, against that Vite `dist` reported 44 tests, 42 passed, 2 skipped, 0 failed. The skipped tests were still networked S3 and networked Postgres. The run printed `benchmark_image_ms=156`. The browser test bundled both `src/client/index.ts` and `dist/client/index.js` and found no Node built-ins. The worker test spawned `dist/worker/child.js`.
 
 `pnpm dev:client` served `http://127.0.0.1:5173/`. The transformed `src/client/upload-client.ts` response contained no `node:` import.
+
+## Client progress and history
+
+`pnpm run ci` passed after the progress and history changes. `pnpm --filter filevora test` on darwin, Node v26.5.0 reported 48 tests, 46 passed, 2 skipped, 0 failed. The skipped tests were networked S3 and networked Postgres. The run printed `benchmark_image_ms=91`. `test/realtime.test.ts` covered percent and bytes, resume from a second client on the same store, host env parsing, one quiet image event, and a video progress event with `etaMs` plus a signed `/content/` URL in history.

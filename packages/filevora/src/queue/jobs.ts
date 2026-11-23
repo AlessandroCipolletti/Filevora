@@ -1,5 +1,6 @@
 import { createId, nowIso } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
+import { estimateRemainingMs } from '../progress/estimate.js';
 import { JOB_SCHEMA_VERSION } from '../version.js';
 
 export interface JobRow {
@@ -107,6 +108,20 @@ export function claimJob(
       [row.id, owner],
     );
   });
+}
+
+export function reportProcessingRatio(
+  sql: Sql,
+  jobId: string,
+  ratio: number,
+  startedAtMs: number,
+): void {
+  const bounded = Math.min(1, Math.max(0, ratio));
+  const eta = estimateRemainingMs(startedAtMs, bounded, Date.now());
+  sql.run(
+    `UPDATE jobs SET progress_ratio = ?, eta_ms = ?, updated_at = ? WHERE id = ?`,
+    [bounded, eta, nowIso(), jobId],
+  );
 }
 
 export function heartbeatJob(

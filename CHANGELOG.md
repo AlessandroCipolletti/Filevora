@@ -100,3 +100,9 @@
 - `pnpm build` emits JavaScript with Vite 8 library mode, one ES module per source file, and writes `.d.ts` during that build. `tsc` typechecks and no longer emits JavaScript.
 - `pnpm dev` watches the library build. `pnpm dev:client` serves the browser client at `http://127.0.0.1:5173`. That page is not published.
 - Public imports are unchanged. The worker child is still `dist/worker/child.js`. The published client bundle still has no Node built-ins.
+
+### Client progress and history
+
+- Upload tasks report percent and bytes. `watchProcessing` follows video and audio jobs over SSE, with JSON polling as fallback. Image jobs emit one terminal event.
+- `history()` is in memory for the page load and refetches short-lived delivery URLs. `pending()` lists resume-store sessions after a refresh.
+- Host env vars are documented in `.env.example`. `uploadClientOptionsFromEnv` reads them in the host process.

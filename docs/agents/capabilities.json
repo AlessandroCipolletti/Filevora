@@ -54,6 +54,9 @@
     "retention": "tested",
     "webhooks": "tested",
     "aiDiagnostics": "tested",
+    "uploadProgress": "tested",
+    "processingProgress": "tested",
+    "uploadHistory": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -65,6 +68,7 @@
     "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. A networked S3 test runs when FILEVORA_S3_ENDPOINT, FILEVORA_S3_BUCKET, and the access keys are set. Docker was unavailable on the local machine, so that test was skipped. AWS, R2, and MinIO were not certified in this run.",
     "Postgres queue SQL was tested with PGlite in one process: two claimers and a unique variant row. createFiles still opens SQLite. A networked Postgres test runs when FILEVORA_POSTGRES_URL is set. psql was not installed here, so that test was skipped.",
     "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary or a PDF Poppler cannot read leaves the preview unavailable and still returns extracted text. OCR returns OCR_NOT_CONFIGURED.",
-    "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini."
+    "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
+    "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs."
   ]
 }
