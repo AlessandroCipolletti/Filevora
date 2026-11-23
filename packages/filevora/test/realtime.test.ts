@@ -10,10 +10,11 @@ import {
 } from '../dist/client/index.js';
 import type { ProcessingUpdate } from '../dist/client/progress-stream.js';
 import { openSqlite } from '../dist/metadata/sqlite.js';
-import { reportProcessingRatio } from '../dist/queue/jobs.js';
+import { recordProcessingProgress } from '../dist/queue/processing-queue.js';
 import { estimateRemainingMs } from '../dist/progress/estimate.js';
 import { createFilesHandler } from '../dist/http/index.js';
 import { createFiles } from '../dist/server/index.js';
+import { runWorker } from '../dist/worker/index.js';
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -177,6 +178,7 @@ test('image progress is one quiet event and video progress includes eta', async 
     const imageFile = await quietClient
       .upload(image(64 * 1024, 'still.png'))
       .complete();
+    await runWorker({ once: true, options });
     const quiet: ProcessingUpdate[] = [];
     await quietClient.watchProcessing(imageFile.id, (update) =>
       quiet.push(update),
@@ -188,13 +190,13 @@ test('image progress is one quiet event and video progress includes eta', async 
     const videoFile = await client(fetchImpl)
       .upload(image(64 * 1024, 'motion.png'))
       .complete();
-    const job = await files.process(videoFile.id, {}, { principal });
+    await files.process(videoFile.id, {}, { principal });
     const sql = openSqlite(options.metadata.filename);
     sql.run(
       `UPDATE files SET detected_mime = 'video/mp4', processing_state = 'processing' WHERE id = ?`,
       [videoFile.id],
     );
-    reportProcessingRatio(sql, job.id, 0.4, Date.now() - 10_000);
+    await recordProcessingProgress(videoFile.id, 0.4, Date.now() - 10_000);
     sql.close();
     const live: ProcessingUpdate[] = [];
     const done = client(fetchImpl).watchProcessing(videoFile.id, (update) => {
@@ -204,7 +206,6 @@ test('image progress is one quiet event and video progress includes eta', async 
         next.run(`UPDATE files SET processing_state = 'ready' WHERE id = ?`, [
           videoFile.id,
         ]);
-        next.run(`UPDATE jobs SET state = 'succeeded' WHERE id = ?`, [job.id]);
         next.close();
       }
     });

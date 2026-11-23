@@ -117,6 +117,20 @@ test('upload start returns a stable asset id and versions keep the original', as
     assert.equal(pending.assetId, session.assetId);
     assert.match(pending.versions._original?.url ?? '', /\/content\//);
     assert.equal(pending.status, 'queued');
+    const listed = await handler(
+      new Request('http://app.local/assets', {
+        headers: { 'x-user': 'user-a', 'x-tenant': 'tenant-a' },
+      }),
+    );
+    const ids = (await listed.json()) as { assetIds: string[] };
+    assert.ok(ids.assetIds.includes(session.assetId));
+    const hidden = await handler(
+      new Request('http://app.local/assets', {
+        headers: { 'x-user': 'user-b', 'x-tenant': 'tenant-b' },
+      }),
+    );
+    const other = (await hidden.json()) as { assetIds: string[] };
+    assert.deepEqual(other.assetIds, []);
     const sqlPath = options.metadata.filename;
     const { openSqlite } = await import('../dist/metadata/sqlite.js');
     const sql = openSqlite(sqlPath);

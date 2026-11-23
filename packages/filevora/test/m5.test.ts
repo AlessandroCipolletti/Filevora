@@ -13,6 +13,7 @@ import {
   progressRatio,
   runFfmpeg,
 } from '../dist/processors/ffmpeg.js';
+import { readRunnerPid } from '../dist/queue/processing-queue.js';
 import { createFiles } from '../dist/server/index.js';
 
 const principal = { id: 'user-a', tenantId: 'tenant-a' };
@@ -163,10 +164,8 @@ test(
       let runnerPid = 0;
       const started = Date.now();
       while (Date.now() - started < 20_000 && runnerPid === 0) {
-        const row = db
-          .prepare('SELECT runner_pid FROM jobs WHERE id = ?')
-          .get(job.id) as { runner_pid: number | null } | undefined;
-        if (row?.runner_pid) runnerPid = row.runner_pid;
+        const recorded = await readRunnerPid(job.id);
+        if (recorded) runnerPid = recorded;
         else await new Promise((resolve) => setTimeout(resolve, 20));
       }
       assert.ok(runnerPid > 0);

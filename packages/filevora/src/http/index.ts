@@ -115,6 +115,7 @@ interface Route {
     | 'complete'
     | 'abort'
     | 'list'
+    | 'assets'
     | 'get'
     | 'delete'
     | 'delivery'
@@ -160,6 +161,8 @@ function matchRoute(method: string, pathname: string): Route | null {
       sessionId: decodeURIComponent(abort[1]),
     };
   }
+  if (method === 'GET' && pathname === '/assets')
+    return { operation: 'file.list', name: 'assets' };
   if (method === 'GET' && pathname === '/files')
     return { operation: 'file.list', name: 'list' };
   const file = /^\/files\/([^/]+)$/.exec(pathname);
@@ -310,6 +313,19 @@ async function dispatch(
   if (route.name === 'abort' && route.sessionId) {
     await options.files.abortUpload(route.sessionId, ctx);
     return json({ aborted: true }, 200, requestId);
+  }
+  if (route.name === 'assets') {
+    const url = new URL(request.url);
+    const limit = url.searchParams.get('limit');
+    const cursor = url.searchParams.get('cursor') ?? undefined;
+    const page = await options.files.listAssetIds(
+      {
+        ...(limit ? { limit: Number(limit) } : {}),
+        ...(cursor ? { cursor } : {}),
+      },
+      ctx,
+    );
+    return json(page, 200, requestId);
   }
   if (route.name === 'list') {
     const url = new URL(request.url);

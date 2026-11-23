@@ -82,7 +82,8 @@ export const filesOptionsSchema = z
       .optional(),
     queue: z
       .object({
-        driver: z.enum(['metadata']).optional(),
+        driver: z.enum(['bullmq']).optional(),
+        redisUrl: z.string().min(1).optional(),
         pollIntervalMs: z.number().int().positive().optional(),
         maxAttempts: z.number().int().min(1).max(20).optional(),
         leaseSeconds: z.number().int().min(1).max(3600).optional(),
@@ -210,7 +211,7 @@ const envShape = {
   FILES_SQLITE_PATH: z.string().optional(),
   FILES_POSTGRES_URL: z.string().optional(),
   FILES_POSTGRES_SCHEMA: z.string().optional(),
-  FILES_QUEUE_DRIVER: z.enum(['metadata']).optional(),
+  FILES_QUEUE_DRIVER: z.enum(['bullmq']).optional(),
   FILES_QUEUE_POLL_INTERVAL_MS: byteString.optional(),
   FILES_JOB_MAX_ATTEMPTS: byteString.optional(),
   FILES_JOB_LEASE_SECONDS: byteString.optional(),
@@ -258,6 +259,8 @@ const envShape = {
   FILES_CLOUD_ENDPOINT: z.string().optional(),
   FILES_CLOUD_PROJECT_ID: z.string().optional(),
   FILES_WEBHOOKS_ALLOW_LOOPBACK: boolString.optional(),
+  REDIS_URL: z.string().min(1).optional(),
+  FILES_REDIS_URL: z.string().min(1).optional(),
   FILES_UPLOAD_CHUNK_BYTES: byteString.optional(),
   FILES_UPLOAD_SESSION_TTL_SECONDS: byteString.optional(),
 };

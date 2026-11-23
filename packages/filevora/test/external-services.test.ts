@@ -6,8 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { CreateBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import {
   applyPostgresSchema,
-  claimJob,
-  enqueueJob,
   externalTargets,
 } from '../dist/metadata/postgres.js';
 import { createS3Storage } from '../dist/storage/s3.js';
@@ -93,7 +91,7 @@ test('networked S3 put and read', async (t) => {
   await storage.deleteObject(key);
 });
 
-test('networked Postgres claim', async (t) => {
+test('networked Postgres accepts the metadata schema', async (t) => {
   const url = process.env.FILEVORA_POSTGRES_URL;
   if (!url) {
     t.skip(
@@ -117,22 +115,8 @@ test('networked Postgres claim', async (t) => {
   };
   try {
     await applyPostgresSchema(queryable);
-    const now = new Date().toISOString();
-    const id = `job_${Date.now()}`;
-    await enqueueJob(queryable, {
-      id,
-      fileId: 'file_ci',
-      tenantId: 'tenant-ci',
-      idempotencyKey: id,
-      now,
-    });
-    const claimed = await claimJob(
-      queryable,
-      'worker-ci',
-      now,
-      new Date(Date.now() + 30_000).toISOString(),
-    );
-    assert.equal(claimed, id);
+    const ping = await queryable.query<{ ok: number }>('SELECT 1 AS ok');
+    assert.equal(ping.rows[0]?.ok, 1);
   } finally {
     await pool.end();
   }

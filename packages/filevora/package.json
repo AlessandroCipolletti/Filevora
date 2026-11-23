@@ -73,7 +73,9 @@
     "test": "node --experimental-strip-types --test --test-reporter=spec \"test/**/*.test.ts\""
   },
   "dependencies": {
+    "bullmq": "^6.7.8",
     "exceljs": "^4.4.0",
+    "ioredis": "^6.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -82,6 +84,7 @@
     "@types/pg": "^8.23.1",
     "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.8",
+    "redis-memory-server": "^0.17.2",
     "typescript": "^5.9.3",
     "vite": "^8.3.8",
     "vite-plugin-dts": "^5.1.2"

@@ -34,6 +34,7 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
+      "redis-memory-server",
       "sharp"
     ]
   }

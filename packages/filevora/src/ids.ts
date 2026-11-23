@@ -14,6 +14,41 @@ export function tenantPath(tenantId: string): string {
   return createHash('sha256').update(tenantId).digest('hex').slice(0, 32);
 }
 
+/**
+ * Object name `{assetId}_{version}.{ext}` under the tenant prefix.
+ * The asset id itself stays in the metadata database. Redis does not name files.
+ */
+export function assetObjectKey(
+  tenantId: string,
+  assetId: string,
+  version: string,
+  ext: string,
+): string {
+  const safeVersion = version.replace(/[^a-zA-Z0-9_-]/g, '');
+  const safeExt = ext.replace(/^\./, '').replace(/[^a-zA-Z0-9]/g, '') || 'bin';
+  return `${tenantPath(tenantId)}/${assetId}_${safeVersion}.${safeExt}`;
+}
+
+export function extensionForMime(mime: string): string {
+  const known: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'image/avif': 'avif',
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+    'video/quicktime': 'mov',
+    'audio/mpeg': 'mp3',
+    'audio/mp4': 'm4a',
+    'audio/wav': 'wav',
+    'application/pdf': 'pdf',
+    'text/csv': 'csv',
+    'application/json': 'json',
+  };
+  return known[mime] ?? 'bin';
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }

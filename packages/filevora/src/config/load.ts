@@ -42,7 +42,8 @@ export interface ResolvedConfig {
     schema: string;
   };
   queue: {
-    driver: 'metadata';
+    driver: 'bullmq';
+    redisUrl: string;
     pollIntervalMs: number;
     maxAttempts: number;
     leaseSeconds: number;
@@ -212,6 +213,9 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
       ...(e.FILES_POSTGRES_SCHEMA ? { schema: e.FILES_POSTGRES_SCHEMA } : {}),
     },
     queue: {
+      ...(e.REDIS_URL || e.FILES_REDIS_URL
+        ? { redisUrl: e.REDIS_URL || e.FILES_REDIS_URL }
+        : {}),
       ...(e.FILES_QUEUE_DRIVER ? { driver: e.FILES_QUEUE_DRIVER } : {}),
       ...(e.FILES_QUEUE_POLL_INTERVAL_MS !== undefined
         ? { pollIntervalMs: e.FILES_QUEUE_POLL_INTERVAL_MS }
@@ -546,7 +550,9 @@ export function resolveConfig(
       schema: input.metadata?.schema ?? 'filevora',
     },
     queue: {
-      driver: 'metadata',
+      driver: 'bullmq',
+      redisUrl:
+        input.queue?.redisUrl || env.REDIS_URL || env.FILES_REDIS_URL || '',
       pollIntervalMs: input.queue?.pollIntervalMs ?? 1000,
       maxAttempts: input.queue?.maxAttempts ?? 5,
       leaseSeconds: input.queue?.leaseSeconds ?? 120,

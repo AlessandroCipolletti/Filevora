@@ -27,6 +27,8 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
       schema: config.metadata.schema,
     },
     queue: {
+      driver: 'bullmq',
+      ...(config.queue.redisUrl ? { redisUrl: config.queue.redisUrl } : {}),
       pollIntervalMs: config.queue.pollIntervalMs,
       maxAttempts: config.queue.maxAttempts,
       leaseSeconds: config.queue.leaseSeconds,

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fail } from '../errors/error.js';
-import { createId, nowIso, sha256, tenantPath } from '../ids.js';
+import { assetObjectKey, createId, nowIso, sha256 } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
 import { writeBytes } from '../storage/filesystem.js';
 
@@ -62,7 +62,7 @@ export async function publishImagePreset(
       .toBuffer();
     const info = await sharp(body).metadata();
     const id = createId('variant');
-    const key = `${tenantPath(file.tenant_id)}/files/${file.id}/variants/${id}/${target.name}.webp`;
+    const key = assetObjectKey(file.tenant_id, file.id, target.name, 'webp');
     await writeBytes(root, key, body);
     sql.run(
       `INSERT INTO variants (

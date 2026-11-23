@@ -4,8 +4,6 @@ import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import {
   applyPostgresSchema,
-  claimJob,
-  enqueueJob,
   publishVariantOnce,
 } from '../dist/metadata/postgres.js';
 import { createS3Storage } from '../dist/storage/s3.js';
@@ -22,7 +20,6 @@ test('two PGlite workers share one database and S3 object without duplicate vari
   };
   await applyPostgresSchema(queryable);
   const now = new Date().toISOString();
-  const later = new Date(Date.now() + 30_000).toISOString();
   const emulator = await startS3Emulator({
     bucket: 'uploads',
     secret: 'localpassword',
@@ -47,27 +44,6 @@ test('two PGlite workers share one database and S3 object without duplicate vari
        VALUES ('file_1', 'tenant-a', 'user-a', 'clip.png', $1, 'tenant/file/original/object', 'verified', 'queued', $2)`,
       [body.byteLength, now],
     );
-    const first = await enqueueJob(queryable, {
-      id: 'job_1',
-      fileId: 'file_1',
-      tenantId: 'tenant-a',
-      idempotencyKey: 'process:file_1:web-optimized:1',
-      now,
-    });
-    const second = await enqueueJob(queryable, {
-      id: 'job_2',
-      fileId: 'file_1',
-      tenantId: 'tenant-a',
-      idempotencyKey: 'process:file_1:web-optimized:1',
-      now,
-    });
-    assert.equal(first, second);
-    const claims = await Promise.all([
-      claimJob(queryable, 'worker-a', now, later),
-      claimJob(queryable, 'worker-b', now, later),
-    ]);
-    const won = claims.filter((id) => id === 'job_1');
-    assert.equal(won.length, 1);
     const head = await storage.headObject('tenant/file/original/object');
     assert.equal(head?.bytes, body.byteLength);
     const published = await Promise.all([

@@ -4,7 +4,14 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { ResolvedConfig } from '../config/load.js';
 import { fail } from '../errors/error.js';
-import { addSeconds, createId, nowIso, sha256, tenantPath } from '../ids.js';
+import {
+  addSeconds,
+  assetObjectKey,
+  createId,
+  extensionForMime,
+  nowIso,
+  sha256,
+} from '../ids.js';
 import { migrate } from '../metadata/migrate.js';
 import { openSqlite, type Sql } from '../metadata/sqlite.js';
 import {
@@ -21,7 +28,13 @@ import {
 } from '../processors/normalize.js';
 import { renderPdfFirstPage } from '../processors/pdf-preview.js';
 import { streamsDetailedProgress } from '../progress/estimate.js';
-import { insertJob, type JobRow } from '../queue/jobs.js';
+import {
+  closeProcessingQueue,
+  enqueueProcessingJob,
+  readProcessingJob,
+  readProcessingProgress,
+  removeProcessingJob,
+} from '../queue/processing-queue.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
 import { assertUnexpired, readToken, signToken } from '../security/token.js';
 import {
@@ -119,6 +132,16 @@ interface PartRow {
  * Filesystem and SQLite file service. The database opens on the first call,
  * not when `createFiles` validates configuration.
  */
+function readJobFailure(reason: string | undefined): {
+  code: string | null;
+  message: string | null;
+} {
+  if (!reason) return { code: null, message: null };
+  const match = /^([A-Z0-9_]+): ([\s\S]*)$/.exec(reason);
+  if (!match?.[1]) return { code: 'FFMPEG_FAILED', message: reason };
+  return { code: match[1], message: match[2] ?? reason };
+}
+
 export class FileService {
   private sql: Sql | undefined;
   private storage: StorageDriver | undefined;
@@ -177,6 +200,10 @@ export class FileService {
     if (this.worker && !this.worker.killed) this.worker.kill('SIGTERM');
     this.sql?.close();
     this.sql = undefined;
+    await closeProcessingQueue({
+      env: this.config.env,
+      scope: this.config.metadata.filename,
+    });
   }
 
   /**
@@ -202,7 +229,12 @@ export class FileService {
         : input.transforms
           ? 'recipe'
           : 'preset';
-    const job = insertJob(this.db(), {
+    const now = nowIso();
+    const id = type === 'preset' ? `preset_${fileId}` : createId('job');
+    await enqueueProcessingJob({
+      env: this.config.env,
+      redisUrl: this.config.queue.redisUrl,
+      id,
       fileId,
       tenantId: ctx.principal.tenantId,
       type,
@@ -212,14 +244,30 @@ export class FileService {
         ...(input.transforms ? { transforms: input.transforms } : {}),
       },
       maxAttempts: this.config.queue.maxAttempts,
-      idempotencyKey: type === 'preset' ? `preset:${fileId}` : createId('idem'),
+      backoffMs: this.config.queue.backoffBaseMs,
+      scope: this.config.metadata.filename,
     });
     this.db().run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ?`,
-      [nowIso(), fileId],
+      [now, fileId],
     );
     this.ensureWorker();
-    return mapJob(job);
+    return {
+      id,
+      fileId,
+      tenantId: ctx.principal.tenantId,
+      type,
+      state: 'queued',
+      attempts: 0,
+      maxAttempts: this.config.queue.maxAttempts,
+      schemaVersion: 1,
+      errorCode: null,
+      errorMessage: null,
+      result: null,
+      createdAt: now,
+      updatedAt: now,
+      runAfter: now,
+    };
   }
 
   async touch(fileId: string, ctx: RequestContext): Promise<void> {
@@ -331,7 +379,12 @@ export class FileService {
       };
       if (preview.available) {
         const previewId = createId('variant');
-        const previewKey = `${tenantPath(ctx.principal.tenantId)}/files/${fileId}/variants/${previewId}/page-1.png`;
+        const previewKey = assetObjectKey(
+          ctx.principal.tenantId,
+          fileId,
+          'page-1',
+          'png',
+        );
         await writeBytes(this.root(), previewKey, preview.png);
         this.db().run(
           `INSERT INTO variants (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, width, height, status, created_at)
@@ -384,7 +437,12 @@ export class FileService {
     } else throw fail('UNSUPPORTED_MIME');
     const payload = Buffer.from(JSON.stringify(body));
     const id = createId('variant');
-    const key = `${tenantPath(ctx.principal.tenantId)}/files/${fileId}/variants/${id}/normalized.json`;
+    const key = assetObjectKey(
+      ctx.principal.tenantId,
+      fileId,
+      'normalized',
+      'json',
+    );
     await writeBytes(this.root(), key, payload);
     this.db().run(
       `INSERT INTO variants (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, status, created_at)
@@ -407,26 +465,22 @@ export class FileService {
       job.state === 'cancelled'
     )
       return job;
-    const now = nowIso();
+    await removeProcessingJob({
+      env: this.config.env,
+      redisUrl: this.config.queue.redisUrl,
+      id: jobId,
+      scope: this.config.metadata.filename,
+    });
     this.db().run(
-      `UPDATE jobs SET state = 'cancelled', error_code = 'CANCELLED', updated_at = ?, finished_at = ? WHERE id = ?`,
-      [now, now, jobId],
+      `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
+      [nowIso(), job.fileId],
     );
-    return this.getJob(jobId, ctx);
+    return { ...job, state: 'cancelled' };
   }
 
   async processingSnapshot(fileId: string, ctx: RequestContext) {
     const record = await this.get(fileId, ctx);
-    const job = this.db().get<{
-      state: string;
-      progress_ratio: number | null;
-      eta_ms: number | null;
-    }>(
-      `SELECT state, progress_ratio, eta_ms FROM jobs
-       WHERE file_id = ? AND tenant_id = ?
-       ORDER BY created_at DESC LIMIT 1`,
-      [fileId, ctx.principal.tenantId],
-    );
+    const progress = await readProcessingProgress(fileId);
     const quiet = !streamsDetailedProgress(record.detectedMime);
     const fileDone =
       record.processingState === 'none' ||
@@ -434,32 +488,58 @@ export class FileService {
       record.processingState === 'partially_ready' ||
       record.processingState === 'failed' ||
       record.processingState === 'deleted';
-    const jobDone =
-      !job ||
-      job.state === 'succeeded' ||
-      job.state === 'failed' ||
-      job.state === 'cancelled' ||
-      job.state === 'dead';
     return {
       fileId,
       state: record.processingState,
       percentage:
-        job?.progress_ratio == null
-          ? null
-          : Math.round(job.progress_ratio * 100),
-      etaMs: quiet ? null : (job?.eta_ms ?? null),
+        progress.ratio == null ? null : Math.round(progress.ratio * 100),
+      etaMs: quiet ? null : progress.etaMs,
       quiet,
-      terminal: quiet ? fileDone : fileDone && jobDone,
+      terminal: fileDone,
     };
   }
 
   async getJob(jobId: string, ctx: RequestContext): Promise<ProcessingJob> {
-    const row = this.db().get<JobRow>(
-      'SELECT * FROM jobs WHERE id = ? AND tenant_id = ?',
-      [jobId, ctx.principal.tenantId],
-    );
-    if (!row) throw fail('NOT_FOUND');
-    return mapJob(row);
+    const job = await readProcessingJob({
+      env: this.config.env,
+      redisUrl: this.config.queue.redisUrl,
+      id: jobId,
+      scope: this.config.metadata.filename,
+    });
+    if (!job || job.data.tenantId !== ctx.principal.tenantId)
+      throw fail('NOT_FOUND');
+    const state = await job.getState();
+    const mapped =
+      state === 'active'
+        ? 'processing'
+        : state === 'completed'
+          ? 'succeeded'
+          : state === 'failed'
+            ? 'failed'
+            : 'queued';
+    const now = new Date(job.timestamp).toISOString();
+    return {
+      id: job.id ?? jobId,
+      fileId: job.data.fileId,
+      tenantId: job.data.tenantId,
+      type: job.data.type,
+      state: mapped,
+      attempts:
+        job.attemptsMade + job.stalledCounter + (state === 'active' ? 1 : 0),
+      maxAttempts: job.opts.attempts ?? this.config.queue.maxAttempts,
+      schemaVersion: job.data.schemaVersion,
+      errorCode:
+        state === 'failed' ? readJobFailure(job.failedReason).code : null,
+      errorMessage:
+        state === 'failed' ? readJobFailure(job.failedReason).message : null,
+      result:
+        job.returnvalue && typeof job.returnvalue === 'object'
+          ? (job.returnvalue as Record<string, unknown>)
+          : null,
+      createdAt: now,
+      updatedAt: now,
+      runAfter: now,
+    };
   }
 
   ensureWorker(): number {
@@ -573,7 +653,12 @@ export class FileService {
       this.audit(sql, ctx.principal, fileId, 'session.create', { sessionId });
     });
     if (this.config.storage.driver === 's3') {
-      const key = `${tenantPath(ctx.principal.tenantId)}/files/${fileId}/original/${createId('obj')}`;
+      const key = assetObjectKey(
+        ctx.principal.tenantId,
+        fileId,
+        'original',
+        extensionForMime(mimeType),
+      );
       const storage = await this.s3();
       const upload = await storage.createMultipartUpload?.({
         key,
@@ -718,7 +803,7 @@ export class FileService {
         transport: 's3-multipart',
       });
     });
-    this.enqueuePreset(session.file_id, detected, ctx);
+    await this.enqueuePreset(session.file_id, detected, ctx);
     return this.get(session.file_id, ctx);
   }
 
@@ -752,7 +837,12 @@ export class FileService {
         ? session.declared_bytes - session.part_size * (session.part_count - 1)
         : session.part_size;
     if (body.byteLength !== expected) throw fail('UPLOAD_SIZE_MISMATCH');
-    const key = `${tenantPath(session.tenant_id)}/files/${session.file_id}/sessions/${session.id}/parts/${partNumber}`;
+    const key = assetObjectKey(
+      session.tenant_id,
+      session.file_id,
+      `part-${partNumber}`,
+      'bin',
+    );
     await writeBytes(this.root(), key, body);
     const etag = sha256(body);
     const now = nowIso();
@@ -813,15 +903,7 @@ export class FileService {
     const storedBytes = parts.reduce((sum, part) => sum + part.bytes, 0);
     if (storedBytes !== session.declared_bytes)
       throw fail('UPLOAD_SIZE_MISMATCH');
-    const originalKey = `${tenantPath(session.tenant_id)}/files/${session.file_id}/original/${createId('obj')}`;
-    const assembled = await concatFiles(
-      this.root(),
-      parts.map((part) => part.object_key),
-      originalKey,
-    );
-    if (assembled.bytes !== session.declared_bytes)
-      throw fail('UPLOAD_SIZE_MISMATCH');
-    const prefix = await readPrefix(this.root(), originalKey);
+    const prefix = await readPrefix(this.root(), parts[0]?.object_key ?? '');
     let detected = sniffMime(prefix);
     if (
       !detected &&
@@ -830,7 +912,6 @@ export class FileService {
     )
       detected = 'text/csv';
     if (!detected) {
-      await this.storage?.deleteObject(originalKey);
       throw fail('UNSUPPORTED_MIME', {
         message: 'The uploaded bytes did not match a supported type.',
       });
@@ -839,15 +920,26 @@ export class FileService {
       detected !== session.declared_mime &&
       !compatibleMime(session.declared_mime, detected)
     ) {
-      await this.storage?.deleteObject(originalKey);
       throw fail('MIME_MISMATCH', {
         context: { declared: session.declared_mime, detected },
       });
     }
     if (!mimeAllowed(detected, this.config.defaults.allowedMimeTypes)) {
-      await this.storage?.deleteObject(originalKey);
       throw fail('UNSUPPORTED_MIME');
     }
+    const originalKey = assetObjectKey(
+      session.tenant_id,
+      session.file_id,
+      'original',
+      extensionForMime(detected),
+    );
+    const assembled = await concatFiles(
+      this.root(),
+      parts.map((part) => part.object_key),
+      originalKey,
+    );
+    if (assembled.bytes !== session.declared_bytes)
+      throw fail('UPLOAD_SIZE_MISMATCH');
     const expectedChecksum = (
       input.checksum ?? session.checksum
     )?.toLowerCase();
@@ -880,7 +972,7 @@ export class FileService {
     for (const part of parts) {
       await this.storage?.deleteObject(part.object_key);
     }
-    this.enqueuePreset(session.file_id, detected, ctx);
+    await this.enqueuePreset(session.file_id, detected, ctx);
     return this.get(session.file_id, ctx);
   }
 
@@ -919,6 +1011,17 @@ export class FileService {
     const record = mapFile(row);
     record.variants = loadVariants(this.db(), row.id);
     return record;
+  }
+
+  async listAssetIds(
+    query: { limit?: number; cursor?: string },
+    ctx: RequestContext,
+  ): Promise<{ assetIds: string[]; nextCursor: string | null }> {
+    const page = await this.list(query, ctx);
+    return {
+      assetIds: page.items.map((item) => item.id),
+      nextCursor: page.nextCursor,
+    };
   }
 
   async list(
@@ -1155,19 +1258,23 @@ export class FileService {
     return 'private';
   }
 
-  private enqueuePreset(
+  private async enqueuePreset(
     fileId: string,
     mime: string,
     ctx: RequestContext,
-  ): void {
+  ): Promise<void> {
     if (!/^(image|video|audio)\//.test(mime)) return;
-    insertJob(this.db(), {
+    await enqueueProcessingJob({
+      env: this.config.env,
+      redisUrl: this.config.queue.redisUrl,
+      id: `preset_${fileId}`,
       fileId,
       tenantId: ctx.principal.tenantId,
       type: 'preset',
       payload: { schemaVersion: 1 },
       maxAttempts: this.config.queue.maxAttempts,
-      idempotencyKey: `preset:${fileId}`,
+      backoffMs: this.config.queue.backoffBaseMs,
+      scope: this.config.metadata.filename,
     });
     this.db().run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ? AND processing_state = 'none'`,
@@ -1228,27 +1335,6 @@ function mapPart(row: PartRow): UploadPartRecord {
     bytes: row.bytes,
     checksum: row.checksum,
     completedAt: row.completed_at,
-  };
-}
-
-function mapJob(row: JobRow): ProcessingJob {
-  return {
-    id: row.id,
-    fileId: row.file_id,
-    tenantId: row.tenant_id,
-    type: row.type,
-    state: row.state as ProcessingJob['state'],
-    attempts: row.attempts,
-    maxAttempts: row.max_attempts,
-    schemaVersion: row.schema_version,
-    errorCode: row.error_code,
-    errorMessage: row.error_message,
-    result: row.result_json
-      ? (JSON.parse(row.result_json) as Record<string, unknown>)
-      : null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    runAfter: row.run_after,
   };
 }
 

@@ -42,6 +42,7 @@ Tests use Node's built-in runner and TypeScript strip types. Do not use Bun. The
 - `src/client` must not import Node built-ins, `sharp`, or cloud SDKs. `packages/filevora/test/m0.test.ts` bundles the source and the Vite output with esbuild to enforce that.
 - Do not point `new URL('./file.js', import.meta.url)` at a local module. Vite rewrites that into an inlined asset. The worker child path is `path.join(dirname, 'child.js')` so `dist/worker/child.js` stays a real file.
 - Processing progress is SSE consumed with `fetch`, so the host `Authorization` header is preserved. Polling is the fallback. Do not store signed URLs in the resume store. `history()` refetches them. See `adr/0017-processing-progress-channel.md` and `adr/0018-upload-history-storage.md`.
+- Encoding jobs go to BullMQ on `REDIS_URL`. Do not put the asset registry in Redis. Asset ids and versions stay in SQLite (`FILES_SQLITE_PATH`) unless the host configures another metadata driver. Object keys are `{tenantHash}/{assetId}_{version}.{ext}`.
 - Examples under `examples/` are host-app wiring. The SDK does not ship a UI.
 - Architecture choices live in `adr/`. Change a decision with a new ADR, not a silent edit.
 

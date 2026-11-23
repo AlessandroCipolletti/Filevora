@@ -3,9 +3,12 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fail } from '../errors/error.js';
-import { createId, nowIso, sha256, tenantPath } from '../ids.js';
+import { assetObjectKey, createId, nowIso, sha256 } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
-import { reportProcessingRatio } from '../queue/jobs.js';
+import {
+  recordProcessingProgress,
+  recordRunnerPid,
+} from '../queue/processing-queue.js';
 import { redactString } from '../redact.js';
 import { writeBytes } from '../storage/filesystem.js';
 
@@ -310,7 +313,7 @@ export async function publishRecipe(
             timeoutMs: limits.timeoutMs,
             signal: hooks.signal,
             durationMs: probe.durationMs,
-            onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+            onPid: (pid) => setRunner(hooks.jobId, pid),
           },
         );
         current = `${next}.mp4`;
@@ -343,7 +346,7 @@ export async function publishRecipe(
             timeoutMs: limits.timeoutMs,
             signal: hooks.signal,
             durationMs: probe.durationMs,
-            onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+            onPid: (pid) => setRunner(hooks.jobId, pid),
           },
         );
         current = `${next}.mp4`;
@@ -357,6 +360,7 @@ export async function publishRecipe(
           hooks,
           probe.durationMs,
           sql,
+          file.id,
         );
         current = encoded;
       }
@@ -386,7 +390,7 @@ export async function publishRecipe(
     );
     return [name];
   } finally {
-    setRunner(sql, hooks.jobId, null);
+    setRunner(hooks.jobId, null);
     rmSync(work, { recursive: true, force: true });
   }
 }
@@ -421,6 +425,7 @@ async function publishMedia(
         hooks,
         probe.durationMs,
         sql,
+        file.id,
       );
       const body = readFileSync(output);
       const probed = await probeMedia(paths.ffprobe, output, limits.timeoutMs);
@@ -458,7 +463,7 @@ async function publishMedia(
           {
             timeoutMs: limits.timeoutMs,
             signal: hooks.signal,
-            onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+            onPid: (pid) => setRunner(hooks.jobId, pid),
           },
         );
         poster = readFileSync(posterWebp);
@@ -470,7 +475,7 @@ async function publishMedia(
           {
             timeoutMs: limits.timeoutMs,
             signal: hooks.signal,
-            onPid: (pid) => setRunner(sql, hooks.jobId, pid),
+            onPid: (pid) => setRunner(hooks.jobId, pid),
           },
         );
         poster = await sharp(posterPng)
@@ -518,8 +523,8 @@ async function publishMedia(
           timeoutMs: limits.timeoutMs,
           signal: hooks.signal,
           durationMs: probe.durationMs,
-          onPid: (pid) => setRunner(sql, hooks.jobId, pid),
-          onProgress: jobProgress(sql, hooks.jobId),
+          onPid: (pid) => setRunner(hooks.jobId, pid),
+          onProgress: jobProgress(file.id),
         },
       );
       const optimizedProbe = await probeMedia(
@@ -567,8 +572,8 @@ async function publishMedia(
             timeoutMs: limits.timeoutMs,
             signal: hooks.signal,
             durationMs: probe.durationMs,
-            onPid: (pid) => setRunner(sql, hooks.jobId, pid),
-            onProgress: jobProgress(sql, hooks.jobId),
+            onPid: (pid) => setRunner(hooks.jobId, pid),
+            onProgress: jobProgress(file.id),
           },
         );
         const hdProbe = await probeMedia(paths.ffprobe, hd, limits.timeoutMs);
@@ -591,7 +596,7 @@ async function publishMedia(
     );
     return names;
   } finally {
-    setRunner(sql, hooks.jobId, null);
+    setRunner(hooks.jobId, null);
     rmSync(work, { recursive: true, force: true });
   }
 }
@@ -605,6 +610,7 @@ async function encodeAudio(
   hooks: { jobId: string; signal?: AbortSignal },
   durationMs: number,
   sql: Sql,
+  assetId: string,
 ): Promise<string> {
   if (codec === 'mp3') {
     const output = `${stem}.mp3`;
@@ -627,8 +633,8 @@ async function encodeAudio(
         timeoutMs,
         signal: hooks.signal,
         durationMs,
-        onPid: (pid) => setRunner(sql, hooks.jobId, pid),
-        onProgress: jobProgress(sql, hooks.jobId),
+        onPid: (pid) => setRunner(hooks.jobId, pid),
+        onProgress: jobProgress(assetId),
       },
     );
     return output;
@@ -654,8 +660,8 @@ async function encodeAudio(
         timeoutMs,
         signal: hooks.signal,
         durationMs,
-        onPid: (pid) => setRunner(sql, hooks.jobId, pid),
-        onProgress: jobProgress(sql, hooks.jobId),
+        onPid: (pid) => setRunner(hooks.jobId, pid),
+        onProgress: jobProgress(assetId),
       },
     );
     return output;
@@ -680,26 +686,26 @@ async function encodeAudio(
       timeoutMs,
       signal: hooks.signal,
       durationMs,
-      onPid: (pid) => setRunner(sql, hooks.jobId, pid),
-      onProgress: jobProgress(sql, hooks.jobId),
+      onPid: (pid) => setRunner(hooks.jobId, pid),
+      onProgress: jobProgress(assetId),
     },
   );
   return output;
 }
 
-function jobProgress(sql: Sql, jobId: string): (ratio: number) => void {
+function jobProgress(assetId: string): (ratio: number) => void {
   let started = 0;
   let last = -1;
   return (ratio) => {
     if (!started) started = Date.now();
     if (ratio < 0.999 && last >= 0 && ratio - last < 0.05) return;
     last = ratio;
-    reportProcessingRatio(sql, jobId, ratio, started);
+    void recordProcessingProgress(assetId, ratio, started);
   };
 }
 
-function setRunner(sql: Sql, jobId: string, pid: number | null): void {
-  sql.run('UPDATE jobs SET runner_pid = ? WHERE id = ?', [pid, jobId]);
+function setRunner(jobId: string, pid: number | null): void {
+  void recordRunnerPid(jobId, pid);
 }
 
 async function storeVariant(
@@ -723,7 +729,12 @@ async function storeVariant(
   );
   if (existing) return;
   const id = createId('variant');
-  const key = `${tenantPath(file.tenant_id)}/files/${file.id}/variants/${id}/${input.name}.${input.extension}`;
+  const key = assetObjectKey(
+    file.tenant_id,
+    file.id,
+    input.name,
+    input.extension,
+  );
   await writeBytes(root, key, input.body);
   sql.run(
     `INSERT INTO variants (

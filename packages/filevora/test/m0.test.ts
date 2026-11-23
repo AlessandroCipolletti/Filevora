@@ -281,11 +281,23 @@ test('handler and worker fail closed until their milestones', async () => {
     policy: async () => ({}),
   });
   assert.equal(typeof handler, 'function');
-  await assert.rejects(runWorker(), (error: unknown) => {
-    assert.ok(error instanceof FileSdkError);
-    assert.equal(error.code, 'INVALID_CONFIG');
-    return true;
-  });
+  const savedRedis = process.env.REDIS_URL;
+  const savedAlias = process.env.FILES_REDIS_URL;
+  delete process.env.REDIS_URL;
+  delete process.env.FILES_REDIS_URL;
+  try {
+    await assert.rejects(
+      runWorker({ options: { env: 'development' } }),
+      (error: unknown) => {
+        assert.ok(error instanceof FileSdkError);
+        assert.equal(error.code, 'INVALID_CONFIG');
+        return true;
+      },
+    );
+  } finally {
+    if (savedRedis) process.env.REDIS_URL = savedRedis;
+    if (savedAlias) process.env.FILES_REDIS_URL = savedAlias;
+  }
   assert.throws(
     () => createUploadClient({ endpoint: '' }),
     (error: unknown) => {

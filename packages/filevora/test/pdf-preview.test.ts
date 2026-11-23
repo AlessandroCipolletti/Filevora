@@ -43,7 +43,7 @@ function findPagePng(root: string): Buffer | undefined {
     for (const name of readdirSync(current, { withFileTypes: true })) {
       const full = path.join(current, name.name);
       if (name.isDirectory()) pending.push(full);
-      else if (name.name === 'page-1.png') return readFileSync(full);
+      else if (name.name.endsWith('_page-1.png')) return readFileSync(full);
     }
   }
   return undefined;

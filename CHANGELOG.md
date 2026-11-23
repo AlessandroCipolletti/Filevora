@@ -106,3 +106,10 @@
 - Upload tasks report percent and bytes. `watchProcessing` follows video and audio jobs over SSE, with JSON polling as fallback. Image jobs emit one terminal event.
 - `history()` is in memory for the page load and refetches short-lived delivery URLs. `pending()` lists resume-store sessions after a refresh.
 - Host env vars are documented in `.env.example`. `uploadClientOptionsFromEnv` reads them in the host process.
+
+### BullMQ processing queue
+
+- Encoding jobs go to Redis through BullMQ. `REDIS_URL` is the queue. Asset ids and version metadata stay in SQLite (`FILES_SQLITE_PATH`).
+- Object keys are `{tenantHash}/{assetId}_{version}.{ext}`.
+- `GET /assets` lists asset ids for the authenticated tenant.
+- Several `filevora worker` processes can share one `REDIS_URL`. `processing.concurrency` is how many jobs one process runs at once.

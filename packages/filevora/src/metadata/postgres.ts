@@ -99,62 +99,6 @@ export function externalTargets(env: NodeJS.ProcessEnv): {
   };
 }
 
-export async function enqueueJob(
-  db: PostgresQueryable,
-  input: {
-    id: string;
-    fileId: string;
-    tenantId: string;
-    idempotencyKey: string;
-    now: string;
-  },
-): Promise<string> {
-  const existing = await db.query<{ id: string }>(
-    toPostgres(
-      'SELECT id FROM jobs WHERE tenant_id = ? AND idempotency_key = ?',
-    ),
-    [input.tenantId, input.idempotencyKey],
-  );
-  if (existing.rows[0]?.id) return existing.rows[0].id;
-  await db.query(
-    toPostgres(
-      `INSERT INTO jobs (id, file_id, tenant_id, type, payload_json, schema_version, state, attempts, max_attempts, run_after, idempotency_key, created_at, updated_at)
-       VALUES (?, ?, ?, 'preset', '{}', 1, 'queued', 0, 5, ?, ?, ?, ?)`,
-    ),
-    [
-      input.id,
-      input.fileId,
-      input.tenantId,
-      input.now,
-      input.idempotencyKey,
-      input.now,
-      input.now,
-    ],
-  );
-  return input.id;
-}
-
-export async function claimJob(
-  db: PostgresQueryable,
-  owner: string,
-  now: string,
-  leaseUntil: string,
-): Promise<string | undefined> {
-  const claimed = await db.query<{ id: string }>(
-    `UPDATE jobs SET state = 'processing', lease_owner = $1, lease_until = $2, attempts = attempts + 1, updated_at = $3
-     WHERE id = (
-       SELECT id FROM jobs
-       WHERE state IN ('queued', 'retrying') OR (state = 'processing' AND (lease_until IS NULL OR lease_until <= $3))
-       ORDER BY run_after ASC, id ASC
-       FOR UPDATE SKIP LOCKED
-       LIMIT 1
-     )
-     RETURNING id`,
-    [owner, leaseUntil, now],
-  );
-  return claimed.rows[0]?.id;
-}
-
 export async function publishVariantOnce(
   db: PostgresQueryable,
   input: {
