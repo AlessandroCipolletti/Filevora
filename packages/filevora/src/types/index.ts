@@ -112,6 +112,8 @@ export type UploadTransport = 'chunked-http' | 's3-multipart';
 
 export interface UploadSession {
   id: string;
+  /** Stable asset id. The host stores this. Same value as `fileId`. */
+  assetId: string;
   fileId: string;
   tenantId: string;
   ownerId: string;
@@ -163,9 +165,16 @@ export interface DeliveryTarget {
 
 export interface DeliveryResult {
   id: string;
+  /** Stable asset id. Same value as `id`. */
+  assetId: string;
   status: ProcessingState;
   original?: DeliveryTarget;
   variants: Record<string, DeliveryTarget>;
+  /**
+   * Every URL the host can use now. `_original` is present once the upload
+   * is verified, including while encoding is queued, running, or failed.
+   */
+  versions: Record<string, DeliveryTarget>;
 }
 
 export interface UploadPolicy {

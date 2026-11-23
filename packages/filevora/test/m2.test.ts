@@ -253,11 +253,14 @@ test('two files can upload at once and IndexedDB keeps the resume record', async
     assert.equal(loaded?.uploadedParts[0], 1);
     await database.delete('sample');
     assert.equal(await database.get('sample'), undefined);
-    const processing = await client.waitForProcessing(done[0]?.id ?? '', {
-      timeoutMs: 1000,
-      intervalMs: 10,
+    const processing = await files.get(done[0]?.id ?? '', {
+      principal: { id: 'user-a', tenantId: 'tenant-a' },
     });
-    assert.equal(processing.processingState, 'none');
+    assert.ok(
+      processing.processingState === 'queued' ||
+        processing.processingState === 'processing' ||
+        processing.processingState === 'ready',
+    );
     await files.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

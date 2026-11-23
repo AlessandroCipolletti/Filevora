@@ -23,4 +23,6 @@ No Filevora account, API key, or signup is involved. `examples/fixture-app` is t
 
 `createFilesHandler` accepts chunked uploads. `examples/node-minimal` is a Node HTTP host. The handler shape is a Web `Request` to a Web `Response`.
 
+Store `assetId` from `POST /sessions`. After the upload is verified, `GET /files/:assetId/versions` returns `versions._original` plus any encoded version that is ready (`thumbnail`, `optimized`, `hd`). A failed or unfinished encode does not remove `_original`.
+
 FFmpeg and Poppler are system binaries. This package does not download them. `pg` and `sharp` are optional dependencies.

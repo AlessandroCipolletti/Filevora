@@ -118,7 +118,8 @@ interface Route {
     | 'get'
     | 'delete'
     | 'delivery'
-    | 'progress';
+    | 'progress'
+    | 'versions';
   sessionId?: string;
   fileId?: string;
   partNumber?: number;
@@ -174,6 +175,14 @@ function matchRoute(method: string, pathname: string): Route | null {
       name: 'delete',
       fileId: decodeURIComponent(file[1]),
     };
+  const versions = /^\/files\/([^/]+)\/versions$/.exec(pathname);
+  if (versions?.[1] && method === 'GET') {
+    return {
+      operation: 'delivery.sign',
+      name: 'versions',
+      fileId: decodeURIComponent(versions[1]),
+    };
+  }
   const progress = /^\/files\/([^/]+)\/progress$/.exec(pathname);
   if (progress?.[1] && method === 'GET') {
     return {
@@ -377,6 +386,17 @@ async function dispatch(
         'x-request-id': requestId,
       },
     });
+  }
+  if (route.name === 'versions' && route.fileId) {
+    return json(
+      await options.files.getDeliveryUrls(
+        route.fileId,
+        { baseUrl: `${origin}${basePath}` },
+        ctx,
+      ),
+      200,
+      requestId,
+    );
   }
   if (route.name === 'delivery' && route.fileId) {
     const body = await readJson(request).catch(() => ({}));

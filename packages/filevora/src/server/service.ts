@@ -212,7 +212,7 @@ export class FileService {
         ...(input.transforms ? { transforms: input.transforms } : {}),
       },
       maxAttempts: this.config.queue.maxAttempts,
-      idempotencyKey: createId('idem'),
+      idempotencyKey: type === 'preset' ? `preset:${fileId}` : createId('idem'),
     });
     this.db().run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ?`,
@@ -718,6 +718,7 @@ export class FileService {
         transport: 's3-multipart',
       });
     });
+    this.enqueuePreset(session.file_id, detected, ctx);
     return this.get(session.file_id, ctx);
   }
 
@@ -879,6 +880,7 @@ export class FileService {
     for (const part of parts) {
       await this.storage?.deleteObject(part.object_key);
     }
+    this.enqueuePreset(session.file_id, detected, ctx);
     return this.get(session.file_id, ctx);
   }
 
@@ -1026,16 +1028,22 @@ export class FileService {
         ...(variant.height ? { height: variant.height } : {}),
       };
     }
+    const original = {
+      url: originalUrl,
+      expiresAt: new Date(exp * 1000).toISOString(),
+      mimeType: record.detectedMime ?? record.declaredMime,
+      bytes: row?.bytes ?? record.bytes,
+    };
     return {
       id: record.id,
+      assetId: record.id,
       status: record.processingState,
-      original: {
-        url: originalUrl,
-        expiresAt: new Date(exp * 1000).toISOString(),
-        mimeType: record.detectedMime ?? record.declaredMime,
-        bytes: row?.bytes ?? record.bytes,
-      },
+      original,
       variants,
+      versions: {
+        _original: original,
+        ...variants,
+      },
     };
   }
 
@@ -1147,6 +1155,27 @@ export class FileService {
     return 'private';
   }
 
+  private enqueuePreset(
+    fileId: string,
+    mime: string,
+    ctx: RequestContext,
+  ): void {
+    if (!/^(image|video|audio)\//.test(mime)) return;
+    insertJob(this.db(), {
+      fileId,
+      tenantId: ctx.principal.tenantId,
+      type: 'preset',
+      payload: { schemaVersion: 1 },
+      maxAttempts: this.config.queue.maxAttempts,
+      idempotencyKey: `preset:${fileId}`,
+    });
+    this.db().run(
+      `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ? AND processing_state = 'none'`,
+      [nowIso(), fileId],
+    );
+    this.ensureWorker();
+  }
+
   private mapSession(row: SessionRow): UploadSession {
     const parts = this.db().all<PartRow>(
       'SELECT * FROM upload_parts WHERE upload_session_id = ? ORDER BY part_number ASC',
@@ -1154,6 +1183,7 @@ export class FileService {
     );
     return {
       id: row.id,
+      assetId: row.file_id,
       fileId: row.file_id,
       tenantId: row.tenant_id,
       ownerId: row.owner_id,
