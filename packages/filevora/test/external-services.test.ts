@@ -45,7 +45,7 @@ test('GitHub Actions runs verify against Postgres and MinIO when the workflow is
   assert.match(workflow, /FILEVORA_POSTGRES_URL/);
   assert.match(workflow, /FILEVORA_S3_ENDPOINT/);
   assert.match(workflow, /postgres:16/);
-  assert.match(workflow, /minio\/minio/);
+  assert.match(workflow, /pgsty\/silo:RELEASE\.2026-11-12T00-00-00Z/);
 });
 
 test('networked S3 put and read', async (t) => {

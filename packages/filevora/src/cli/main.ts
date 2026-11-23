@@ -128,7 +128,7 @@ export async function runCli(
           '# Optional MinIO profile. The default test suite does not start Docker.',
           'services:',
           '  minio:',
-          '    image: minio/minio:RELEASE.2025-04-22T22-12-26Z',
+          '    image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z',
           '    command: server /data --console-address ":9001"',
           '    ports:',
           '      - "9000:9000"',

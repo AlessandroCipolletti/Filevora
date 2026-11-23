@@ -146,7 +146,10 @@ test('init writes a MinIO compose file and does not start Docker', async () => {
     );
     assert.equal(code, 0);
     const compose = readFileSync(path.join(dir, 'docker-compose.yml'), 'utf8');
-    assert.equal(compose.includes('minio/minio'), true);
+    assert.equal(
+      compose.includes('pgsty/silo:RELEASE.2026-11-12T00-00-00Z'),
+      true,
+    );
     assert.equal(JSON.parse(lines.join('')).started, false);
   } finally {
     rmSync(dir, { recursive: true, force: true });

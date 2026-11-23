@@ -22,7 +22,9 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       minio:
-        image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+        # The old Docker Hub MinIO repository is gone. pgsty/silo is a public
+        # MinIO-compatible server with the same command, env, and health URL.
+        image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z
         env:
           MINIO_ROOT_USER: local
           MINIO_ROOT_PASSWORD: localpassword
