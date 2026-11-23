@@ -2,8 +2,7 @@ import type { Job } from 'bullmq';
 import { resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
 import { fail, isFileSdkError } from '../errors/error.js';
-import { migrate } from '../metadata/migrate.js';
-import { openSqlite } from '../metadata/sqlite.js';
+import { openBackend } from '../metadata/backend.js';
 import {
   type MediaTransform,
   publishAudioPreset,
@@ -43,10 +42,9 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
     env: config.env,
     redisUrl: config.queue.redisUrl,
   });
-  const sql = openSqlite(config.metadata.filename);
-  migrate(sql);
+  const sql = openBackend(config);
   const limit = run.once ? 1 : run.limit;
-  const queueName = processingQueueName(config.env, config.metadata.filename);
+  const queueName = processingQueueName(config.env, config.storage.root);
   if (limit !== undefined) {
     const queue = await processingQueue(redisUrl, queueName);
     const counts = await queue.getJobCounts(
@@ -74,7 +72,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
     processor: async (job) => executeJob(sql, job, config),
   });
   const beat = setInterval(
-    () => heartbeatSupervisor(sql, process.pid, config.queue.leaseSeconds),
+    () => heartbeatSupervisor(config, process.pid, config.queue.leaseSeconds),
     500,
   );
   const stop = async () => {
@@ -99,7 +97,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
 }
 
 async function executeJob(
-  sql: ReturnType<typeof openSqlite>,
+  sql: ReturnType<typeof openBackend>,
   job: Job<ProcessingJobData>,
   config: ReturnType<typeof resolveConfig>,
 ): Promise<Record<string, unknown>> {

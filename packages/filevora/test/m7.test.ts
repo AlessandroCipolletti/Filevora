@@ -40,7 +40,7 @@ test('two PGlite workers share one database and S3 object without duplicate vari
     const body = new TextEncoder().encode('shared-object');
     await storage.putObject({ key: 'tenant/file/original/object', body });
     await queryable.query(
-      `INSERT INTO files (id, tenant_id, owner_id, original_name, bytes, original_object_key, upload_state, processing_state, created_at)
+      `INSERT INTO filevora_assets (id, tenant_id, owner_id, original_name, bytes, original_object_key, upload_state, processing_state, created_at)
        VALUES ('file_1', 'tenant-a', 'user-a', 'clip.png', $1, 'tenant/file/original/object', 'verified', 'queued', $2)`,
       [body.byteLength, now],
     );
@@ -64,7 +64,7 @@ test('two PGlite workers share one database and S3 object without duplicate vari
     ]);
     assert.equal(published.filter((result) => result === 'created').length, 1);
     const count = await queryable.query<{ count: string }>(
-      'SELECT COUNT(*)::text AS count FROM variants',
+      'SELECT COUNT(*)::text AS count FROM filevora_asset_versions',
     );
     assert.equal(count.rows[0]?.count, '1');
   } finally {

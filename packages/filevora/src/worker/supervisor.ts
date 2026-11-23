@@ -1,11 +1,10 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ResolvedConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
 import { nowIso } from '../ids.js';
-import type { Sql } from '../metadata/sqlite.js';
 
 const LEASE_ID = 'embedded';
 
@@ -21,8 +20,11 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
       root: path.resolve(config.storage.root),
     },
     metadata: {
+      mode: config.metadata.mode,
       driver: config.metadata.driver,
-      filename: path.resolve(config.metadata.filename),
+      ...(config.metadata.filename
+        ? { filename: path.resolve(config.metadata.filename) }
+        : {}),
       ...(config.metadata.url ? { url: config.metadata.url } : {}),
       schema: config.metadata.schema,
     },
@@ -65,10 +67,18 @@ function pidAlive(pid: number): boolean {
  * Spawn at most one embedded worker for this database. A live pid keeps its lease,
  * including across a second call from a hot reload.
  */
-export function ensureEmbeddedWorker(
-  sql: Sql,
-  config: ResolvedConfig,
-): { pid: number; child?: ChildProcess } {
+function leasePath(config: ResolvedConfig): string {
+  return path.join(
+    path.resolve(config.storage.root),
+    '.filevora',
+    'worker-lease.json',
+  );
+}
+
+export function ensureEmbeddedWorker(config: ResolvedConfig): {
+  pid: number;
+  child?: ChildProcess;
+} {
   if (
     config.processing.mode !== 'worker' ||
     config.processing.spawn !== 'on-demand'
@@ -76,7 +86,7 @@ export function ensureEmbeddedWorker(
     return { pid: 0 };
   }
   const configPath = path.join(
-    path.dirname(path.resolve(config.metadata.filename)),
+    path.dirname(leasePath(config)),
     'worker-config.json',
   );
   mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
@@ -84,57 +94,78 @@ export function ensureEmbeddedWorker(
     mode: 0o600,
   });
   chmodSync(configPath, 0o600);
-  return sql.transaction(() => {
-    const now = nowIso();
-    const existing = sql.get<{ pid: number; expires_at: string }>(
-      'SELECT pid, expires_at FROM supervisor_leases WHERE id = ?',
-      [LEASE_ID],
-    );
-    if (
-      existing &&
-      pidAlive(existing.pid) &&
-      Date.parse(existing.expires_at) > Date.now()
-    ) {
-      return { pid: existing.pid };
-    }
-    const childPath = path.join(
-      path.dirname(fileURLToPath(import.meta.url)),
-      'child.js',
-    );
-    const child = spawn(process.execPath, [childPath], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        FILEVORA_CONFIG_PATH: configPath,
-        FILEVORA_WORKER_CHILD: '1',
-      },
-      stdio: 'ignore',
-      shell: false,
-      windowsHide: true,
-    });
-    const expires = new Date(
-      Date.now() + config.queue.leaseSeconds * 1000,
-    ).toISOString();
-    sql.run(
-      `INSERT INTO supervisor_leases (id, owner, pid, heartbeat_at, expires_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         owner = excluded.owner, pid = excluded.pid, heartbeat_at = excluded.heartbeat_at, expires_at = excluded.expires_at`,
-      [LEASE_ID, `parent:${process.pid}`, child.pid ?? 0, now, expires],
-    );
-    return { pid: child.pid ?? 0, child };
+  const existing = readLease(config);
+  if (
+    existing &&
+    pidAlive(existing.pid) &&
+    Date.parse(existing.expires_at) > Date.now()
+  ) {
+    return { pid: existing.pid };
+  }
+  const childPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    'child.js',
+  );
+  const child = spawn(process.execPath, [childPath], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      FILEVORA_CONFIG_PATH: configPath,
+      FILEVORA_WORKER_CHILD: '1',
+    },
+    stdio: 'ignore',
+    shell: false,
+    windowsHide: true,
   });
+  const now = nowIso();
+  const expires = new Date(
+    Date.now() + config.queue.leaseSeconds * 1000,
+  ).toISOString();
+  writeLease(config, {
+    id: LEASE_ID,
+    pid: child.pid ?? 0,
+    heartbeat_at: now,
+    expires_at: expires,
+  });
+  return { pid: child.pid ?? 0, child };
 }
 
 export function heartbeatSupervisor(
-  sql: Sql,
+  config: ResolvedConfig,
   pid: number,
   leaseSeconds: number,
 ): void {
+  const existing = readLease(config);
+  if (!existing || existing.pid !== pid) return;
   const now = nowIso();
-  const expires = new Date(Date.now() + leaseSeconds * 1000).toISOString();
-  sql.run(
-    `UPDATE supervisor_leases SET heartbeat_at = ?, expires_at = ? WHERE pid = ?`,
-    [now, expires, pid],
-  );
+  writeLease(config, {
+    ...existing,
+    heartbeat_at: now,
+    expires_at: new Date(Date.now() + leaseSeconds * 1000).toISOString(),
+  });
+}
+
+function readLease(
+  config: ResolvedConfig,
+):
+  | { id: string; pid: number; heartbeat_at: string; expires_at: string }
+  | undefined {
+  try {
+    return JSON.parse(readFileSync(leasePath(config), 'utf8')) as {
+      id: string;
+      pid: number;
+      heartbeat_at: string;
+      expires_at: string;
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLease(
+  config: ResolvedConfig,
+  lease: { id: string; pid: number; heartbeat_at: string; expires_at: string },
+): void {
+  mkdirSync(path.dirname(leasePath(config)), { recursive: true, mode: 0o700 });
+  writeFileSync(leasePath(config), JSON.stringify(lease), { mode: 0o600 });
 }

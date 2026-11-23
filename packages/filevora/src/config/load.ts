@@ -36,6 +36,7 @@ export interface ResolvedConfig {
     };
   };
   metadata: {
+    mode: 'lite' | 'stored';
     driver: 'sqlite' | 'postgres';
     filename: string;
     url?: string;
@@ -207,9 +208,12 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
       },
     },
     metadata: {
+      ...(e.FILEVORA_METADATA_MODE ? { mode: e.FILEVORA_METADATA_MODE } : {}),
       ...(e.FILES_METADATA_DRIVER ? { driver: e.FILES_METADATA_DRIVER } : {}),
       ...(e.FILES_SQLITE_PATH ? { filename: e.FILES_SQLITE_PATH } : {}),
-      ...(e.FILES_POSTGRES_URL ? { url: e.FILES_POSTGRES_URL } : {}),
+      ...(e.FILEVORA_DATABASE_URL || e.FILES_POSTGRES_URL
+        ? { url: e.FILEVORA_DATABASE_URL || e.FILES_POSTGRES_URL }
+        : {}),
       ...(e.FILES_POSTGRES_SCHEMA ? { schema: e.FILES_POSTGRES_SCHEMA } : {}),
     },
     queue: {
@@ -402,7 +406,13 @@ export function resolveConfig(
 
   const provider = input.provider ?? 'embedded';
   const storageDriver = input.storage?.driver ?? 'filesystem';
-  const metadataDriver = input.metadata?.driver ?? 'sqlite';
+  const hostFile = input.metadata?.filename;
+  const hostUrl = input.metadata?.url;
+  const metadataDriver =
+    input.metadata?.driver ??
+    (hostUrl?.startsWith('postgres') ? 'postgres' : 'sqlite');
+  const metadataMode =
+    input.metadata?.mode ?? (hostUrl || hostFile ? 'stored' : 'lite');
   const mode =
     input.processing?.mode ??
     (provider === 'distributed' ? 'distributed' : 'worker');
@@ -410,7 +420,13 @@ export function resolveConfig(
     input.processing?.spawn ?? (mode === 'worker' ? 'on-demand' : 'never');
   const singleHostAcknowledged = input.singleHostAcknowledged ?? false;
   const root = input.storage?.root ?? './.files/objects';
-  const filename = input.metadata?.filename ?? './.files/metadata.sqlite';
+  const filename =
+    hostFile ||
+    (hostUrl?.startsWith('sqlite://')
+      ? hostUrl.slice('sqlite://'.length)
+      : hostUrl?.startsWith('file:')
+        ? hostUrl.slice('file:'.length)
+        : '');
   const allowPublic = input.defaults?.allowPublicFiles ?? false;
   const visibility = input.defaults?.visibility ?? 'private';
 
@@ -425,9 +441,16 @@ export function resolveConfig(
       message: 'S3 storage requires storage.s3.bucket or FILES_S3_BUCKET.',
     });
   }
-  if (metadataDriver === 'postgres' && !input.metadata?.url) {
+  if (metadataMode === 'stored' && metadataDriver === 'sqlite' && !filename) {
     throw fail('INVALID_CONFIG', {
-      message: 'Postgres metadata requires metadata.url or FILES_POSTGRES_URL.',
+      message:
+        'Stored mode needs FILEVORA_DATABASE_URL or FILES_SQLITE_PATH. Lite mode does not use a database file.',
+    });
+  }
+  if (metadataDriver === 'postgres' && !hostUrl) {
+    throw fail('INVALID_CONFIG', {
+      message:
+        'Postgres metadata requires FILEVORA_DATABASE_URL or FILES_POSTGRES_URL.',
     });
   }
   if (
@@ -444,7 +467,8 @@ export function resolveConfig(
   }
 
   const needsSingleHostAck =
-    storageDriver === 'filesystem' || metadataDriver === 'sqlite';
+    storageDriver === 'filesystem' ||
+    (metadataMode === 'stored' && metadataDriver === 'sqlite');
   if (
     sdkEnv === 'production' &&
     needsSingleHostAck &&
@@ -544,9 +568,10 @@ export function resolveConfig(
       },
     },
     metadata: {
+      mode: metadataMode,
       driver: metadataDriver,
       filename,
-      ...(input.metadata?.url ? { url: input.metadata.url } : {}),
+      ...(hostUrl ? { url: hostUrl } : {}),
       schema: input.metadata?.schema ?? 'filevora',
     },
     queue: {

@@ -79,6 +79,42 @@ export interface FileVariant {
   createdAt: string;
 }
 
+export type AssetKind =
+  'image' | 'video' | 'audio' | 'pdf' | 'tabular' | 'other';
+
+export type AssetProcessingStatus =
+  'none' | 'queued' | 'processing' | 'completed' | 'failed' | 'partial';
+
+export interface AssetVersionInfo {
+  /** `_original`, `thumbnail`, `optimized`, `hd`, `page-1`, or `normalized`. */
+  version: string;
+  status: 'ready' | 'processing' | 'failed' | 'missing';
+  mime?: string;
+  extension?: string;
+  bytes?: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  codec?: string;
+  container?: string;
+  /** Short-lived signed URL when the version is ready. */
+  url?: string;
+  errorCode?: string;
+}
+
+/**
+ * Agent-facing asset payload. Upload, get, and delivery all use this shape.
+ * `createdAt` is present when the service remembered it (stored mode, or a lite card).
+ */
+export interface AssetInfo {
+  assetId: string;
+  kind?: AssetKind;
+  processingStatus: AssetProcessingStatus;
+  versions: Record<string, AssetVersionInfo>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface FileRecord {
   id: string;
   tenantId: string;
@@ -98,6 +134,8 @@ export interface FileRecord {
   updatedAt: string;
   deletedAt: string | null;
   variants: FileVariant[];
+  /** Same asset in the shared agent shape. */
+  asset?: AssetInfo;
 }
 
 export interface UploadPartRecord {
@@ -175,6 +213,7 @@ export interface DeliveryResult {
    * is verified, including while encoding is queued, running, or failed.
    */
   versions: Record<string, DeliveryTarget>;
+  asset?: AssetInfo;
 }
 
 export interface UploadPolicy {

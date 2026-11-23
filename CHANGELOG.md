@@ -107,6 +107,14 @@
 - `history()` is in memory for the page load and refetches short-lived delivery URLs. `pending()` lists resume-store sessions after a refresh.
 - Host env vars are documented in `.env.example`. `uploadClientOptionsFromEnv` reads them in the host process.
 
+### Lite and stored metadata
+
+- `FILEVORA_METADATA_MODE=lite` is the default. It uses object storage and Redis and does not create a database file.
+- `GET /files/:assetId` probes `{assetId}_{version}.{ext}`. `?detailed=true` includes dimensions. Responses include `asset` (`AssetInfo`).
+- List, retention, and `filevora migrate` return `FEATURE_REQUIRES_STORED_MODE` in lite, with the env change, migrate command, and doctor check.
+- Stored mode uses `FILEVORA_DATABASE_URL` on the host database. `npx filevora migrate` creates `filevora_assets` and `filevora_asset_versions`.
+- `POST /files/batch` accepts up to 20 ids in lite.
+
 ### BullMQ processing queue
 
 - Encoding jobs go to Redis through BullMQ. `REDIS_URL` is the queue. Asset ids and version metadata stay in SQLite (`FILES_SQLITE_PATH`).

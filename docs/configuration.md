@@ -19,4 +19,4 @@ Production rules that are already enforced:
 
 `FILEVORA_RESUME_STRATEGY`, `FILEVORA_RESUME_PERSIST_BLOB`, `FILEVORA_RESUME_MAX_PERSISTED_BYTES`, `FILEVORA_PROGRESS_CHANNEL`, and `FILEVORA_PROGRESS_POLL_MS` are for the host process. Pass them through `uploadClientOptionsFromEnv`. The browser bundle does not read `process.env`.
 
-`REDIS_URL` is the BullMQ processing queue. Asset ids and version rows are not stored in Redis. They stay in the metadata database, SQLite by default (`FILES_SQLITE_PATH`). Object keys use `{tenantHash}/{assetId}_{version}.{ext}`. `GET /assets` lists ids for the signed-in tenant. Workers: `REDIS_URL=redis://127.0.0.1:6379 npx filevora worker`.
+`FILEVORA_METADATA_MODE` is `lite` or `stored`. Lite is the default and does not open a database file. Stored mode needs `FILEVORA_DATABASE_URL` (or `FILES_SQLITE_PATH` / `FILES_POSTGRES_URL`) and `npx filevora migrate`. `REDIS_URL` is the BullMQ processing queue. Asset ids are not stored in Redis. Object keys use `{tenantHash}/{assetId}_{version}.{ext}`. Workers: `REDIS_URL=redis://127.0.0.1:6379 npx filevora worker`.

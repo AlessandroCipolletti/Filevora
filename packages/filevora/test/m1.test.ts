@@ -174,7 +174,7 @@ test('filesystem upload survives restart and stays inside the tenant', async () 
       second.files.get(file.id, { principal: principal() }),
       (error: unknown) => {
         assert.ok(error instanceof FileSdkError);
-        assert.equal(error.code, 'NOT_FOUND');
+        assert.equal(error.code, 'ASSET_NOT_FOUND');
         return true;
       },
     );

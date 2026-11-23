@@ -31,7 +31,7 @@ test('retention dry-run lists candidates and pins are kept', async () => {
     await files.writePart(session.id, 1, PNG, { principal });
     const record = await files.completeUpload(session.id, {}, { principal });
     const db = new DatabaseSync(path.join(dir, 'meta.sqlite'));
-    db.prepare('UPDATE files SET created_at = ? WHERE id = ?').run(
+    db.prepare('UPDATE filevora_assets SET created_at = ? WHERE id = ?').run(
       new Date(Date.now() - 3 * 86_400_000).toISOString(),
       record.id,
     );
@@ -40,10 +40,14 @@ test('retention dry-run lists candidates and pins are kept', async () => {
     assert.equal(preview.filesDeleted, 0);
     assert.equal(preview.items[0]?.reason, 'max-age');
     assert.equal((await files.get(record.id, { principal })).id, record.id);
-    db.prepare('UPDATE files SET pinned = 1 WHERE id = ?').run(record.id);
+    db.prepare('UPDATE filevora_assets SET pinned = 1 WHERE id = ?').run(
+      record.id,
+    );
     const pinned = await files.retentionSweep({ dryRun: true }, { principal });
     assert.equal(pinned.filesEligible, 0);
-    db.prepare('UPDATE files SET pinned = 0 WHERE id = ?').run(record.id);
+    db.prepare('UPDATE filevora_assets SET pinned = 0 WHERE id = ?').run(
+      record.id,
+    );
     const removed = await files.retentionSweep(
       { dryRun: false },
       { principal },

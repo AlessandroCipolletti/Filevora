@@ -57,6 +57,7 @@
     "uploadProgress": "tested",
     "processingProgress": "tested",
     "uploadHistory": "tested",
+    "metadataModes": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -66,7 +67,7 @@
     "Local verification recorded in runtimes.node.verifiedOn. GitHub Actions installs FFmpeg and Poppler, starts Postgres 16 and MinIO, and runs pnpm verify. That workflow has not been executed from this environment because the branch was not pushed.",
     "Video posters are image/webp. selectPosterEncoder uses FFmpeg libwebp only when ffmpeg -encoders lists it. FFmpeg 8.1.2 on the machine used for local verification has no libwebp encoder, so posters are encoded by Sharp. doctor check ffmpeg-webp warns in that case and does not fail the report.",
     "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. A networked S3 test runs when FILEVORA_S3_ENDPOINT, FILEVORA_S3_BUCKET, and the access keys are set. Docker was unavailable on the local machine, so that test was skipped. AWS, R2, and MinIO were not certified in this run.",
-    "Postgres queue SQL was tested with PGlite in one process: two claimers and a unique variant row. createFiles still opens SQLite. A networked Postgres test runs when FILEVORA_POSTGRES_URL is set. psql was not installed here, so that test was skipped.",
+    "Lite metadata is the default and does not create a database file. Stored mode writes filevora_assets in the host database from FILEVORA_DATABASE_URL. Postgres schema is applied by filevora migrate and covered with PGlite for variant uniqueness. The processing queue is Redis only.",
     "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary or a PDF Poppler cannot read leaves the preview unavailable and still returns extracted text. OCR returns OCR_NOT_CONFIGURED.",
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
     "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs."

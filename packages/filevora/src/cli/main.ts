@@ -38,6 +38,7 @@ function helpText(): string {
     '  filevora capabilities --json',
     '  filevora config validate --json',
     '  filevora doctor --json',
+    '  filevora migrate',
     '  filevora worker',
     '  filevora --help',
     '  filevora --version',
@@ -141,6 +142,15 @@ export async function runCli(
       );
       out.stdout(
         `${JSON.stringify({ ok: true, profile, directory, started: false })}\n`,
+      );
+      return 0;
+    }
+    if (command === 'migrate') {
+      const { migrateHost } = await import('../metadata/migrate-host.js');
+      const config = resolveConfig({}, env);
+      await migrateHost(config);
+      out.stdout(
+        `${JSON.stringify({ ok: true, mode: config.metadata.mode })}\n`,
       );
       return 0;
     }

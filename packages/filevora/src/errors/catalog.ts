@@ -413,6 +413,46 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
+  FEATURE_REQUIRES_STORED_MODE: {
+    httpStatus: 400,
+    category: 'config',
+    retryable: false,
+    message: 'This API requires stored metadata mode.',
+    resolution: resolution(
+      'docs/errors/FEATURE_REQUIRES_STORED_MODE.md',
+      'Lite mode keeps bytes in object storage and the queue in Redis. Listing, search, and migrate need the host database.',
+      [
+        action(
+          'set_mode',
+          'Set FILEVORA_METADATA_MODE=stored and FILEVORA_DATABASE_URL to the host database.',
+          'FILEVORA_METADATA_MODE=stored',
+        ),
+        action(
+          'migrate',
+          'Apply the filevora_assets tables on that database.',
+          'npx filevora migrate',
+        ),
+      ],
+      'npx filevora doctor --json',
+    ),
+  },
+  ASSET_NOT_FOUND: {
+    httpStatus: 404,
+    category: 'storage',
+    retryable: false,
+    message:
+      'No object matched {assetId}_original.* for this tenant. Asset ids are not listed from Redis.',
+    resolution: resolution(
+      'docs/errors/ASSET_NOT_FOUND.md',
+      'Lite get-by-id probes object storage for {assetId}_original.{ext} under the tenant prefix. A missing key is not found.',
+      [
+        action(
+          'check_id',
+          'Use the assetId returned when the upload session was created, and confirm the original object is in this tenant prefix.',
+        ),
+      ],
+    ),
+  },
   FEATURE_NOT_AVAILABLE: {
     httpStatus: 501,
     category: 'config',

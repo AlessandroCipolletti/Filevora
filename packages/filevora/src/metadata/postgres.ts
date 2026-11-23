@@ -21,7 +21,7 @@ function toPostgres(sql: string): string {
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS files (
+CREATE TABLE IF NOT EXISTS filevora_assets (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
   owner_id TEXT NOT NULL,
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   updated_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS jobs_idempotency ON jobs (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
-CREATE TABLE IF NOT EXISTS variants (
+CREATE TABLE IF NOT EXISTS filevora_asset_versions (
   id TEXT PRIMARY KEY,
   file_id TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS variants (
   checksum TEXT NOT NULL,
   status TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS variants_recipe ON variants (file_id, name, recipe_id, recipe_version);
+CREATE UNIQUE INDEX IF NOT EXISTS filevora_asset_versions_recipe ON filevora_asset_versions (file_id, name, recipe_id, recipe_version);
 `;
 
 export async function applyPostgresSchema(
@@ -111,7 +111,7 @@ export async function publishVariantOnce(
 ): Promise<'created' | 'exists'> {
   const existing = await db.query(
     toPostgres(
-      'SELECT id FROM variants WHERE file_id = ? AND name = ? AND recipe_id = ? AND recipe_version = 1',
+      'SELECT id FROM filevora_asset_versions WHERE file_id = ? AND name = ? AND recipe_id = ? AND recipe_version = 1',
     ),
     [input.fileId, input.name, 'web-optimized'],
   );
@@ -119,7 +119,7 @@ export async function publishVariantOnce(
   try {
     await db.query(
       toPostgres(
-        `INSERT INTO variants (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, status)
+        `INSERT INTO filevora_asset_versions (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, status)
          VALUES (?, ?, ?, 'web-optimized', 1, ?, 'image/webp', 1, ?, 'ready')`,
       ),
       [input.id, input.fileId, input.name, input.storageKey, input.checksum],

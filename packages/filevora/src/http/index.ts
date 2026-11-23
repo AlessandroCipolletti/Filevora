@@ -116,6 +116,7 @@ interface Route {
     | 'abort'
     | 'list'
     | 'assets'
+    | 'batch'
     | 'get'
     | 'delete'
     | 'delivery'
@@ -163,6 +164,8 @@ function matchRoute(method: string, pathname: string): Route | null {
   }
   if (method === 'GET' && pathname === '/assets')
     return { operation: 'file.list', name: 'assets' };
+  if (method === 'POST' && pathname === '/files/batch')
+    return { operation: 'file.read', name: 'batch' };
   if (method === 'GET' && pathname === '/files')
     return { operation: 'file.list', name: 'list' };
   const file = /^\/files\/([^/]+)$/.exec(pathname);
@@ -331,17 +334,55 @@ async function dispatch(
     const url = new URL(request.url);
     const limit = url.searchParams.get('limit');
     const cursor = url.searchParams.get('cursor') ?? undefined;
+    const kind = url.searchParams.get('kind') ?? undefined;
+    const status = url.searchParams.get('status') ?? undefined;
+    const createdAfter = url.searchParams.get('createdAfter') ?? undefined;
     const page = await options.files.list(
       {
         ...(limit ? { limit: Number(limit) } : {}),
         ...(cursor ? { cursor } : {}),
+        ...(kind ? { kind } : {}),
+        ...(status ? { status } : {}),
+        ...(createdAfter ? { createdAfter } : {}),
       },
       ctx,
     );
     return json(page, 200, requestId);
   }
-  if (route.name === 'get' && route.fileId)
-    return json(await options.files.get(route.fileId, ctx), 200, requestId);
+  if (route.name === 'batch') {
+    const body = (await request.json().catch(() => ({}))) as {
+      assetIds?: string[];
+    };
+    const ids = Array.isArray(body.assetIds) ? body.assetIds : [];
+    if (options.files.config.metadata.mode === 'lite' && ids.length > 20) {
+      throw fail('FEATURE_REQUIRES_STORED_MODE', {
+        message: 'Lite batch get is capped at 20 asset ids.',
+        context: { mode: 'lite', cap: 20 },
+      });
+    }
+    const assets = [];
+    for (const id of ids) {
+      try {
+        assets.push(
+          await options.files.get(id, ctx, { detailed: ids.length <= 20 }),
+        );
+      } catch (error) {
+        if (!isFileSdkError(error) || error.code !== 'ASSET_NOT_FOUND')
+          throw error;
+      }
+    }
+    return json({ assets }, 200, requestId);
+  }
+  if (route.name === 'get' && route.fileId) {
+    const detailed =
+      options.files.config.metadata.mode === 'stored' ||
+      new URL(request.url).searchParams.get('detailed') === 'true';
+    return json(
+      await options.files.get(route.fileId, ctx, { detailed }),
+      200,
+      requestId,
+    );
+  }
   if (route.name === 'delete' && route.fileId) {
     await options.files.delete(route.fileId, ctx);
     return json({ deleted: true }, 200, requestId);

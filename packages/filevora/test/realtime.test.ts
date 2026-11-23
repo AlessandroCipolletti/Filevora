@@ -193,7 +193,7 @@ test('image progress is one quiet event and video progress includes eta', async 
     await files.process(videoFile.id, {}, { principal });
     const sql = openSqlite(options.metadata.filename);
     sql.run(
-      `UPDATE files SET detected_mime = 'video/mp4', processing_state = 'processing' WHERE id = ?`,
+      `UPDATE filevora_assets SET detected_mime = 'video/mp4', processing_state = 'processing' WHERE id = ?`,
       [videoFile.id],
     );
     await recordProcessingProgress(videoFile.id, 0.4, Date.now() - 10_000);
@@ -203,9 +203,10 @@ test('image progress is one quiet event and video progress includes eta', async 
       live.push(update);
       if (update.percentage === 40) {
         const next = openSqlite(options.metadata.filename);
-        next.run(`UPDATE files SET processing_state = 'ready' WHERE id = ?`, [
-          videoFile.id,
-        ]);
+        next.run(
+          `UPDATE filevora_assets SET processing_state = 'ready' WHERE id = ?`,
+          [videoFile.id],
+        );
         next.close();
       }
     });

@@ -210,7 +210,7 @@ test(
       );
       if (!stored) throw new Error('missing optimized variant');
       const variantRow = db
-        .prepare('SELECT storage_key FROM variants WHERE id = ?')
+        .prepare('SELECT storage_key FROM filevora_asset_versions WHERE id = ?')
         .get(stored.id) as {
         storage_key: string;
       };

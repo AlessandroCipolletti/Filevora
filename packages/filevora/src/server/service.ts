@@ -11,9 +11,10 @@ import {
   extensionForMime,
   nowIso,
   sha256,
+  tenantPath,
 } from '../ids.js';
-import { migrate } from '../metadata/migrate.js';
-import { openSqlite, type Sql } from '../metadata/sqlite.js';
+import { openBackend } from '../metadata/backend.js';
+import type { Sql } from '../metadata/sqlite.js';
 import {
   metadataObject,
   mimeAllowed,
@@ -57,6 +58,7 @@ import type {
   Visibility,
 } from '../types/index.js';
 import { ensureEmbeddedWorker } from '../worker/supervisor.js';
+import { toAssetInfo } from './asset-info.js';
 
 export interface RequestContext {
   principal: Principal;
@@ -170,25 +172,54 @@ export class FileService {
         context: { driver: this.config.storage.driver },
       });
     }
-    this.sql = openSqlite(this.config.metadata.filename);
-    migrate(this.sql);
-    this.secret = this.loadSecret(this.sql);
+    this.sql = openBackend(this.config);
+    this.secret = this.secretFor();
     return this.sql;
   }
 
-  private loadSecret(sql: Sql): string {
+  private secretFor(): string {
+    if (this.secret) return this.secret;
     if (this.config.signingSecret) return this.config.signingSecret;
-    const existing = sql.get<{ value: string }>(
-      'SELECT value FROM settings WHERE key = ?',
-      ['signing_secret'],
+    if (this.config.env === 'test') return 'filevora-test-signing-secret';
+    if (this.config.env === 'production') {
+      throw fail('INVALID_CONFIG', {
+        message:
+          'Set FILES_SIGNING_SECRET. Lite mode does not keep a signing secret in a database file.',
+      });
+    }
+    return randomBytes(32).toString('base64url');
+  }
+
+  private requireStored(feature: string): void {
+    if (this.config.metadata.mode === 'stored') return;
+    throw fail('FEATURE_REQUIRES_STORED_MODE', {
+      message: `${feature} requires stored metadata mode.`,
+      context: {
+        mode: 'lite',
+        feature,
+        env: 'FILEVORA_METADATA_MODE=stored',
+        database: 'FILEVORA_DATABASE_URL',
+      },
+    });
+  }
+
+  private async deleteAssetObjects(
+    tenantId: string,
+    assetId: string,
+    originalKey: string | null,
+  ): Promise<void> {
+    if (this.config.storage.driver !== 'filesystem') {
+      if (originalKey) await this.storage?.deleteObject(originalKey);
+      return;
+    }
+    const { readdir, rm } = await import('node:fs/promises');
+    const tenantDir = path.join(this.root(), tenantPath(tenantId));
+    const names = await readdir(tenantDir).catch(() => [] as string[]);
+    await Promise.all(
+      names
+        .filter((name) => name.startsWith(`${assetId}_`))
+        .map((name) => rm(path.join(tenantDir, name), { force: true })),
     );
-    if (existing?.value) return existing.value;
-    const value = randomBytes(32).toString('base64url');
-    sql.run('INSERT INTO settings (key, value) VALUES (?, ?)', [
-      'signing_secret',
-      value,
-    ]);
-    return value;
   }
 
   private root(): string {
@@ -202,7 +233,7 @@ export class FileService {
     this.sql = undefined;
     await closeProcessingQueue({
       env: this.config.env,
-      scope: this.config.metadata.filename,
+      scope: this.config.storage.root,
     });
   }
 
@@ -245,7 +276,7 @@ export class FileService {
       },
       maxAttempts: this.config.queue.maxAttempts,
       backoffMs: this.config.queue.backoffBaseMs,
-      scope: this.config.metadata.filename,
+      scope: this.config.storage.root,
     });
     this.db().run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ?`,
@@ -280,6 +311,7 @@ export class FileService {
   }
 
   async retentionSweep(opts: { dryRun?: boolean } = {}, ctx: RequestContext) {
+    this.requireStored('Retention');
     const rows = this.db().all<RetentionRow>(
       `SELECT id, bytes, pinned, created_at, deleted_at, grace_until, last_touch_at, original_object_key
        FROM files WHERE tenant_id = ?`,
@@ -469,7 +501,7 @@ export class FileService {
       env: this.config.env,
       redisUrl: this.config.queue.redisUrl,
       id: jobId,
-      scope: this.config.metadata.filename,
+      scope: this.config.storage.root,
     });
     this.db().run(
       `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
@@ -504,7 +536,7 @@ export class FileService {
       env: this.config.env,
       redisUrl: this.config.queue.redisUrl,
       id: jobId,
-      scope: this.config.metadata.filename,
+      scope: this.config.storage.root,
     });
     if (!job || job.data.tenantId !== ctx.principal.tenantId)
       throw fail('NOT_FOUND');
@@ -543,7 +575,7 @@ export class FileService {
   }
 
   ensureWorker(): number {
-    const started = ensureEmbeddedWorker(this.db(), this.config);
+    const started = ensureEmbeddedWorker(this.config);
     if (started.child) this.worker = started.child;
     return started.pid;
   }
@@ -1002,14 +1034,19 @@ export class FileService {
     });
   }
 
-  async get(fileId: string, ctx: RequestContext): Promise<FileRecord> {
+  async get(
+    fileId: string,
+    ctx: RequestContext,
+    opts?: { detailed?: boolean },
+  ): Promise<FileRecord> {
     const row = this.db().get<FileRow>(
       'SELECT * FROM files WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
       [fileId, ctx.principal.tenantId],
     );
-    if (!row || row.upload_state === 'aborted') throw fail('NOT_FOUND');
+    if (!row || row.upload_state === 'aborted') throw fail('ASSET_NOT_FOUND');
     const record = mapFile(row);
     record.variants = loadVariants(this.db(), row.id);
+    record.asset = toAssetInfo(record, { detailed: opts?.detailed ?? true });
     return record;
   }
 
@@ -1017,6 +1054,7 @@ export class FileService {
     query: { limit?: number; cursor?: string },
     ctx: RequestContext,
   ): Promise<{ assetIds: string[]; nextCursor: string | null }> {
+    this.requireStored('Listing asset ids');
     const page = await this.list(query, ctx);
     return {
       assetIds: page.items.map((item) => item.id),
@@ -1025,14 +1063,34 @@ export class FileService {
   }
 
   async list(
-    query: { limit?: number; cursor?: string },
+    query: {
+      limit?: number;
+      cursor?: string;
+      kind?: string;
+      status?: string;
+      createdAfter?: string;
+    },
     ctx: RequestContext,
   ): Promise<Page<FileRecord>> {
+    this.requireStored('Listing assets');
     const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
     const params: unknown[] = [ctx.principal.tenantId];
     let where =
       "tenant_id = ? AND deleted_at IS NULL AND upload_state = 'verified'";
+    if (query.kind) {
+      where += ' AND (detected_mime LIKE ? OR declared_mime LIKE ?)';
+      const prefix = `${query.kind === 'tabular' ? 'text/csv' : query.kind}/%`;
+      params.push(query.kind === 'pdf' ? 'application/pdf' : prefix, prefix);
+    }
+    if (query.status) {
+      where += ' AND processing_state = ?';
+      params.push(query.status === 'completed' ? 'ready' : query.status);
+    }
+    if (query.createdAfter) {
+      where += ' AND created_at >= ?';
+      params.push(query.createdAfter);
+    }
     if (cursor) {
       where += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
       params.push(cursor.createdAt, cursor.createdAt, cursor.id);
@@ -1045,6 +1103,7 @@ export class FileService {
     const page = rows.slice(0, limit).map((row) => {
       const record = mapFile(row);
       record.variants = loadVariants(this.db(), row.id);
+      record.asset = toAssetInfo(record, { detailed: true });
       return record;
     });
     const last = page[page.length - 1];
@@ -1061,9 +1120,12 @@ export class FileService {
       'SELECT * FROM files WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
       [fileId, ctx.principal.tenantId],
     );
-    if (!row) throw fail('NOT_FOUND');
-    if (row.original_object_key)
-      await this.storage?.deleteObject(row.original_object_key);
+    if (!row) throw fail('ASSET_NOT_FOUND');
+    await this.deleteAssetObjects(
+      row.tenant_id,
+      row.id,
+      row.original_object_key,
+    );
     const now = nowIso();
     sql.transaction(() => {
       sql.run(
@@ -1137,16 +1199,23 @@ export class FileService {
       mimeType: record.detectedMime ?? record.declaredMime,
       bytes: row?.bytes ?? record.bytes,
     };
+    const versions = {
+      _original: original,
+      ...variants,
+    };
+    const asset = toAssetInfo(record, { detailed: true, originalUrl });
+    for (const [name, target] of Object.entries(versions)) {
+      const version = asset.versions[name];
+      if (version) version.url = target.url;
+    }
     return {
       id: record.id,
       assetId: record.id,
       status: record.processingState,
       original,
       variants,
-      versions: {
-        _original: original,
-        ...variants,
-      },
+      versions,
+      asset,
     };
   }
 
@@ -1274,7 +1343,7 @@ export class FileService {
       payload: { schemaVersion: 1 },
       maxAttempts: this.config.queue.maxAttempts,
       backoffMs: this.config.queue.backoffBaseMs,
-      scope: this.config.metadata.filename,
+      scope: this.config.storage.root,
     });
     this.db().run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ? AND processing_state = 'none'`,

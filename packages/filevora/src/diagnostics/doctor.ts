@@ -82,7 +82,15 @@ export function runDoctor(
       });
     }
   }
-  if (config?.metadata.driver === 'sqlite') {
+  if (!config || config.metadata.mode === 'lite') {
+    checks.push({
+      id: 'metadata',
+      status: 'pass',
+      required: true,
+      message:
+        'Lite mode uses object storage plus Redis. It does not open a database file.',
+    });
+  } else if (config.metadata.driver === 'sqlite' && config.metadata.filename) {
     try {
       const sql = openSqlite(config.metadata.filename);
       migrate(sql);
@@ -91,16 +99,25 @@ export function runDoctor(
         id: 'metadata',
         status: 'pass',
         required: true,
-        message: 'SQLite migrations are applied.',
+        message: 'Host SQLite database has the filevora_assets tables.',
       });
     } catch {
       checks.push({
         id: 'metadata',
         status: 'fail',
         required: true,
-        message: 'SQLite metadata could not be opened.',
+        message: 'The host SQLite database could not be opened.',
       });
     }
+  } else if (config.metadata.driver === 'postgres') {
+    checks.push({
+      id: 'metadata',
+      status: config.metadata.url ? 'pass' : 'fail',
+      required: true,
+      message: config.metadata.url
+        ? 'Postgres stored mode uses the host database. Run npx filevora migrate.'
+        : 'Stored Postgres mode needs FILEVORA_DATABASE_URL.',
+    });
   }
   const ffmpeg = spawnSync(
     config?.processing.ffmpegPath ?? 'ffmpeg',

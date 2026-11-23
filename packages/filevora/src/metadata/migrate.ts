@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS files (
+CREATE TABLE IF NOT EXISTS filevora_assets (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
   owner_id TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS files (
   updated_at TEXT NOT NULL,
   deleted_at TEXT
 );
-CREATE INDEX IF NOT EXISTS files_tenant_created ON files (tenant_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS filevora_assets_tenant_created ON filevora_assets (tenant_id, created_at DESC, id DESC);
 CREATE TABLE IF NOT EXISTS upload_sessions (
   id TEXT PRIMARY KEY,
   file_id TEXT NOT NULL,
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS supervisor_leases (
 `;
 
 const MIGRATION_3 = `
-CREATE TABLE IF NOT EXISTS variants (
+CREATE TABLE IF NOT EXISTS filevora_asset_versions (
   id TEXT PRIMARY KEY,
   file_id TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -125,8 +125,8 @@ CREATE TABLE IF NOT EXISTS variants (
   status TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS variants_recipe
-  ON variants (file_id, name, recipe_id, recipe_version);
+CREATE UNIQUE INDEX IF NOT EXISTS filevora_asset_versions_recipe
+  ON filevora_asset_versions (file_id, name, recipe_id, recipe_version);
 `;
 
 const MIGRATION_4 = `
@@ -139,13 +139,17 @@ ALTER TABLE upload_sessions ADD COLUMN object_key TEXT;
 `;
 
 const MIGRATION_6 = `
-ALTER TABLE files ADD COLUMN grace_until TEXT;
-ALTER TABLE files ADD COLUMN last_touch_at TEXT;
+ALTER TABLE filevora_assets ADD COLUMN grace_until TEXT;
+ALTER TABLE filevora_assets ADD COLUMN last_touch_at TEXT;
 `;
 
 const MIGRATION_7 = `
 ALTER TABLE jobs ADD COLUMN progress_ratio REAL;
 ALTER TABLE jobs ADD COLUMN eta_ms INTEGER;
+`;
+
+const MIGRATION_8 = `
+SELECT 1;
 `;
 
 const MIGRATIONS: Array<{ id: number; sql: string }> = [
@@ -156,6 +160,7 @@ const MIGRATIONS: Array<{ id: number; sql: string }> = [
   { id: 5, sql: MIGRATION_5 },
   { id: 6, sql: MIGRATION_6 },
   { id: 7, sql: MIGRATION_7 },
+  { id: 8, sql: MIGRATION_8 },
 ];
 
 export function migrate(db: Sql): void {
