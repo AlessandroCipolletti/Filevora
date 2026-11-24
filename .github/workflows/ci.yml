@@ -9,6 +9,7 @@ jobs:
     name: typecheck
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm typecheck
 
@@ -16,6 +17,7 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm lint
 
@@ -23,6 +25,7 @@ jobs:
     name: knip
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm knip
 
@@ -30,6 +33,7 @@ jobs:
     name: circular
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm circular
 
@@ -37,6 +41,7 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm build
 
@@ -44,6 +49,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - name: Install FFmpeg and Poppler
         run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils
@@ -65,6 +71,7 @@ jobs:
     env:
       REDIS_URL: redis://127.0.0.1:6379
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - name: Install FFmpeg and Poppler
         run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils
@@ -92,6 +99,7 @@ jobs:
       FILEVORA_S3_SECRET_ACCESS_KEY: localpassword
       FILEVORA_S3_REGION: us-east-1
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - name: Wait for MinIO
         run: |
@@ -129,6 +137,7 @@ jobs:
     env:
       FILEVORA_POSTGRES_URL: postgres://filevora:filevora@127.0.0.1:5432/filevora
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm build
       - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/stored-sql.test.ts test/m7.test.ts
@@ -152,6 +161,7 @@ jobs:
     env:
       FILEVORA_MYSQL_URL: mysql://root:filevora@127.0.0.1:3306/filevora
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm build
       - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/stored-sql.test.ts
