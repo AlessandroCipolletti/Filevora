@@ -73,7 +73,9 @@ CREATE TABLE IF NOT EXISTS filevora_asset_versions (
     assets,
     versions,
     index(
-      'CREATE INDEX IF NOT EXISTS filevora_assets_tenant_created ON filevora_assets (tenant_id, created_at, id)',
+      dialect === 'mysql'
+        ? 'CREATE INDEX filevora_assets_tenant_created ON filevora_assets (tenant_id, created_at(64), id)'
+        : 'CREATE INDEX IF NOT EXISTS filevora_assets_tenant_created ON filevora_assets (tenant_id, created_at, id)',
     ),
     index(
       'CREATE UNIQUE INDEX IF NOT EXISTS filevora_assets_session ON filevora_assets (session_id)',

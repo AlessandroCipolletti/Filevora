@@ -24,7 +24,12 @@ export async function openBackend(config: ResolvedConfig): Promise<Sql> {
         ? await openMysql(config.metadata.url ?? '')
         : openSqlite(config.metadata.filename);
   if (config.metadata.autoMigrate !== false) {
-    await migrate(sql, config.metadata.driver);
+    try {
+      await migrate(sql, config.metadata.driver);
+    } catch (error) {
+      await sql.close();
+      throw error;
+    }
   }
   return hostSql(sql);
 }
