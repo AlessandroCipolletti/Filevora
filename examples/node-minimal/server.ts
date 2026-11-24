@@ -9,6 +9,8 @@ const files = createFiles({
   storage: { driver: 'filesystem', root },
   metadata: { driver: 'sqlite', filename },
   upload: { chunkBytes: 64 * 1024 },
+  // Without Redis, run the preset in this process. With REDIS_URL, use the queue.
+  ...(process.env.REDIS_URL ? {} : { processing: { mode: 'sync' as const } }),
   ...(process.env.FILES_SIGNING_SECRET
     ? { signingSecret: process.env.FILES_SIGNING_SECRET }
     : {}),

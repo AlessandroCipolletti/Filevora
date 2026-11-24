@@ -2,6 +2,10 @@
 
 ## 0.1.0
 
+### Example server
+
+- `examples/node-minimal` runs the preset in process when `REDIS_URL` is unset. A complete upload does not fail closed waiting for a queue.
+
 ### M0 — Foundations
 
 - Public package `filevora` with imports `filevora/server`, `filevora/client`, `filevora/http`, `filevora/worker`, and `filevora/types`.

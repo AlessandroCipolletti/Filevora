@@ -302,6 +302,7 @@ test('mime, quota, idempotency, and anonymous requests fail closed', async () =>
 
 test('node example uploads an image and reloads the same database', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'filevora-m1-example-'));
+  const procs: Array<ReturnType<typeof spawn>> = [];
   const start = (extraEnv: Record<string, string> = {}) =>
     new Promise<{ proc: ReturnType<typeof spawn>; port: number }>(
       (resolve, reject) => {
@@ -319,6 +320,7 @@ test('node example uploads an image and reloads the same database', async () => 
             },
           },
         );
+        procs.push(proc);
         let buffer = '';
         proc.stdout?.on('data', (chunk: Buffer) => {
           buffer += chunk.toString();
@@ -383,6 +385,18 @@ test('node example uploads an image and reloads the same database', async () => 
     second.proc.kill('SIGTERM');
     await new Promise((resolve) => second.proc.once('exit', resolve));
   } finally {
+    for (const proc of procs) {
+      if (proc.exitCode === null) proc.kill('SIGKILL');
+    }
+    await Promise.all(
+      procs.map(
+        (proc) =>
+          new Promise((resolve) => {
+            if (proc.exitCode !== null) resolve(undefined);
+            else proc.once('exit', () => resolve(undefined));
+          }),
+      ),
+    );
     rmSync(dir, { recursive: true, force: true });
   }
 });
