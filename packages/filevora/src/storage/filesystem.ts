@@ -197,8 +197,8 @@ export async function readObjectRange(
   try {
     const length = end - start + 1;
     const buffer = Buffer.alloc(length);
-    await handle.read(buffer, 0, length, start);
-    return buffer;
+    const result = await handle.read(buffer, 0, length, start);
+    return buffer.subarray(0, result.bytesRead);
   } finally {
     await handle.close();
   }
