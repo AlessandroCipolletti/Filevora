@@ -1,0 +1,99 @@
+{
+  "name": "filevora",
+  "version": "0.1.0",
+  "description": "Headless TypeScript SDK for resumable uploads, storage, processing, and delivery. Runs locally or on your infrastructure with no Filevora account.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlessandroCipolletti/Filevora.git",
+    "directory": "packages/filevora"
+  },
+  "bugs": {
+    "url": "https://github.com/AlessandroCipolletti/Filevora/issues"
+  },
+  "homepage": "https://github.com/AlessandroCipolletti/Filevora#readme",
+  "keywords": [
+    "typescript",
+    "sdk",
+    "file-upload",
+    "resumable-upload",
+    "sqlite",
+    "image-processing",
+    "ffmpeg",
+    "video",
+    "self-hosted",
+    "s3"
+  ],
+  "bin": {
+    "filevora": "./bin/filevora.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "capabilities.json",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "exports": {
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js",
+      "browser": "./dist/client/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker/index.d.ts",
+      "import": "./dist/worker/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && vite build && cp ../../README.md ./README.md",
+    "dev": "vite build --watch",
+    "dev:client": "vite",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
+    "lint": "pnpm -w lint",
+    "knip": "pnpm -w knip",
+    "circular": "pnpm -w circular",
+    "ci": "pnpm -w run ci",
+    "test": "node --experimental-strip-types --test --test-reporter=spec \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "bullmq": "^6.7.8",
+    "exceljs": "^4.4.0",
+    "ioredis": "^6.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.17",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.23.1",
+    "esbuild": "^0.28.2",
+    "fake-indexeddb": "^6.2.8",
+    "redis-memory-server": "^0.17.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vite-plugin-dts": "^5.1.2"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-s3": "^3.1175.0",
+    "@aws-sdk/s3-request-presigner": "^3.1175.0",
+    "mysql2": "^3.15.3",
+    "pg": "^8.23.1",
+    "sharp": "^0.35.5"
+  }
+}

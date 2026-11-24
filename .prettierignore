@@ -1,0 +1,6 @@
+dist
+node_modules
+.files
+pnpm-lock.yaml
+packages/filevora/README.md
+*.md
