@@ -324,24 +324,38 @@ async function redisCheck(
       fix: 'Set REDIS_URL to a Redis server, for example redis://127.0.0.1:6379.',
     });
   }
+  const { Redis } = await import('ioredis');
+  const client = new Redis(url, {
+    connectTimeout: 800,
+    maxRetriesPerRequest: 1,
+    lazyConnect: true,
+    retryStrategy: () => null,
+    enableOfflineQueue: false,
+  });
+  client.on('error', () => undefined);
   try {
-    const { Redis } = await import('ioredis');
-    const client = new Redis(url, {
-      connectTimeout: 800,
-      maxRetriesPerRequest: 1,
-      lazyConnect: true,
-      retryStrategy: () => null,
-    });
-    client.on('error', () => undefined);
+    await withTimeout(client.connect(), 1500);
+    const pong = await withTimeout(client.ping(), 1500);
+    if (pong !== 'PONG') throw new Error('no pong');
+    const { Queue } = await import('bullmq');
+    const { processingQueueName } =
+      await import('../queue/processing-queue.js');
+    const queue = new Queue(
+      processingQueueName(config?.env ?? 'production', config?.storage.root),
+      {
+        connection: {
+          url,
+          connectTimeout: 800,
+          maxRetriesPerRequest: 1,
+          retryStrategy: () => null,
+          enableOfflineQueue: false,
+        },
+      },
+    );
     try {
-      await client.connect();
-      const pong = await client.ping();
-      const { processingQueue } = await import('../queue/processing-queue.js');
-      const queue = await processingQueue(url);
-      await queue.getJobCounts('waiting');
-      if (pong !== 'PONG') throw new Error('no pong');
+      await withTimeout(queue.getJobCounts('waiting'), 2000);
     } finally {
-      client.disconnect();
+      await queue.close().catch(() => undefined);
     }
     return described({
       id: 'redis',
@@ -364,7 +378,25 @@ async function redisCheck(
         'The configured Redis URL did not complete PING and a queue read.',
       fix: 'Start Redis at REDIS_URL and confirm the port is reachable.',
     });
+  } finally {
+    client.disconnect();
   }
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error('timeout'));
+      },
+    );
+  });
 }
 
 async function scannerCheck(env: NodeJS.ProcessEnv): Promise<DoctorCheck> {
