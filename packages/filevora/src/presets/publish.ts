@@ -4,12 +4,7 @@ import path from 'node:path';
 import { fail } from '../errors/error.js';
 import { assetObjectKey, createId, nowIso, sha256 } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
-import {
-  probeFfmpegEncoders,
-  probeMedia,
-  runFfmpeg,
-  selectPosterEncoder,
-} from '../processors/ffmpeg.js';
+import { probeMedia, runFfmpeg } from '../processors/ffmpeg.js';
 import { recordProcessingProgress } from '../queue/processing-queue.js';
 import type { ExifMode } from '../safety/exif.js';
 import { writeBytes } from '../storage/filesystem.js';
@@ -228,51 +223,17 @@ async function publishPoster(
   const work = mkdtempSync(path.join(tmpdir(), 'filevora-poster-'));
   try {
     const sharp = (await import('sharp')).default;
-    let body: Buffer;
-    const encoder = selectPosterEncoder(probeFfmpegEncoders(input.ffmpeg));
-    if (encoder === 'libwebp') {
-      const file = path.join(work, 'poster.webp');
-      await runFfmpeg(
-        input.ffmpeg,
-        [
-          '-y',
-          '-ss',
-          String(atMs / 1000),
-          '-i',
-          source,
-          '-frames:v',
-          '1',
-          '-vf',
-          `scale='min(${width},iw)':-2`,
-          '-c:v',
-          'libwebp',
-          file,
-        ],
-        { timeoutMs: input.timeoutMs, signal: input.signal },
-      );
-      body = readFileSync(file);
-    } else {
-      const file = path.join(work, 'poster.png');
-      await runFfmpeg(
-        input.ffmpeg,
-        [
-          '-y',
-          '-ss',
-          String(atMs / 1000),
-          '-i',
-          source,
-          '-frames:v',
-          '1',
-          file,
-        ],
-        { timeoutMs: input.timeoutMs, signal: input.signal },
-      );
-      let pipeline = sharp(file)
-        .rotate()
-        .resize({ width, withoutEnlargement: true });
-      if (input.exif === 'none') pipeline = pipeline.withMetadata();
-      body = await pipeline.webp({ quality: 80 }).toBuffer();
-    }
+    const file = path.join(work, 'poster.png');
+    await runFfmpeg(
+      input.ffmpeg,
+      ['-y', '-ss', String(atMs / 1000), '-i', source, '-frames:v', '1', file],
+      { timeoutMs: input.timeoutMs, signal: input.signal },
+    );
+    let pipeline = sharp(file)
+      .rotate()
+      .resize({ width, withoutEnlargement: true });
+    if (input.exif === 'none') pipeline = pipeline.withMetadata();
+    const body = await pipeline.webp({ quality: 80 }).toBuffer();
     const info = await sharp(body).metadata();
     await insertVariant(input, {
       version: output.version,
