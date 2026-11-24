@@ -485,9 +485,117 @@ export function createUploadClient(options: UploadClientOptions) {
     return rows.filter((row) => !row.endpoint || row.endpoint === endpoint);
   }
 
+  async function uploadDirect(
+    file: Blob & { name?: string },
+    init: {
+      filename?: string;
+      mimeType: string;
+      mode?: 'single' | 'multipart';
+      onProgress?: (progress: UploadProgress) => void;
+    },
+  ) {
+    const created = (await request(doFetch, `${endpoint}/uploads/direct`, {
+      method: 'POST',
+      headers: {
+        ...(await headers(options.headers)),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        filename: init.filename ?? file.name ?? 'upload.bin',
+        mimeType: init.mimeType,
+        bytes: file.size,
+        ...(init.mode ? { mode: init.mode } : {}),
+      }),
+    })) as {
+      mode: 'single' | 'multipart';
+      sessionId: string;
+      fileId: string;
+      url?: string;
+      headers?: Record<string, string>;
+      parts?: Array<{ partNumber: number; url: string }>;
+      partSize?: number;
+    };
+    const report = (bytesUploaded: number) => {
+      init.onProgress?.({
+        bytesUploaded,
+        totalBytes: file.size,
+        percentage:
+          file.size === 0 ? 100 : Math.round((bytesUploaded / file.size) * 100),
+      });
+    };
+    report(0);
+    if (created.mode === 'single') {
+      if (!created.url) {
+        throw fail('INVALID_CONFIG', {
+          message: 'The direct upload has no URL.',
+        });
+      }
+      const put = await doFetch(created.url, {
+        method: 'PUT',
+        headers: created.headers,
+        body: file,
+      });
+      if (!put.ok) {
+        throw fail('STORAGE_UNAVAILABLE', {
+          message: `S3 rejected the upload (${put.status}).`,
+        });
+      }
+      report(file.size);
+      return request(
+        doFetch,
+        `${endpoint}/uploads/direct/${created.sessionId}/complete`,
+        {
+          method: 'POST',
+          headers: {
+            ...(await headers(options.headers)),
+            'content-type': 'application/json',
+          },
+          body: '{}',
+        },
+      );
+    }
+    const partSize = created.partSize ?? file.size;
+    const parts = created.parts ?? [];
+    const completed: Array<{ partNumber: number; etag: string }> = [];
+    let uploaded = 0;
+    for (const part of parts) {
+      const start = (part.partNumber - 1) * partSize;
+      const chunk = file.slice(start, Math.min(file.size, start + partSize));
+      const put = await doFetch(part.url, { method: 'PUT', body: chunk });
+      if (!put.ok) {
+        throw fail('STORAGE_UNAVAILABLE', {
+          message: `S3 rejected part ${part.partNumber} (${put.status}).`,
+        });
+      }
+      const etag = put.headers.get('etag');
+      if (!etag) {
+        throw fail('STORAGE_UNAVAILABLE', {
+          message:
+            'S3 did not return an ETag. Expose the ETag header in bucket CORS.',
+        });
+      }
+      completed.push({ partNumber: part.partNumber, etag });
+      uploaded += chunk.size;
+      report(uploaded);
+    }
+    return request(
+      doFetch,
+      `${endpoint}/uploads/direct/${created.sessionId}/complete`,
+      {
+        method: 'POST',
+        headers: {
+          ...(await headers(options.headers)),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ parts: completed }),
+      },
+    );
+  }
+
   return {
     endpoint,
     upload,
+    uploadDirect,
     fromUrl,
     transform,
     waitForProcessing,

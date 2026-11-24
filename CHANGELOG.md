@@ -2,6 +2,11 @@
 
 ## 0.1.0
 
+### Direct S3 upload
+
+- `POST /uploads/direct` signs a single PUT or a multipart part list. The client uploads to S3. `POST /uploads/direct/:sessionId/complete` heads the object, checks size and sniffed type, applies the EXIF policy, runs the malware scanner, and queues the same preset, progress, and webhook path as a normal upload.
+- Signed URLs expire after `uploadGrantTtlSeconds`. Files larger than `maxFileBytes` are rejected. The bucket CORS configuration must expose `ETag`. `createUploadClient().uploadDirect` performs the flow. Filesystem storage cannot sign an upload.
+
 ### Audio tools
 
 - `audio.transcode` writes MP3, AAC, Opus, or WAV at a chosen bitrate. `audio.loudnorm` applies EBU R128 via ffmpeg `loudnorm` (`I=-23`, `TP=-1.5`, `LRA=11`).

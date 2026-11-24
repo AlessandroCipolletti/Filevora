@@ -28,6 +28,7 @@ import {
   readPdf,
 } from '../processors/normalize.js';
 import { renderPdfFirstPage } from '../processors/pdf-preview.js';
+import { stripImageMetadata } from '../safety/exif.js';
 import type { ProgressEvent } from '../progress/event.js';
 import { streamsDetailedProgress } from '../progress/estimate.js';
 import {
@@ -445,6 +446,288 @@ export class FileService {
       updatedAt: now,
       runAfter: now,
     };
+  }
+
+  /**
+   * Authorize a browser or client to upload straight to S3.
+   * `single` is one presigned PUT. `multipart` is a resumable part list.
+   * Filesystem storage cannot sign an upload.
+   */
+  async createDirectUpload(
+    input: {
+      filename: string;
+      mimeType: string;
+      bytes: number;
+      mode?: 'single' | 'multipart';
+      preset?: string;
+    },
+    ctx: RequestContext,
+  ): Promise<{
+    mode: 'single' | 'multipart';
+    sessionId: string;
+    fileId: string;
+    key: string;
+    expiresAt: string;
+    url?: string;
+    headers?: Record<string, string>;
+    uploadId?: string;
+    partSize?: number;
+    parts?: Array<{ partNumber: number; url: string; expiresAt: string }>;
+  }> {
+    if (this.config.storage.driver !== 's3') {
+      throw fail('INVALID_CONFIG', {
+        message:
+          'Direct upload needs S3 storage. Filesystem uploads use the chunked session API.',
+      });
+    }
+    if (!Number.isInteger(input.bytes) || input.bytes < 1) {
+      throw fail('FILE_TOO_LARGE', {
+        message: 'bytes must be a positive integer.',
+      });
+    }
+    if (input.bytes > this.config.defaults.maxFileBytes) {
+      throw fail('FILE_TOO_LARGE', {
+        message: `The file is larger than the ${this.config.defaults.maxFileBytes} byte limit.`,
+      });
+    }
+    const filename = sanitizeFilename(input.filename);
+    const mimeType = input.mimeType;
+    if (!mimeAllowed(mimeType, this.config.defaults.allowedMimeTypes)) {
+      throw fail('UNSUPPORTED_MIME', { context: { detectedType: mimeType } });
+    }
+    const mode =
+      input.mode ??
+      (input.bytes >= this.config.storage.s3.multipartThresholdBytes
+        ? 'multipart'
+        : 'single');
+    const now = nowIso();
+    const fileId = createId('file');
+    const sessionId = createId('upl');
+    const partSize = this.config.upload.chunkBytes;
+    const partCount = mode === 'single' ? 1 : Math.ceil(input.bytes / partSize);
+    if (partCount > 10_000) throw fail('FILE_TOO_LARGE');
+    const expiresAt = addSeconds(now, this.config.upload.sessionTtlSeconds);
+    const key = assetObjectKey(
+      ctx.principal.tenantId,
+      fileId,
+      'original',
+      extensionForMime(mimeType),
+    );
+    const preset = input.preset ?? this.config.defaults.preset;
+    if (input.preset) assertKnownPreset(input.preset, this.config.presets);
+    const sql = await this.db();
+    await sql.transaction(async () => {
+      await sql.run(
+        `INSERT INTO files (
+          id, tenant_id, owner_id, original_name, declared_mime, detected_mime, bytes, checksum,
+          original_object_key, visibility, upload_state, processing_state, preset, metadata_json,
+          pinned, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, NULL, 'private', 'authorized', 'none', ?, '{}', 0, ?, ?, NULL)`,
+        [
+          fileId,
+          ctx.principal.tenantId,
+          ctx.principal.id,
+          filename,
+          mimeType,
+          input.bytes,
+          preset,
+          now,
+          now,
+        ],
+      );
+      await sql.run('UPDATE files SET url_salt = ? WHERE id = ?', [
+        this.freshSalt(),
+        fileId,
+      ]);
+      await sql.run(
+        `INSERT INTO upload_sessions (
+          id, file_id, tenant_id, owner_id, status, transport, part_size, declared_bytes, part_count,
+          expires_at, idempotency_key, declared_mime, filename, preset, metadata_json, checksum, created_at
+        ) VALUES (?, ?, ?, ?, 'authorized', ?, ?, ?, ?, ?, NULL, ?, ?, ?, '{}', NULL, ?)`,
+        [
+          sessionId,
+          fileId,
+          ctx.principal.tenantId,
+          ctx.principal.id,
+          mode === 'single' ? 's3-put' : 's3-multipart',
+          mode === 'single' ? input.bytes : partSize,
+          input.bytes,
+          partCount,
+          expiresAt,
+          mimeType,
+          filename,
+          preset,
+          now,
+        ],
+      );
+    });
+    const storage = await this.s3();
+    const grant = this.config.storage.s3.uploadGrantTtlSeconds;
+    if (mode === 'single') {
+      await sql.run('UPDATE upload_sessions SET object_key = ? WHERE id = ?', [
+        key,
+        sessionId,
+      ]);
+      const signed = await storage.signPutObject?.({
+        key,
+        contentType: mimeType,
+        contentLength: input.bytes,
+        expiresInSeconds: grant,
+      });
+      if (!signed) {
+        throw fail('STORAGE_UNAVAILABLE', {
+          message: 'S3 did not sign the upload.',
+        });
+      }
+      return {
+        mode,
+        sessionId,
+        fileId,
+        key,
+        expiresAt: signed.expiresAt,
+        url: signed.url,
+        headers: signed.headers,
+      };
+    }
+    const upload = await storage.createMultipartUpload?.({
+      key,
+      contentType: mimeType,
+    });
+    if (!upload) {
+      throw fail('STORAGE_UNAVAILABLE', {
+        message: 'S3 did not open a multipart upload.',
+      });
+    }
+    await sql.run(
+      'UPDATE upload_sessions SET storage_upload_id = ?, object_key = ? WHERE id = ?',
+      [upload.uploadId, key, sessionId],
+    );
+    const parts: Array<{ partNumber: number; url: string; expiresAt: string }> =
+      [];
+    for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
+      const signed = await storage.signUploadPart?.({
+        key,
+        uploadId: upload.uploadId,
+        partNumber,
+        expiresInSeconds: grant,
+      });
+      if (!signed) {
+        throw fail('STORAGE_UNAVAILABLE', {
+          message: 'S3 did not sign an upload part.',
+        });
+      }
+      parts.push({
+        partNumber,
+        url: signed.url,
+        expiresAt: signed.expiresAt,
+      });
+    }
+    return {
+      mode,
+      sessionId,
+      fileId,
+      key,
+      uploadId: upload.uploadId,
+      partSize,
+      parts,
+      expiresAt,
+    };
+  }
+
+  /** Head the S3 object, verify it, and start the normal processing pipeline. */
+  async completeDirectUpload(
+    sessionId: string,
+    input: { parts?: Array<{ partNumber: number; etag: string }> },
+    ctx: RequestContext,
+  ) {
+    const session = await this.requireSession(sessionId, ctx.principal);
+    await this.assertSessionOpen(session);
+    if (session.transport === 's3-multipart') {
+      return this.completeS3(session, input, ctx);
+    }
+    if (session.transport !== 's3-put' || !session.object_key) {
+      throw fail('INVALID_CONFIG', {
+        message: 'This session is not a direct S3 upload.',
+      });
+    }
+    const storage = await this.s3();
+    const head = await storage.headObject(session.object_key);
+    if (!head) {
+      throw fail('UPLOAD_PART_MISSING', {
+        message: 'The object is not in the bucket yet.',
+      });
+    }
+    if (head.bytes !== session.declared_bytes) {
+      throw fail('UPLOAD_SIZE_MISMATCH');
+    }
+    let bytes = Buffer.from(
+      await readAll(await storage.getObject(session.object_key)),
+    );
+    const stripped = stripImageMetadata(bytes, this.config.safety.exif);
+    if (stripped.byteLength !== bytes.byteLength || stripped !== bytes) {
+      const changed = Buffer.from(stripped);
+      if (!changed.equals(bytes)) {
+        await storage.putObject({
+          key: session.object_key,
+          body: changed,
+          contentType: session.declared_mime,
+        });
+        bytes = changed;
+      }
+    }
+    const detected = sniffMime(bytes.subarray(0, 64));
+    if (!detected) {
+      throw fail('UNSUPPORTED_MIME', {
+        message: 'The uploaded bytes did not match a supported type.',
+      });
+    }
+    if (
+      detected !== session.declared_mime &&
+      !compatibleMime(session.declared_mime, detected)
+    ) {
+      throw fail('MIME_MISMATCH', {
+        context: { declared: session.declared_mime, detected },
+      });
+    }
+    if (!mimeAllowed(detected, this.config.defaults.allowedMimeTypes)) {
+      throw fail('UNSUPPORTED_MIME', { context: { detectedType: detected } });
+    }
+    const now = nowIso();
+    const checksum = sha256(bytes);
+    await (
+      await this.db()
+    ).run(
+      `UPDATE files SET detected_mime = ?, bytes = ?, checksum = ?, original_object_key = ?, upload_state = 'verified', updated_at = ? WHERE id = ?`,
+      [
+        detected,
+        bytes.byteLength,
+        checksum,
+        session.object_key,
+        now,
+        session.file_id,
+      ],
+    );
+    await (
+      await this.db()
+    ).run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
+      'verified',
+      session.id,
+    ]);
+    if (
+      await this.acceptOriginal(
+        session.file_id,
+        session.object_key,
+        detected,
+        bytes.byteLength,
+        bytes,
+      )
+    ) {
+      const queued = await this.enqueuePreset(session.file_id, detected, ctx);
+      if (!queued) {
+        await this.queueWebhook(session.file_id, ctx, 'upload.completed');
+      }
+    }
+    return this.get(session.file_id, ctx);
   }
 
   /** Merge PDF assets into one new PDF. The sources stay in place. */

@@ -433,6 +433,12 @@ export interface StorageDriver {
   deleteObject(key: string): Promise<void>;
   createMultipartUpload?(input: MultipartInit): Promise<MultipartSession>;
   signUploadPart?(input: SignPartInput): Promise<SignedUrl>;
+  signPutObject?(input: {
+    key: string;
+    contentType: string;
+    contentLength: number;
+    expiresInSeconds: number;
+  }): Promise<SignedUrl>;
   completeMultipartUpload?(
     input: CompleteMultipartInput,
   ): Promise<StoredObject>;

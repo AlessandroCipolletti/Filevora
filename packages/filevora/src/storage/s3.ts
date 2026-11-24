@@ -124,6 +124,30 @@ export function createS3Storage(settings: S3Settings): StorageDriver {
         });
       return { key: input.key, uploadId: result.UploadId };
     },
+    async signPutObject(input: {
+      key: string;
+      contentType: string;
+      contentLength: number;
+      expiresInSeconds: number;
+    }): Promise<SignedUrl> {
+      const url = await getSignedUrl(
+        client,
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: input.key,
+          ContentType: input.contentType,
+          ContentLength: input.contentLength,
+        }),
+        { expiresIn: input.expiresInSeconds },
+      );
+      return {
+        url,
+        headers: { 'content-type': input.contentType },
+        expiresAt: new Date(
+          Date.now() + input.expiresInSeconds * 1000,
+        ).toISOString(),
+      };
+    },
     async signUploadPart(input: SignPartInput): Promise<SignedUrl> {
       const url = await getSignedUrl(
         client,

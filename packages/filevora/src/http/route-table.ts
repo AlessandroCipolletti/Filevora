@@ -172,6 +172,34 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
   },
   {
     method: 'POST',
+    path: '/uploads/direct',
+    name: 'direct-upload',
+    operation: 'session.create',
+    modes: ['lite', 'stored'],
+    auth: 'principal',
+    request: {
+      body: '{ filename, mimeType, bytes, mode?: single|multipart, preset? }',
+    },
+    response: {
+      status: 201,
+      body: '{ mode, sessionId, fileId, key, expiresAt, url?, headers?, uploadId?, partSize?, parts? }',
+    },
+  },
+  {
+    method: 'POST',
+    path: '/uploads/direct/:sessionId/complete',
+    name: 'direct-complete',
+    operation: 'session.complete',
+    modes: ['lite', 'stored'],
+    auth: 'principal',
+    request: {
+      params: { sessionId: 'string' },
+      body: '{ parts?: { partNumber, etag }[] }',
+    },
+    response: { status: 200, body: 'FileRecord' },
+  },
+  {
+    method: 'POST',
     path: '/pdf/merge',
     name: 'pdf-merge',
     operation: 'process.request',

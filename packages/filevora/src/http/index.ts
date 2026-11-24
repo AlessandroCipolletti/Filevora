@@ -162,6 +162,62 @@ async function dispatch(
       requestId,
     );
   }
+  if (route.name === 'direct-upload') {
+    const body = asRecord(await readJson(request));
+    const filename = stringField(body, 'filename');
+    const mimeType = stringField(body, 'mimeType');
+    const bytes = body.bytes;
+    if (!filename || !mimeType || typeof bytes !== 'number') {
+      throw fail('INVALID_CONFIG', {
+        message: 'filename, mimeType, and bytes are required.',
+        requestId,
+      });
+    }
+    const mode =
+      body.mode === 'single' || body.mode === 'multipart'
+        ? body.mode
+        : undefined;
+    const preset = stringField(body, 'preset');
+    return json(
+      await options.files.createDirectUpload(
+        {
+          filename,
+          mimeType,
+          bytes,
+          ...(mode ? { mode } : {}),
+          ...(preset ? { preset } : {}),
+        },
+        ctx,
+      ),
+      201,
+      requestId,
+    );
+  }
+  if (route.name === 'direct-complete' && route.sessionId) {
+    const body = asRecord(await readJson(request));
+    const parts = Array.isArray(body.parts)
+      ? body.parts.flatMap((part) => {
+          if (!part || typeof part !== 'object') return [];
+          const record = part as { partNumber?: unknown; etag?: unknown };
+          if (
+            typeof record.partNumber !== 'number' ||
+            typeof record.etag !== 'string'
+          ) {
+            return [];
+          }
+          return [{ partNumber: record.partNumber, etag: record.etag }];
+        })
+      : undefined;
+    return json(
+      await options.files.completeDirectUpload(
+        route.sessionId,
+        { ...(parts ? { parts } : {}) },
+        ctx,
+      ),
+      200,
+      requestId,
+    );
+  }
   if (route.name === 'pdf-merge') {
     const body = asRecord(await readJson(request));
     const assetIds = Array.isArray(body.assetIds)
