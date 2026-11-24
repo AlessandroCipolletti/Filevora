@@ -1,16 +1,22 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
+import { readAll } from '../storage/stage.js';
+import type { StorageDriver } from '../types/index.js';
 import type { Sql } from './sqlite.js';
 
 type Row = Record<string, unknown>;
 
+const FOLDERS: Record<string, string> = {
+  files: 'files',
+  upload_sessions: 'sessions',
+  upload_parts: 'parts',
+  variants: 'variants',
+};
+
 /**
- * Lite metadata kept as JSON objects in the storage root.
- * This is not a database file. Asset bytes stay at `{assetId}_{version}.{ext}`.
- * Cards remember only fields the bytes cannot: name, owner, checksum, and status.
+ * Lite metadata kept as JSON objects next to the bytes.
+ * Filesystem cards stay at `{root}/.filevora/`. S3 cards use the same keys in the bucket.
+ * A missing card is private. This is not a database file and not Redis.
  */
-export function openObjectSql(root: string): Sql {
-  const dir = path.join(path.resolve(root), '.filevora');
+export async function openObjectSql(storage: StorageDriver): Promise<Sql> {
   const tables = new Map<string, Row[]>([
     ['files', []],
     ['upload_sessions', []],
@@ -19,113 +25,123 @@ export function openObjectSql(root: string): Sql {
     ['audit_events', []],
     ['settings', []],
   ]);
-  const load = () => {
-    tables.set('files', readRows(dir, 'files'));
-    tables.set('upload_sessions', readRows(dir, 'sessions'));
-    tables.set('upload_parts', readRows(dir, 'parts'));
-    tables.set('variants', readRows(dir, 'variants'));
+  let generation = '';
+  let latch = Promise.resolve();
+  const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = latch.then(fn, fn);
+    latch = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   };
-  const save = (table: string) => {
-    const folder =
-      table === 'files'
-        ? 'files'
-        : table === 'upload_sessions'
-          ? 'sessions'
-          : table === 'upload_parts'
-            ? 'parts'
-            : table === 'variants'
-              ? 'variants'
-              : '';
+
+  const readText = async (key: string): Promise<string> => {
+    const head = await storage.headObject(key);
+    if (!head) return '';
+    const bytes = await readAll(await storage.getObject(key));
+    return Buffer.from(bytes).toString('utf8');
+  };
+  const refresh = async (): Promise<void> => {
+    const gen = (await readText('.filevora/generation')) || '0';
+    if (generation !== '' && gen === generation) return;
+    for (const [table, folder] of Object.entries(FOLDERS)) {
+      const prefix = `.filevora/${folder}/`;
+      const listed = await storage.list(prefix);
+      const rows: Row[] = [];
+      for (const item of listed) {
+        if (!item.key.endsWith('.json')) continue;
+        const text = await readText(item.key);
+        if (!text || text === 'null') continue;
+        const parsed = JSON.parse(text) as Row | Row[] | null;
+        if (parsed == null) continue;
+        if (Array.isArray(parsed)) rows.push(...parsed);
+        else rows.push(parsed);
+      }
+      tables.set(table, rows);
+    }
+    generation = gen;
+  };
+  const persist = async (table: string): Promise<void> => {
+    const folder = FOLDERS[table];
     if (!folder) return;
-    writeRows(dir, folder, tables.get(table) ?? []);
+    const prefix = `.filevora/${folder}/`;
+    const groups = new Map<string, Row[]>();
+    for (const row of tables.get(table) ?? []) {
+      const key = String(
+        row.id ?? row.upload_session_id ?? row.file_id ?? row.key ?? 'row',
+      );
+      const list = groups.get(key) ?? [];
+      list.push(row);
+      groups.set(key, list);
+    }
+    const keep = new Set<string>();
+    for (const [key, list] of groups) {
+      const name = `${safeName(key)}.json`;
+      keep.add(name);
+      const body = folder === 'files' || folder === 'sessions' ? list[0] : list;
+      await storage.putObject({
+        key: `${prefix}${name}`,
+        body: Buffer.from(JSON.stringify(body)),
+        contentType: 'application/json',
+      });
+    }
+    for (const item of await storage.list(prefix)) {
+      const name = item.key.slice(prefix.length);
+      if (name.endsWith('.json') && !name.includes('/') && !keep.has(name)) {
+        await storage.deleteObject(item.key);
+      }
+    }
+    generation = String(Number(generation || '0') + 1);
+    await storage.putObject({
+      key: '.filevora/generation',
+      body: Buffer.from(generation),
+      contentType: 'text/plain',
+    });
   };
-  load();
-  const execute = (raw: string, params: unknown[] = []): Row[] => {
-    load();
-    const sql = raw.replace(/\s+/g, ' ').trim();
-    if (/^INSERT INTO /i.test(sql)) {
-      const table = insertRow(tables, sql, params);
-      save(table);
+  const execute = (raw: string, params: unknown[] = []): Promise<Row[]> =>
+    exclusive(async () => {
+      await refresh();
+      const sql = raw.replace(/\s+/g, ' ').trim();
+      if (/^INSERT INTO /i.test(sql)) {
+        const table = insertRow(tables, sql, params);
+        await persist(table);
+        return [];
+      }
+      if (/^UPDATE /i.test(sql)) {
+        const table = updateRows(tables, sql, params);
+        await persist(table);
+        return [];
+      }
+      if (/^DELETE FROM /i.test(sql)) {
+        const table = deleteRows(tables, sql, params);
+        await persist(table);
+        return [];
+      }
+      if (/^SELECT /i.test(sql)) return selectRows(tables, sql, params);
       return [];
-    }
-    if (/^UPDATE /i.test(sql)) {
-      const table = updateRows(tables, sql, params);
-      save(table);
-      return [];
-    }
-    if (/^DELETE FROM /i.test(sql)) {
-      const table = deleteRows(tables, sql, params);
-      save(table);
-      return [];
-    }
-    if (/^SELECT /i.test(sql)) return selectRows(tables, sql, params);
-    return [];
-  };
+    });
+  await exclusive(refresh);
   return {
     async exec() {
       // Lite mode has no schema migrations.
     },
     async get<T>(sql: string, params?: unknown[]) {
-      return execute(sql, params)[0] as T | undefined;
+      return (await execute(sql, params))[0] as T | undefined;
     },
     async all<T>(sql: string, params?: unknown[]) {
-      return execute(sql, params) as T[];
+      return (await execute(sql, params)) as T[];
     },
     async run(sql: string, params?: unknown[]) {
-      execute(sql, params);
+      await execute(sql, params);
     },
     async transaction<T>(fn: () => Promise<T>) {
       return fn();
     },
     async close() {
-      // Objects are flushed on each write.
+      await storage.close?.();
     },
   };
-}
-
-function readRows(dir: string, folder: string): Row[] {
-  const target = path.join(dir, folder);
-  try {
-    return readdirSync(target)
-      .filter((name) => name.endsWith('.json'))
-      .flatMap((name) => {
-        const parsed = JSON.parse(
-          readFileSync(path.join(target, name), 'utf8'),
-        ) as Row | Row[] | null;
-        if (parsed == null) return [];
-        return Array.isArray(parsed) ? parsed : [parsed];
-      });
-  } catch {
-    return [];
-  }
-}
-
-function writeRows(dir: string, folder: string, rows: Row[]): void {
-  const target = path.join(dir, folder);
-  mkdirSync(target, { recursive: true, mode: 0o700 });
-  const groups = new Map<string, Row[]>();
-  for (const row of rows) {
-    const key = String(
-      row.id ?? row.upload_session_id ?? row.file_id ?? row.key ?? 'row',
-    );
-    const list = groups.get(key) ?? [];
-    list.push(row);
-    groups.set(key, list);
-  }
-  const keep = new Set<string>();
-  for (const [key, list] of groups) {
-    const name = `${safeName(key)}.json`;
-    keep.add(name);
-    const body = folder === 'files' || folder === 'sessions' ? list[0] : list;
-    writeFileSync(path.join(target, name), JSON.stringify(body), {
-      mode: 0o600,
-    });
-  }
-  for (const name of readdirSync(target)) {
-    if (name.endsWith('.json') && !keep.has(name)) {
-      writeFileSync(path.join(target, name), 'null');
-    }
-  }
 }
 
 function safeName(value: string): string {

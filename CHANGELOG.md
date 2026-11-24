@@ -154,6 +154,13 @@
 - Upload and URL import store the preset's versions next to `_original`. `POST /files/:assetId/transform` accepts `preset`. Single-output presets can be followed by `operations`. Unknown or incompatible names return `TRANSFORM_REJECTED` with `validPresets`.
 - Custom presets are `presets` in config or `FILEVORA_PRESETS` JSON, validated like transform operations. See `docs/presets.md`.
 
+### S3 asset IO
+
+- Presets, transforms, uploads, delivery, and retention read and write through the storage driver. Sharp and FFmpeg use a temporary file, then the bytes go back to S3.
+- Lite cards use the same `.filevora/` keys in the bucket when storage is S3. A missing card stays private.
+- The embedded worker config keeps `storage.s3`. `GET /health` and `filevora doctor` probe that bucket with a write, read, and delete.
+- `test/s3-matrix.test.ts` runs those flows against MinIO in the `test-s3` job for lite and stored mode.
+
 ### Signed delivery
 
 - Assets are `private` by default (`FILEVORA_DEFAULT_VISIBILITY`). `PUT /files/:assetId/visibility` changes it. A missing lite asset card stays private.

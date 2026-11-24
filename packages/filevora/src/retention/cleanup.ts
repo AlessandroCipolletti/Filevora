@@ -1,8 +1,10 @@
 import { appendFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
+import type { Sql } from '../metadata/sqlite.js';
+import { readAll } from '../storage/stage.js';
+import type { StorageDriver } from '../types/index.js';
 import type { RetentionInput } from './plan.js';
 import { planRetention, type RetentionRow } from './plan.js';
-import type { Sql } from '../metadata/sqlite.js';
 
 export interface CleanupReport {
   dryRun: boolean;
@@ -28,6 +30,7 @@ export async function runCleanup(input: {
   tenantId?: string;
   dryRun?: boolean;
   nowMs?: number;
+  storage?: StorageDriver;
   remove?: (key: string) => Promise<void>;
 }): Promise<CleanupReport> {
   const now = input.nowMs ?? Date.now();
@@ -59,11 +62,7 @@ export async function runCleanup(input: {
           ...keys.map((key) => key.storage_key),
         ];
         for (const key of paths) {
-          if (input.remove) await input.remove(key).catch(() => undefined);
-          else
-            await rm(path.join(input.root, key), { force: true }).catch(
-              () => undefined,
-            );
+          await removeKey(input, key);
         }
         filesDeleted += 1;
       }
@@ -94,11 +93,7 @@ export async function runCleanup(input: {
   const orphans = await orphanFiles(input, now);
   if (!dryRun) {
     for (const orphan of orphans) {
-      if (input.remove) await input.remove(orphan.path).catch(() => undefined);
-      else
-        await rm(path.join(input.root, orphan.path), { force: true }).catch(
-          () => undefined,
-        );
+      await removeKey(input, orphan.path);
       if (orphan.reason === 'incomplete-upload') {
         await input.sql.run(
           `UPDATE files SET upload_state = 'expired', processing_state = 'deleted', deleted_at = ?, updated_at = ? WHERE original_object_key = ?`,
@@ -111,12 +106,25 @@ export async function runCleanup(input: {
       }
     }
     if (plan.length > 0 || orphans.length > 0) {
-      const logDir = path.join(input.root, '.filevora');
-      await mkdir(logDir, { recursive: true });
-      await appendFile(
-        path.join(logDir, 'cleanup.log'),
-        `${JSON.stringify({ at: new Date(now).toISOString(), files: plan.map((item) => item.fileId), orphans: orphans.map((item) => item.path) })}\n`,
-      );
+      const line = `${JSON.stringify({ at: new Date(now).toISOString(), files: plan.map((item) => item.fileId), orphans: orphans.map((item) => item.path) })}\n`;
+      if (input.storage) {
+        const key = '.filevora/cleanup.log';
+        const head = await input.storage.headObject(key);
+        const previous = head
+          ? Buffer.from(
+              await readAll(await input.storage.getObject(key)),
+            ).toString('utf8')
+          : '';
+        await input.storage.putObject({
+          key,
+          body: Buffer.from(previous + line),
+          contentType: 'text/plain',
+        });
+      } else {
+        const logDir = path.join(input.root, '.filevora');
+        await mkdir(logDir, { recursive: true });
+        await appendFile(path.join(logDir, 'cleanup.log'), line);
+      }
     }
   }
   return {
@@ -133,36 +141,85 @@ export async function runCleanup(input: {
   };
 }
 
+async function removeKey(
+  input: {
+    root: string;
+    storage?: StorageDriver;
+    remove?: (key: string) => Promise<void>;
+  },
+  key: string,
+): Promise<void> {
+  if (input.remove) {
+    await input.remove(key).catch(() => undefined);
+    return;
+  }
+  if (input.storage) {
+    await input.storage.deleteObject(key).catch(() => undefined);
+    return;
+  }
+  await rm(path.join(input.root, key), { force: true }).catch(() => undefined);
+}
+
 async function orphanFiles(
   input: {
     root: string;
     retention: { cleanupIntervalMinutes: number };
     sessionTtlSeconds: number;
     sql: Sql;
+    storage?: StorageDriver;
   },
   now: number,
 ): Promise<Array<{ path: string; reason: string }>> {
   const minAge = Math.max(input.retention.cleanupIntervalMinutes, 1) * 60_000;
   const found: Array<{ path: string; reason: string }> = [];
-  const folders = await readdir(input.root, { withFileTypes: true }).catch(
-    () => [],
-  );
-  for (const folder of folders) {
-    if (!folder.isDirectory() || folder.name.startsWith('.')) continue;
-    const dir = path.join(input.root, folder.name);
-    const names = await readdir(dir).catch(() => [] as string[]);
-    const hasOriginal = names.some((name) => name.includes('_original.'));
-    if (hasOriginal) continue;
-    for (const name of names) {
-      if (name.startsWith('.')) continue;
-      const full = path.join(dir, name);
-      const info = await stat(full).catch(() => undefined);
-      if (!info?.isFile()) continue;
-      if (now - info.mtimeMs < minAge) continue;
-      const reason = name.endsWith('.partial')
-        ? 'partial-download'
-        : 'version-without-original';
-      found.push({ path: path.join(folder.name, name), reason });
+  if (input.storage) {
+    const listed = await input.storage.list('');
+    const groups = new Map<string, typeof listed>();
+    for (const item of listed) {
+      if (item.key.startsWith('.')) continue;
+      const folder = item.key.split('/')[0] ?? '';
+      if (!folder || folder.startsWith('.')) continue;
+      const list = groups.get(folder) ?? [];
+      list.push(item);
+      groups.set(folder, list);
+    }
+    for (const items of groups.values()) {
+      if (items.some((item) => path.basename(item.key).includes('_original.')))
+        continue;
+      for (const item of items) {
+        const name = path.basename(item.key);
+        if (name.startsWith('.')) continue;
+        const modified = item.modifiedAt ? Date.parse(item.modifiedAt) : 0;
+        if (now - modified < minAge) continue;
+        found.push({
+          path: item.key,
+          reason: name.endsWith('.partial')
+            ? 'partial-download'
+            : 'version-without-original',
+        });
+      }
+    }
+  } else {
+    const folders = await readdir(input.root, { withFileTypes: true }).catch(
+      () => [],
+    );
+    for (const folder of folders) {
+      if (!folder.isDirectory() || folder.name.startsWith('.')) continue;
+      const dir = path.join(input.root, folder.name);
+      const names = await readdir(dir).catch(() => [] as string[]);
+      const hasOriginal = names.some((name) => name.includes('_original.'));
+      if (hasOriginal) continue;
+      for (const name of names) {
+        if (name.startsWith('.')) continue;
+        const full = path.join(dir, name);
+        const info = await stat(full).catch(() => undefined);
+        if (!info?.isFile()) continue;
+        if (now - info.mtimeMs < minAge) continue;
+        const reason = name.endsWith('.partial')
+          ? 'partial-download'
+          : 'version-without-original';
+        found.push({ path: path.join(folder.name, name), reason });
+      }
     }
   }
   const stale = await input.sql

@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -199,6 +200,55 @@ export function createS3Storage(settings: S3Settings): StorageDriver {
           Date.now() + input.expiresInSeconds * 1000,
         ).toISOString(),
       };
+    },
+    async getObjectRange(
+      key: string,
+      start: number,
+      end: number,
+    ): Promise<Uint8Array> {
+      const result = await client.send(
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Range: `bytes=${start}-${end}`,
+        }),
+      );
+      if (!result.Body) throw fail('STORAGE_UNAVAILABLE');
+      return result.Body.transformToByteArray();
+    },
+    async list(
+      prefix: string,
+    ): Promise<
+      Array<{ key: string; bytes: number; modifiedAt: string | null }>
+    > {
+      const found: Array<{
+        key: string;
+        bytes: number;
+        modifiedAt: string | null;
+      }> = [];
+      let token: string | undefined;
+      do {
+        const result = await client.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            ...(prefix ? { Prefix: prefix } : {}),
+            ContinuationToken: token,
+          }),
+        );
+        for (const item of result.Contents ?? []) {
+          if (!item.Key || !item.Key.startsWith(prefix)) continue;
+          found.push({
+            key: item.Key,
+            bytes: item.Size ?? 0,
+            modifiedAt: item.LastModified?.toISOString() ?? null,
+          });
+        }
+        token = result.IsTruncated ? result.NextContinuationToken : undefined;
+      } while (token);
+      return found;
+    },
+    async close(): Promise<void> {
+      client.destroy();
     },
   };
 }

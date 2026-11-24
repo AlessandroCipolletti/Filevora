@@ -64,13 +64,8 @@ import {
   verifyDeliveryToken,
   versionTokenName,
 } from '../security/delivery.js';
-import {
-  concatFiles,
-  createFilesystemStorage,
-  readObjectRange,
-  readPrefix,
-  writeBytes,
-} from '../storage/filesystem.js';
+import { createFilesystemStorage } from '../storage/filesystem.js';
+import { concatStored, readAll } from '../storage/stage.js';
 import type {
   DeliveryResult,
   FileRecord,
@@ -282,14 +277,21 @@ export class FileService {
     tenantId: string,
     assetId: string,
   ): Promise<string | null> {
-    if (this.config.storage.driver !== 'filesystem') return null;
-    const { readdir } = await import('node:fs/promises');
-    const dir = path.join(this.root(), tenantPath(tenantId));
-    const names = await readdir(dir).catch(() => [] as string[]);
-    const name = names.find((entry) =>
-      entry.startsWith(`${assetId}_original.`),
+    const storage = await this.driver();
+    const prefix = `${tenantPath(tenantId)}/${assetId}_original.`;
+    const listed = await storage.list(prefix);
+    const hit = listed.find(
+      (item) =>
+        item.key.startsWith(prefix) &&
+        !item.key.slice(prefix.length).includes('/'),
     );
-    return name ? `${tenantPath(tenantId)}/${name}` : null;
+    return hit?.key ?? null;
+  }
+
+  private async driver(): Promise<StorageDriver> {
+    this.ensureStorage();
+    if (this.storage) return this.storage;
+    return this.s3();
   }
 
   private async uploadPercent(fileId: string): Promise<number | null> {
@@ -348,17 +350,17 @@ export class FileService {
     assetId: string,
     originalKey: string | null,
   ): Promise<void> {
-    if (this.config.storage.driver !== 'filesystem') {
-      if (originalKey) await this.storage?.deleteObject(originalKey);
-      return;
-    }
-    const { readdir, rm } = await import('node:fs/promises');
-    const tenantDir = path.join(this.root(), tenantPath(tenantId));
-    const names = await readdir(tenantDir).catch(() => [] as string[]);
+    const storage = await this.driver();
+    const prefix = `${tenantPath(tenantId)}/${assetId}_`;
+    const listed = await storage.list(prefix);
+    const keys = new Set(
+      listed
+        .filter((item) => item.key.startsWith(prefix))
+        .map((item) => item.key),
+    );
+    if (originalKey) keys.add(originalKey);
     await Promise.all(
-      names
-        .filter((name) => name.startsWith(`${assetId}_`))
-        .map((name) => rm(path.join(tenantDir, name), { force: true })),
+      [...keys].map((key) => storage.deleteObject(key).catch(() => undefined)),
     );
   }
 
@@ -372,6 +374,8 @@ export class FileService {
     if (this.worker && !this.worker.killed) this.worker.kill('SIGTERM');
     await this.sql?.close();
     this.sql = undefined;
+    await this.storage?.close?.();
+    this.storage = undefined;
     await closeProcessingQueue({
       env: this.config.env,
       scope: this.config.storage.root,
@@ -462,7 +466,9 @@ export class FileService {
     const webhook = webhookRequest(raw.webhook);
     const body = withoutWebhook(raw);
     const located = await this.locateOriginal(assetId, ctx);
-    const prefix = await readPrefix(this.root(), located.key);
+    const prefix = await (
+      await this.driver()
+    ).getObjectRange(located.key, 0, 63);
     const detected = sniffMime(prefix);
     if (!detected) {
       throw fail('TRANSFORM_REJECTED', {
@@ -518,7 +524,7 @@ export class FileService {
       operations: expanded.operations,
     };
     const bounds = await measureOriginal(
-      this.root(),
+      await this.driver(),
       located.key,
       detected,
       this.config.processing.ffprobePath,
@@ -617,20 +623,17 @@ export class FileService {
   }
 
   async retentionSweep(opts: { dryRun?: boolean } = {}, ctx: RequestContext) {
+    const storage = await this.driver();
     return runCleanup({
       sql: await this.db(),
       root: this.root(),
+      storage,
       retention: this.config.retention,
       sessionTtlSeconds: this.config.upload.sessionTtlSeconds,
       tenantId: ctx.principal.tenantId,
       dryRun: Boolean(opts.dryRun),
       remove: async (key) => {
-        if (this.config.storage.driver === 'filesystem') {
-          const { rm } = await import('node:fs/promises');
-          await rm(path.join(this.root(), key), { force: true });
-          return;
-        }
-        await this.storage?.deleteObject(key);
+        await storage.deleteObject(key);
       },
     });
   }
@@ -655,13 +658,10 @@ export class FileService {
       ctx.principal.tenantId,
     ]);
     if (!row?.original_object_key) throw fail('NOT_FOUND');
-    if (this.config.storage.driver !== 'filesystem') {
-      throw fail('FEATURE_NOT_AVAILABLE', {
-        message: 'Normalization currently reads filesystem originals.',
-      });
-    }
-    const bytes = await import('node:fs/promises').then((fs) =>
-      fs.readFile(path.join(this.root(), row.original_object_key ?? '')),
+    const bytes = Buffer.from(
+      await readAll(
+        await (await this.driver()).getObject(row.original_object_key),
+      ),
     );
     let body: Record<string, unknown>;
     if (input.kind === 'pdf' || row.detected_mime === 'application/pdf') {
@@ -679,7 +679,13 @@ export class FileService {
           'page-1',
           'png',
         );
-        await writeBytes(this.root(), previewKey, preview.png);
+        await (
+          await this.driver()
+        ).putObject({
+          key: previewKey,
+          body: preview.png,
+          contentType: 'image/png',
+        });
         await (
           await this.db()
         ).run(
@@ -739,7 +745,13 @@ export class FileService {
       'normalized',
       'json',
     );
-    await writeBytes(this.root(), key, payload);
+    await (
+      await this.driver()
+    ).putObject({
+      key,
+      body: payload,
+      contentType: 'application/json',
+    });
     await (
       await this.db()
     ).run(
@@ -1383,7 +1395,9 @@ export class FileService {
       `part-${partNumber}`,
       'bin',
     );
-    await writeBytes(this.root(), key, body);
+    await (
+      await this.driver()
+    ).putObject({ key, body, contentType: 'application/octet-stream' });
     const etag = sha256(body);
     const now = nowIso();
     await sql.transaction(async () => {
@@ -1443,7 +1457,9 @@ export class FileService {
     const storedBytes = parts.reduce((sum, part) => sum + part.bytes, 0);
     if (storedBytes !== session.declared_bytes)
       throw fail('UPLOAD_SIZE_MISMATCH');
-    const prefix = await readPrefix(this.root(), parts[0]?.object_key ?? '');
+    const prefix = await (
+      await this.driver()
+    ).getObjectRange(parts[0]?.object_key ?? '', 0, 63);
     let detected = sniffMime(prefix);
     if (
       !detected &&
@@ -1481,8 +1497,9 @@ export class FileService {
       'original',
       extensionForMime(detected),
     );
-    const assembled = await concatFiles(
-      this.root(),
+    const storage = await this.driver();
+    const assembled = await concatStored(
+      storage,
       parts.map((part) => part.object_key),
       originalKey,
     );
@@ -1492,7 +1509,7 @@ export class FileService {
       input.checksum ?? session.checksum
     )?.toLowerCase();
     if (expectedChecksum && expectedChecksum !== assembled.checksum) {
-      await this.storage?.deleteObject(originalKey);
+      await storage.deleteObject(originalKey);
       throw fail('CHECKSUM_MISMATCH');
     }
     const now = nowIso();
@@ -1518,7 +1535,7 @@ export class FileService {
       });
     });
     for (const part of parts) {
-      await this.storage?.deleteObject(part.object_key);
+      await storage.deleteObject(part.object_key);
     }
     if (
       await this.acceptOriginal(
@@ -1546,7 +1563,8 @@ export class FileService {
       'SELECT * FROM upload_parts WHERE upload_session_id = ?',
       [session.id],
     );
-    for (const part of parts) await this.storage?.deleteObject(part.object_key);
+    const storage = await this.driver();
+    for (const part of parts) await storage.deleteObject(part.object_key);
     const now = nowIso();
     await sql.transaction(async () => {
       await sql.run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
@@ -1789,16 +1807,12 @@ export class FileService {
       claims.version,
       claims.salt,
     );
+    const storage = await this.driver();
     if (range) {
       const start = range.start;
       const end = range.end ?? opened.total - 1;
       this.assertRange(start, end, opened.total);
-      const body = await readObjectRange(
-        this.root(),
-        opened.objectKey,
-        start,
-        end,
-      );
+      const body = await storage.getObjectRange(opened.objectKey, start, end);
       return {
         ...opened,
         body,
@@ -1807,8 +1821,7 @@ export class FileService {
         fileName: claims.download ?? opened.fileName,
       };
     }
-    const stream = await this.storage?.getObject(opened.objectKey);
-    if (!stream) throw fail('STORAGE_UNAVAILABLE');
+    const stream = await storage.getObject(opened.objectKey);
     return {
       ...opened,
       body: stream,
@@ -1847,20 +1860,15 @@ export class FileService {
       row.url_salt ?? '',
       true,
     );
+    const storage = await this.driver();
     if (range) {
       const start = range.start;
       const end = range.end ?? opened.total - 1;
       this.assertRange(start, end, opened.total);
-      const body = await readObjectRange(
-        this.root(),
-        opened.objectKey,
-        start,
-        end,
-      );
+      const body = await storage.getObjectRange(opened.objectKey, start, end);
       return { ...opened, body, start, end };
     }
-    const stream = await this.storage?.getObject(opened.objectKey);
-    if (!stream) throw fail('STORAGE_UNAVAILABLE');
+    const stream = await storage.getObject(opened.objectKey);
     return { ...opened, body: stream, start: 0, end: opened.total - 1 };
   }
 
@@ -2101,10 +2109,17 @@ export class FileService {
     const scanner = this.config.safety.scanner;
     if (!scanner) return true;
     try {
+      const storage = await this.driver();
+      const scanBytes =
+        body ??
+        (storage.localPath
+          ? undefined
+          : await readAll(await storage.getObject(key)));
       const verdict = await scanner.scan({
         assetId: fileId,
         mime,
-        ...(body ? { bytes: body } : { path: path.join(this.root(), key) }),
+        ...(scanBytes ? { bytes: scanBytes } : {}),
+        ...(storage.localPath && !body ? { path: storage.localPath(key) } : {}),
       });
       if (verdict === 'infected') {
         await this.quarantine(fileId, key, 'MALWARE_DETECTED');

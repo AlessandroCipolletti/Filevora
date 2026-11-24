@@ -9,13 +9,14 @@ import {
   recordProcessingProgress,
   recordRunnerPid,
 } from '../queue/processing-queue.js';
-import { writeBytes } from '../storage/filesystem.js';
+import { materialize } from '../storage/stage.js';
+import type { StorageDriver } from '../types/index.js';
 import type { ExifMode } from '../safety/exif.js';
 import type { MalwareScanner } from '../safety/scan.js';
 import type { AssetTransformOperation } from './schema.js';
 
 export async function measureOriginal(
-  root: string,
+  storage: StorageDriver,
   key: string,
   mime: string,
   ffprobe: string,
@@ -25,33 +26,38 @@ export async function measureOriginal(
   durationMs?: number;
   pageCount?: number;
 }> {
-  const absolute = path.join(root, key);
-  if (mime.startsWith('image/')) {
-    const sharp = (await import('sharp')).default;
-    const meta = await sharp(absolute).metadata();
-    return {
-      ...(meta.width ? { width: meta.width } : {}),
-      ...(meta.height ? { height: meta.height } : {}),
-    };
+  const local = await materialize(storage, key);
+  const absolute = local.path;
+  try {
+    if (mime.startsWith('image/')) {
+      const sharp = (await import('sharp')).default;
+      const meta = await sharp(absolute).metadata();
+      return {
+        ...(meta.width ? { width: meta.width } : {}),
+        ...(meta.height ? { height: meta.height } : {}),
+      };
+    }
+    if (mime.startsWith('video/')) {
+      const probe = await probeMedia(ffprobe, absolute, 15_000);
+      return {
+        ...(probe.width ? { width: probe.width } : {}),
+        ...(probe.height ? { height: probe.height } : {}),
+        durationMs: probe.durationMs,
+      };
+    }
+    if (mime === 'application/pdf') {
+      const doc = await PDFDocument.load(readFileSync(absolute));
+      return { pageCount: doc.getPageCount() };
+    }
+    return {};
+  } finally {
+    await local.cleanup();
   }
-  if (mime.startsWith('video/')) {
-    const probe = await probeMedia(ffprobe, absolute, 15_000);
-    return {
-      ...(probe.width ? { width: probe.width } : {}),
-      ...(probe.height ? { height: probe.height } : {}),
-      durationMs: probe.durationMs,
-    };
-  }
-  if (mime === 'application/pdf') {
-    const doc = await PDFDocument.load(readFileSync(absolute));
-    return { pageCount: doc.getPageCount() };
-  }
-  return {};
 }
 
 export async function applyAssetTransform(input: {
   sql: Sql;
-  root: string;
+  storage: StorageDriver;
   ffmpeg: string;
   ffprobe: string;
   timeoutMs: number;
@@ -65,64 +71,82 @@ export async function applyAssetTransform(input: {
   exif?: ExifMode;
   scanner?: MalwareScanner;
 }): Promise<void> {
-  const sourcePath = path.join(input.root, input.sourceKey);
-  const startedAt = Date.now();
-  let body: Buffer;
-  let outMime = input.mime;
-  if (input.mime.startsWith('image/')) {
-    body = await applyImage(sourcePath, input.operations, input.exif ?? 'gps');
-    outMime = input.mime === 'image/jpeg' ? 'image/jpeg' : 'image/png';
-    await recordProcessingProgress(input.targetId, 1, startedAt);
-  } else if (input.mime.startsWith('video/')) {
-    body = await applyVideo(sourcePath, input, startedAt);
-    outMime = 'video/mp4';
-  } else if (input.mime === 'application/pdf') {
-    body = await applyPdf(sourcePath, input.operations);
-    await recordProcessingProgress(input.targetId, 1, startedAt);
-  } else {
-    throw fail('TRANSFORM_REJECTED', {
-      message: `No transform is valid for ${input.mime}.`,
-      context: { detectedType: input.mime },
-    });
-  }
-  const key = assetObjectKey(
-    input.tenantId,
-    input.targetId,
-    'original',
-    extensionForMime(outMime),
-  );
-  await writeBytes(input.root, key, body);
-  if (input.scanner) {
-    const verdict = await input.scanner.scan({
-      assetId: input.targetId,
-      mime: outMime,
-      path: path.join(input.root, key),
-      bytes: body,
-    });
-    if (verdict === 'infected') {
-      const { rm } = await import('node:fs/promises');
-      await rm(path.join(input.root, key), { force: true });
-      throw fail('MALWARE_DETECTED');
+  const local = await materialize(input.storage, input.sourceKey);
+  const sourcePath = local.path;
+  try {
+    const startedAt = Date.now();
+    let body: Buffer;
+    let outMime = input.mime;
+    if (input.mime.startsWith('image/')) {
+      body = await applyImage(
+        sourcePath,
+        input.operations,
+        input.exif ?? 'gps',
+      );
+      outMime = input.mime === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+      await recordProcessingProgress(input.targetId, 1, startedAt);
+    } else if (input.mime.startsWith('video/')) {
+      body = await applyVideo(sourcePath, input, startedAt);
+      outMime = 'video/mp4';
+    } else if (input.mime === 'application/pdf') {
+      body = await applyPdf(sourcePath, input.operations);
+      await recordProcessingProgress(input.targetId, 1, startedAt);
+    } else {
+      throw fail('TRANSFORM_REJECTED', {
+        message: `No transform is valid for ${input.mime}.`,
+        context: { detectedType: input.mime },
+      });
     }
-  }
-  if (input.sourceId === input.targetId && input.sourceKey !== key) {
-    const { rm } = await import('node:fs/promises');
-    await rm(path.join(input.root, input.sourceKey), { force: true });
-  }
-  if (input.sourceId === input.targetId) {
-    await deleteSiblingVariants(input.root, input.tenantId, input.targetId);
-    await input.sql.run(
-      `UPDATE variants SET status = 'deleted' WHERE file_id = ?`,
-      [input.targetId],
+    const key = assetObjectKey(
+      input.tenantId,
+      input.targetId,
+      'original',
+      extensionForMime(outMime),
     );
-  }
-  const now = nowIso();
-  await input.sql.run(
-    `UPDATE files SET detected_mime = ?, declared_mime = ?, bytes = ?, checksum = ?,
+    await input.storage.putObject({ key, body, contentType: outMime });
+    if (input.scanner) {
+      const verdict = await input.scanner.scan({
+        assetId: input.targetId,
+        mime: outMime,
+        bytes: body,
+      });
+      if (verdict === 'infected') {
+        await input.storage.deleteObject(key);
+        throw fail('MALWARE_DETECTED');
+      }
+    }
+    if (input.sourceId === input.targetId && input.sourceKey !== key) {
+      await input.storage.deleteObject(input.sourceKey);
+    }
+    if (input.sourceId === input.targetId) {
+      await deleteSiblingVariants(
+        input.storage,
+        input.tenantId,
+        input.targetId,
+      );
+      await input.sql.run(
+        `UPDATE variants SET status = 'deleted' WHERE file_id = ?`,
+        [input.targetId],
+      );
+    }
+    const now = nowIso();
+    await input.sql.run(
+      `UPDATE files SET detected_mime = ?, declared_mime = ?, bytes = ?, checksum = ?,
       original_object_key = ?, upload_state = 'verified', processing_state = 'ready', updated_at = ?
      WHERE id = ?`,
-    [outMime, outMime, body.byteLength, sha256(body), key, now, input.targetId],
-  );
+      [
+        outMime,
+        outMime,
+        body.byteLength,
+        sha256(body),
+        key,
+        now,
+        input.targetId,
+      ],
+    );
+  } finally {
+    await local.cleanup();
+  }
 }
 
 async function applyImage(
@@ -238,21 +262,20 @@ async function applyPdf(
 }
 
 async function deleteSiblingVariants(
-  root: string,
+  storage: StorageDriver,
   tenantId: string,
   assetId: string,
 ): Promise<void> {
-  const { readdir, rm } = await import('node:fs/promises');
   const { tenantPath } = await import('../ids.js');
-  const dir = path.join(root, tenantPath(tenantId));
-  const names = await readdir(dir).catch(() => [] as string[]);
+  const prefix = `${tenantPath(tenantId)}/${assetId}_`;
+  const listed = await storage.list(prefix);
   await Promise.all(
-    names
+    listed
       .filter(
-        (name) =>
-          name.startsWith(`${assetId}_`) && !name.includes('_original.'),
+        (item) =>
+          item.key.startsWith(prefix) && !item.key.includes('_original.'),
       )
-      .map((name) => rm(path.join(dir, name), { force: true })),
+      .map((item) => storage.deleteObject(item.key)),
   );
 }
 

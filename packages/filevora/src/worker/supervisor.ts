@@ -27,6 +27,27 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
     storage: {
       driver: config.storage.driver,
       root: path.resolve(config.storage.root),
+      ...(config.storage.driver === 's3'
+        ? {
+            s3: {
+              region: config.storage.s3.region,
+              bucket: config.storage.s3.bucket,
+              forcePathStyle: config.storage.s3.forcePathStyle,
+              ...(config.storage.s3.endpoint
+                ? { endpoint: config.storage.s3.endpoint }
+                : {}),
+              ...(config.storage.s3.accessKeyId
+                ? { accessKeyId: config.storage.s3.accessKeyId }
+                : {}),
+              ...(config.storage.s3.secretAccessKey
+                ? { secretAccessKey: config.storage.s3.secretAccessKey }
+                : {}),
+              ...(config.storage.s3.sessionToken
+                ? { sessionToken: config.storage.s3.sessionToken }
+                : {}),
+            },
+          }
+        : {}),
     },
     metadata: {
       mode: config.metadata.mode,
@@ -64,6 +85,25 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
     ...(Object.keys(config.presets).length > 0
       ? { presets: config.presets }
       : {}),
+  };
+}
+
+/** Options for doctor and health. Keeps storage, including S3, and the real processing mode. */
+export function filesOptionsFromResolved(config: ResolvedConfig): FilesOptions {
+  const embedded = workerConfigOptions(config);
+  return {
+    ...embedded,
+    runtime: config.runtime,
+    processing: {
+      mode: config.processing.mode,
+      spawn: config.processing.spawn,
+      concurrency: config.processing.concurrency,
+      imageMaxPixels: config.processing.imageMaxPixels,
+      videoMaxDurationSeconds: config.processing.videoMaxDurationSeconds,
+      videoMaxOutputHeight: config.processing.videoMaxOutputHeight,
+      ffmpegPath: config.processing.ffmpegPath,
+      ffprobePath: config.processing.ffprobePath,
+    },
   };
 }
 

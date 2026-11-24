@@ -7,7 +7,8 @@ import type { Sql } from '../metadata/sqlite.js';
 import { probeMedia, runFfmpeg } from '../processors/ffmpeg.js';
 import { recordProcessingProgress } from '../queue/processing-queue.js';
 import type { ExifMode } from '../safety/exif.js';
-import { writeBytes } from '../storage/filesystem.js';
+import { materialize } from '../storage/stage.js';
+import type { StorageDriver } from '../types/index.js';
 import type { NamedPreset, PresetOutput } from './catalog.js';
 
 interface PresetFile {
@@ -19,7 +20,7 @@ interface PresetFile {
 /** Write one preset's versions next to the original. The original stays. */
 export async function publishNamedPreset(input: {
   sql: Sql;
-  root: string;
+  storage: StorageDriver;
   file: PresetFile;
   preset: NamedPreset;
   exif: ExifMode;
@@ -32,34 +33,48 @@ export async function publishNamedPreset(input: {
   signal?: AbortSignal;
 }): Promise<string[]> {
   if (!input.file.original_object_key) throw fail('NOT_FOUND');
+  const local = await materialize(
+    input.storage,
+    input.file.original_object_key,
+  );
+  const staged = { ...input, source: local.path };
   const names: string[] = [];
   const started = Date.now();
   const total = Math.max(1, input.preset.outputs.length);
-  for (let index = 0; index < input.preset.outputs.length; index += 1) {
-    const output = input.preset.outputs[index];
-    if (!output) continue;
-    const family = input.preset.families[0];
-    if (family === 'video' && hasPoster(output)) {
-      await publishPoster(input, output);
-    } else if (family === 'video') {
-      await publishVideo(input, output);
-    } else {
-      await publishImage(input, output);
+  try {
+    for (let index = 0; index < input.preset.outputs.length; index += 1) {
+      const output = staged.preset.outputs[index];
+      if (!output) continue;
+      const family = staged.preset.families[0];
+      if (family === 'video' && hasPoster(output)) {
+        await publishPoster(staged, output);
+      } else if (family === 'video') {
+        await publishVideo(staged, output);
+      } else {
+        await publishImage(staged, output);
+      }
+      names.push(output.version);
+      await recordProcessingProgress(
+        staged.file.id,
+        (index + 1) / total,
+        started,
+      );
     }
-    names.push(output.version);
-    await recordProcessingProgress(input.file.id, (index + 1) / total, started);
+    await staged.sql.run(
+      `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
+      [nowIso(), staged.file.id],
+    );
+    return names;
+  } finally {
+    await local.cleanup();
   }
-  await input.sql.run(
-    `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
-    [nowIso(), input.file.id],
-  );
-  return names;
 }
 
 async function publishImage(
   input: {
     sql: Sql;
-    root: string;
+    storage: StorageDriver;
+    source: string;
     file: PresetFile;
     preset: NamedPreset;
     exif: ExifMode;
@@ -68,7 +83,7 @@ async function publishImage(
   output: PresetOutput,
 ): Promise<void> {
   if (await alreadyStored(input, output.version)) return;
-  const source = path.join(input.root, input.file.original_object_key ?? '');
+  const source = input.source;
   const sharp = (await import('sharp')).default;
   let pipeline = sharp(source, { limitInputPixels: input.maxPixels }).rotate();
   for (const operation of output.operations) {
@@ -105,7 +120,8 @@ async function publishImage(
 async function publishVideo(
   input: {
     sql: Sql;
-    root: string;
+    storage: StorageDriver;
+    source: string;
     file: PresetFile;
     preset: NamedPreset;
     ffmpeg: string;
@@ -130,7 +146,7 @@ async function publishVideo(
       message: `Preset ${input.preset.name} asks for ${resize.height}px and the maximum video height is ${input.maxHeight}.`,
     });
   }
-  const source = path.join(input.root, input.file.original_object_key ?? '');
+  const source = input.source;
   const probe = await probeMedia(input.ffprobe, source, input.timeoutMs);
   const work = mkdtempSync(path.join(tmpdir(), 'filevora-preset-'));
   const target = path.join(work, `${output.version}.mp4`);
@@ -201,7 +217,8 @@ async function publishVideo(
 async function publishPoster(
   input: {
     sql: Sql;
-    root: string;
+    storage: StorageDriver;
+    source: string;
     file: PresetFile;
     preset: NamedPreset;
     exif: ExifMode;
@@ -219,7 +236,7 @@ async function publishPoster(
   const atMs = poster && poster.op === 'video.poster' ? (poster.atMs ?? 0) : 0;
   const width =
     poster && poster.op === 'video.poster' ? (poster.width ?? 1280) : 1280;
-  const source = path.join(input.root, input.file.original_object_key ?? '');
+  const source = input.source;
   const work = mkdtempSync(path.join(tmpdir(), 'filevora-poster-'));
   try {
     const sharp = (await import('sharp')).default;
@@ -264,7 +281,12 @@ async function alreadyStored(
 }
 
 async function insertVariant(
-  input: { sql: Sql; root: string; file: PresetFile; preset: NamedPreset },
+  input: {
+    sql: Sql;
+    storage: StorageDriver;
+    file: PresetFile;
+    preset: NamedPreset;
+  },
   variant: {
     version: string;
     body: Buffer;
@@ -281,7 +303,11 @@ async function insertVariant(
     variant.version,
     variant.extension,
   );
-  await writeBytes(input.root, key, variant.body);
+  await input.storage.putObject({
+    key,
+    body: variant.body,
+    contentType: variant.mime,
+  });
   await input.sql.run(
     `INSERT INTO variants (
       id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, width, height,

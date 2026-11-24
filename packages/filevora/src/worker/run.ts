@@ -31,6 +31,7 @@ import {
 } from '../webhooks/deliver.js';
 import { webhookProgress } from '../webhooks/payload.js';
 import { runCleanup } from '../retention/cleanup.js';
+import { openStorage } from '../storage/stage.js';
 import { heartbeatSupervisor } from './supervisor.js';
 
 export interface WorkerRunOptions {
@@ -162,226 +163,235 @@ async function executeJob(
   config: ResolvedConfig,
 ): Promise<Record<string, unknown>> {
   const data = job.data;
-  if (data.type === 'retention') {
-    const payload = data.payload as { dryRun?: boolean };
-    const report = await runCleanup({
-      sql,
-      root: config.storage.root,
-      retention: config.retention,
-      sessionTtlSeconds: config.upload.sessionTtlSeconds,
-      dryRun: Boolean(payload.dryRun),
-    });
-    return { ...report };
-  }
-  if (data.type === 'webhook') {
-    const payload = data.payload as {
-      url?: string;
-      secret?: string;
-      event?: string;
-      body?: string;
-    };
-    if (!payload.url || !payload.secret || !payload.body) {
-      return { delivered: false };
-    }
-    await postWebhook({
-      url: payload.url,
-      secret: payload.secret,
-      event: payload.event ?? 'processing.completed',
-      body: payload.body,
-      config,
-    });
-    return { delivered: true };
-  }
-  if (data.schemaVersion > JOB_SCHEMA_VERSION)
-    throw fail('JOB_VERSION_UNSUPPORTED');
-  const signal = new AbortController().signal;
-  const payload = data.payload as {
-    delayMs?: number;
-    transforms?: MediaTransform[];
-  };
-  if (data.type === 'test.hold') {
-    if (config.env !== 'test') {
-      throw fail('INVALID_RECIPE', {
-        message: 'test.hold is only available when env is test.',
+  const storage = await openStorage(config.storage);
+  try {
+    if (data.type === 'retention') {
+      const payload = data.payload as { dryRun?: boolean };
+      const report = await runCleanup({
+        sql,
+        root: config.storage.root,
+        storage,
+        retention: config.retention,
+        sessionTtlSeconds: config.upload.sessionTtlSeconds,
+        dryRun: Boolean(payload.dryRun),
       });
+      return { ...report };
     }
+    if (data.type === 'webhook') {
+      const payload = data.payload as {
+        url?: string;
+        secret?: string;
+        event?: string;
+        body?: string;
+      };
+      if (!payload.url || !payload.secret || !payload.body) {
+        return { delivered: false };
+      }
+      await postWebhook({
+        url: payload.url,
+        secret: payload.secret,
+        event: payload.event ?? 'processing.completed',
+        body: payload.body,
+        config,
+      });
+      return { delivered: true };
+    }
+    if (data.schemaVersion > JOB_SCHEMA_VERSION)
+      throw fail('JOB_VERSION_UNSUPPORTED');
+    const signal = new AbortController().signal;
+    const payload = data.payload as {
+      delayMs?: number;
+      transforms?: MediaTransform[];
+    };
+    if (data.type === 'test.hold') {
+      if (config.env !== 'test') {
+        throw fail('INVALID_RECIPE', {
+          message: 'test.hold is only available when env is test.',
+        });
+      }
+      await sql.run(
+        `UPDATE files SET processing_state = 'processing', updated_at = ? WHERE id = ?`,
+        [new Date().toISOString(), data.fileId],
+      );
+      await delay(Math.min(payload.delayMs ?? 0, 10_000), signal);
+      await sql.run(
+        `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
+        [new Date().toISOString(), data.fileId],
+      );
+      return { held: true };
+    }
+    const file = await sql.get<{
+      id: string;
+      tenant_id: string;
+      detected_mime: string | null;
+      original_object_key: string | null;
+      preset: string | null;
+    }>(
+      'SELECT id, tenant_id, detected_mime, original_object_key, preset FROM files WHERE id = ?',
+      [data.fileId],
+    );
+    if (!file) throw fail('NOT_FOUND');
     await sql.run(
       `UPDATE files SET processing_state = 'processing', updated_at = ? WHERE id = ?`,
       [new Date().toISOString(), data.fileId],
     );
-    await delay(Math.min(payload.delayMs ?? 0, 10_000), signal);
-    await sql.run(
-      `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
-      [new Date().toISOString(), data.fileId],
-    );
-    return { held: true };
-  }
-  const file = await sql.get<{
-    id: string;
-    tenant_id: string;
-    detected_mime: string | null;
-    original_object_key: string | null;
-    preset: string | null;
-  }>(
-    'SELECT id, tenant_id, detected_mime, original_object_key, preset FROM files WHERE id = ?',
-    [data.fileId],
-  );
-  if (!file) throw fail('NOT_FOUND');
-  await sql.run(
-    `UPDATE files SET processing_state = 'processing', updated_at = ? WHERE id = ?`,
-    [new Date().toISOString(), data.fileId],
-  );
-  const paths = {
-    ffmpeg: config.processing.ffmpegPath,
-    ffprobe: config.processing.ffprobePath,
-  };
-  const limits = {
-    timeoutMs: config.queue.timeoutSeconds * 1000,
-    maxDurationSeconds: config.processing.videoMaxDurationSeconds,
-    maxHeight: config.processing.videoMaxOutputHeight,
-  };
-  const hooks = { jobId: job.id ?? data.fileId, signal };
-  try {
-    if (data.type === 'recipe') {
-      const names = await publishRecipe(
-        sql,
-        config.storage.root,
-        file,
-        payload.transforms ?? [],
-        paths,
-        limits,
-        hooks,
-      );
-      await notifyTerminal(sql, config, data, 'processing.completed');
-      return { variants: names, processingState: 'ready' };
-    }
-    if (data.type === 'transform') {
-      const jobPayload = data.payload as {
-        sourceFileId?: string;
-        sourceKey?: string;
-        mime?: string;
-        operations?: AssetTransformOperation[];
-      };
-      await applyAssetTransform({
-        sql,
-        root: config.storage.root,
-        ffmpeg: config.processing.ffmpegPath,
-        ffprobe: config.processing.ffprobePath,
-        timeoutMs: config.queue.timeoutSeconds * 1000,
-        jobId: job.id ?? data.fileId,
-        sourceId: jobPayload.sourceFileId ?? data.fileId,
-        targetId: data.fileId,
-        tenantId: data.tenantId,
-        mime: jobPayload.mime ?? file.detected_mime ?? '',
-        sourceKey: jobPayload.sourceKey ?? file.original_object_key ?? '',
-        operations: jobPayload.operations ?? [],
-        exif: config.safety.exif,
-        ...(config.safety.scanner ? { scanner: config.safety.scanner } : {}),
-      });
-      await notifyTerminal(sql, config, data, 'transform.completed');
-      return { variants: ['_original'], processingState: 'ready' };
-    }
-    if (data.type === 'preset') {
-      const requested =
-        typeof data.payload.preset === 'string'
-          ? data.payload.preset
-          : file.preset || 'web-optimized';
-      const named = findPreset(requested, config.presets);
-      if (!named) {
-        throw fail('TRANSFORM_REJECTED', {
-          message: `Unknown preset "${requested}".`,
-          context: {
-            field: 'preset',
-            reason: `Unknown preset "${requested}".`,
-          },
-        });
-      }
-      if (named.delivery !== 'legacy') {
-        const names = await publishNamedPreset({
+    const paths = {
+      ffmpeg: config.processing.ffmpegPath,
+      ffprobe: config.processing.ffprobePath,
+    };
+    const limits = {
+      timeoutMs: config.queue.timeoutSeconds * 1000,
+      maxDurationSeconds: config.processing.videoMaxDurationSeconds,
+      maxHeight: config.processing.videoMaxOutputHeight,
+    };
+    const hooks = { jobId: job.id ?? data.fileId, signal };
+    try {
+      if (data.type === 'recipe') {
+        const names = await publishRecipe(
           sql,
-          root: config.storage.root,
+          storage,
           file,
-          preset: named,
-          exif: config.safety.exif,
-          ffmpeg: paths.ffmpeg,
-          ffprobe: paths.ffprobe,
-          timeoutMs: limits.timeoutMs,
+          payload.transforms ?? [],
+          paths,
+          limits,
+          hooks,
+        );
+        await notifyTerminal(sql, config, data, 'processing.completed');
+        return { variants: names, processingState: 'ready' };
+      }
+      if (data.type === 'transform') {
+        const jobPayload = data.payload as {
+          sourceFileId?: string;
+          sourceKey?: string;
+          mime?: string;
+          operations?: AssetTransformOperation[];
+        };
+        await applyAssetTransform({
+          sql,
+          storage,
+          ffmpeg: config.processing.ffmpegPath,
+          ffprobe: config.processing.ffprobePath,
+          timeoutMs: config.queue.timeoutSeconds * 1000,
           jobId: job.id ?? data.fileId,
-          maxPixels: config.processing.imageMaxPixels,
-          maxHeight: limits.maxHeight,
-          ...(signal ? { signal } : {}),
+          sourceId: jobPayload.sourceFileId ?? data.fileId,
+          targetId: data.fileId,
+          tenantId: data.tenantId,
+          mime: jobPayload.mime ?? file.detected_mime ?? '',
+          sourceKey: jobPayload.sourceKey ?? file.original_object_key ?? '',
+          operations: jobPayload.operations ?? [],
+          exif: config.safety.exif,
+          ...(config.safety.scanner ? { scanner: config.safety.scanner } : {}),
         });
-        await notifyTerminal(sql, config, data, 'processing.completed');
-        return { variants: names, processingState: 'ready' };
+        await notifyTerminal(sql, config, data, 'transform.completed');
+        return { variants: ['_original'], processingState: 'ready' };
       }
-      if (file.detected_mime?.startsWith('image/')) {
-        const names = await publishImagePreset(
-          sql,
-          config.storage.root,
-          file,
-          config.processing.imageMaxPixels,
-          config.safety.exif,
-        );
-        await notifyTerminal(sql, config, data, 'processing.completed');
-        return { variants: names, processingState: 'ready' };
+      if (data.type === 'preset') {
+        const requested =
+          typeof data.payload.preset === 'string'
+            ? data.payload.preset
+            : file.preset || 'web-optimized';
+        const named = findPreset(requested, config.presets);
+        if (!named) {
+          throw fail('TRANSFORM_REJECTED', {
+            message: `Unknown preset "${requested}".`,
+            context: {
+              field: 'preset',
+              reason: `Unknown preset "${requested}".`,
+            },
+          });
+        }
+        if (named.delivery !== 'legacy') {
+          const names = await publishNamedPreset({
+            sql,
+            storage,
+            file,
+            preset: named,
+            exif: config.safety.exif,
+            ffmpeg: paths.ffmpeg,
+            ffprobe: paths.ffprobe,
+            timeoutMs: limits.timeoutMs,
+            jobId: job.id ?? data.fileId,
+            maxPixels: config.processing.imageMaxPixels,
+            maxHeight: limits.maxHeight,
+            ...(signal ? { signal } : {}),
+          });
+          await notifyTerminal(sql, config, data, 'processing.completed');
+          return { variants: names, processingState: 'ready' };
+        }
+        if (file.detected_mime?.startsWith('image/')) {
+          const names = await publishImagePreset(
+            sql,
+            storage,
+            file,
+            config.processing.imageMaxPixels,
+            config.safety.exif,
+          );
+          await notifyTerminal(sql, config, data, 'processing.completed');
+          return { variants: names, processingState: 'ready' };
+        }
+        if (file.detected_mime?.startsWith('video/')) {
+          const names = await publishVideoPreset(
+            sql,
+            storage,
+            file,
+            paths,
+            limits,
+            hooks,
+          );
+          await notifyTerminal(sql, config, data, 'processing.completed');
+          return { variants: names, processingState: 'ready' };
+        }
+        if (file.detected_mime?.startsWith('audio/')) {
+          const names = await publishAudioPreset(
+            sql,
+            storage,
+            file,
+            paths,
+            limits,
+            hooks,
+          );
+          await notifyTerminal(sql, config, data, 'processing.completed');
+          return { variants: names, processingState: 'ready' };
+        }
+        throw fail('PROCESSOR_UNAVAILABLE', {
+          message: 'No processor is registered for this file type.',
+        });
       }
-      if (file.detected_mime?.startsWith('video/')) {
-        const names = await publishVideoPreset(
-          sql,
-          config.storage.root,
-          file,
-          paths,
-          limits,
-          hooks,
-        );
-        await notifyTerminal(sql, config, data, 'processing.completed');
-        return { variants: names, processingState: 'ready' };
-      }
-      if (file.detected_mime?.startsWith('audio/')) {
-        const names = await publishAudioPreset(
-          sql,
-          config.storage.root,
-          file,
-          paths,
-          limits,
-          hooks,
-        );
-        await notifyTerminal(sql, config, data, 'processing.completed');
-        return { variants: names, processingState: 'ready' };
-      }
-      throw fail('PROCESSOR_UNAVAILABLE', {
-        message: 'No processor is registered for this file type.',
+      throw fail('INVALID_RECIPE', {
+        message: `Unknown job type ${data.type}.`,
       });
+    } catch (error) {
+      if (data.type === 'webhook') throw error;
+      const sdk = isFileSdkError(error)
+        ? error
+        : fail('FFMPEG_FAILED', { message: 'The job failed.' });
+      const attempts = job.opts.attempts ?? 1;
+      const terminal =
+        !sdk.retryable || (job.attemptsMade ?? 0) + 1 >= attempts;
+      if (terminal) {
+        const malware =
+          sdk.code === 'MALWARE_DETECTED' || sdk.code === 'MALWARE_SCAN_FAILED';
+        await sql.run(
+          malware
+            ? `UPDATE files SET processing_state = ?, metadata_json = ?, updated_at = ? WHERE id = ?`
+            : `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
+          malware
+            ? [
+                sdk.code === 'MALWARE_DETECTED' ? 'quarantined' : 'failed',
+                JSON.stringify({ filevoraSafetyError: sdk.code }),
+                new Date().toISOString(),
+                data.fileId,
+              ]
+            : [new Date().toISOString(), data.fileId],
+        );
+        await notifyTerminal(sql, config, data, 'processing.failed');
+      }
+      const wrapped = new Error(`${sdk.code}: ${sdk.message}`);
+      if (!sdk.retryable) wrapped.name = 'UnrecoverableError';
+      throw wrapped;
     }
-    throw fail('INVALID_RECIPE', { message: `Unknown job type ${data.type}.` });
-  } catch (error) {
-    if (data.type === 'webhook') throw error;
-    const sdk = isFileSdkError(error)
-      ? error
-      : fail('FFMPEG_FAILED', { message: 'The job failed.' });
-    const attempts = job.opts.attempts ?? 1;
-    const terminal = !sdk.retryable || (job.attemptsMade ?? 0) + 1 >= attempts;
-    if (terminal) {
-      const malware =
-        sdk.code === 'MALWARE_DETECTED' || sdk.code === 'MALWARE_SCAN_FAILED';
-      await sql.run(
-        malware
-          ? `UPDATE files SET processing_state = ?, metadata_json = ?, updated_at = ? WHERE id = ?`
-          : `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
-        malware
-          ? [
-              sdk.code === 'MALWARE_DETECTED' ? 'quarantined' : 'failed',
-              JSON.stringify({ filevoraSafetyError: sdk.code }),
-              new Date().toISOString(),
-              data.fileId,
-            ]
-          : [new Date().toISOString(), data.fileId],
-      );
-      await notifyTerminal(sql, config, data, 'processing.failed');
-    }
-    const wrapped = new Error(`${sdk.code}: ${sdk.message}`);
-    if (!sdk.retryable) wrapped.name = 'UnrecoverableError';
-    throw wrapped;
+  } finally {
+    await storage.close?.();
   }
 }
 

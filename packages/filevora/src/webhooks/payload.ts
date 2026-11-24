@@ -99,14 +99,18 @@ export async function webhookProgress(
   ) {
     const { createS3Storage } = await import('../storage/s3.js');
     const storage = createS3Storage(config.storage.s3);
-    if (storage.signDownload) {
-      const presigned = await storage.signDownload({
-        key: row.original_object_key,
-        expiresInSeconds: config.delivery.urlTtlSeconds,
-        contentType: row.detected_mime ?? row.declared_mime,
-        fileName: row.original_name,
-      });
-      originalUrl = presigned.url;
+    try {
+      if (storage.signDownload) {
+        const presigned = await storage.signDownload({
+          key: row.original_object_key,
+          expiresInSeconds: config.delivery.urlTtlSeconds,
+          contentType: row.detected_mime ?? row.declared_mime,
+          fileName: row.original_name,
+        });
+        originalUrl = presigned.url;
+      }
+    } finally {
+      await storage.close?.();
     }
   }
   await sql

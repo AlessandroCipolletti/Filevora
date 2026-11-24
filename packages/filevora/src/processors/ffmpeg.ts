@@ -10,7 +10,8 @@ import {
   recordRunnerPid,
 } from '../queue/processing-queue.js';
 import { redactString } from '../redact.js';
-import { writeBytes } from '../storage/filesystem.js';
+import { materialize } from '../storage/stage.js';
+import type { StorageDriver } from '../types/index.js';
 
 /** Use FFmpeg libwebp only when that encoder is listed. Otherwise Sharp encodes the poster. */
 export function selectPosterEncoder(encoderList: string): 'libwebp' | 'sharp' {
@@ -230,18 +231,18 @@ export async function runFfmpeg(
 
 export async function publishVideoPreset(
   sql: Sql,
-  root: string,
+  storage: StorageDriver,
   file: MediaFile,
   paths: { ffmpeg: string; ffprobe: string },
   limits: { timeoutMs: number; maxDurationSeconds: number; maxHeight: number },
   hooks: { jobId: string; signal?: AbortSignal },
 ): Promise<string[]> {
-  return publishMedia(sql, root, file, paths, limits, hooks, 'video');
+  return publishMedia(sql, storage, file, paths, limits, hooks, 'video');
 }
 
 export async function publishAudioPreset(
   sql: Sql,
-  root: string,
+  storage: StorageDriver,
   file: MediaFile,
   paths: { ffmpeg: string; ffprobe: string },
   limits: { timeoutMs: number; maxDurationSeconds: number },
@@ -249,7 +250,7 @@ export async function publishAudioPreset(
 ): Promise<string[]> {
   return publishMedia(
     sql,
-    root,
+    storage,
     file,
     paths,
     { ...limits, maxHeight: 0 },
@@ -260,7 +261,7 @@ export async function publishAudioPreset(
 
 export async function publishRecipe(
   sql: Sql,
-  root: string,
+  storage: StorageDriver,
   file: MediaFile,
   transforms: MediaTransform[],
   paths: { ffmpeg: string; ffprobe: string },
@@ -269,135 +270,140 @@ export async function publishRecipe(
 ): Promise<string[]> {
   assertRecipe(transforms);
   if (!file.original_object_key) throw fail('NOT_FOUND');
-  const input = path.join(root, file.original_object_key);
-  const probe = await probeMedia(paths.ffprobe, input, limits.timeoutMs);
-  if (probe.durationMs > limits.maxDurationSeconds * 1000) {
-    throw fail('INVALID_RECIPE', {
-      message: 'The media is longer than the configured maximum.',
-    });
-  }
-  const work = mkdtempSync(path.join(tmpdir(), 'filevora-recipe-'));
+  const local = await materialize(storage, file.original_object_key);
+  const input = local.path;
   try {
-    let current = input;
-    let index = 0;
-    for (const transform of transforms) {
-      const next = path.join(work, `step-${index}`);
-      index += 1;
-      if (transform.kind === 'video.trim') {
-        await runFfmpeg(
-          paths.ffmpeg,
-          [
-            '-y',
-            '-i',
-            current,
-            '-ss',
-            String(transform.startSeconds),
-            '-to',
-            String(transform.endSeconds),
-            '-c:v',
-            'libx264',
-            '-preset',
-            'veryfast',
-            '-crf',
-            '28',
-            '-c:a',
-            'aac',
-            '-movflags',
-            '+faststart',
-            '-progress',
-            'pipe:1',
-            '-nostats',
-            `${next}.mp4`,
-          ],
-          {
-            timeoutMs: limits.timeoutMs,
-            signal: hooks.signal,
-            durationMs: probe.durationMs,
-            onPid: (pid) => setRunner(hooks.jobId, pid),
-          },
-        );
-        current = `${next}.mp4`;
-      } else if (transform.kind === 'video.transcode') {
-        const height = transform.maxHeight ?? 720;
-        await runFfmpeg(
-          paths.ffmpeg,
-          [
-            '-y',
-            '-i',
-            current,
-            '-vf',
-            `scale=-2:'min(${height},ih)'`,
-            '-c:v',
-            'libx264',
-            '-preset',
-            'veryfast',
-            '-crf',
-            '28',
-            '-c:a',
-            'aac',
-            '-movflags',
-            '+faststart',
-            '-progress',
-            'pipe:1',
-            '-nostats',
-            `${next}.mp4`,
-          ],
-          {
-            timeoutMs: limits.timeoutMs,
-            signal: hooks.signal,
-            durationMs: probe.durationMs,
-            onPid: (pid) => setRunner(hooks.jobId, pid),
-          },
-        );
-        current = `${next}.mp4`;
-      } else {
-        const encoded = await encodeAudio(
-          paths.ffmpeg,
-          current,
-          next,
-          transform.codec ?? 'aac',
-          limits.timeoutMs,
-          hooks,
-          probe.durationMs,
-          sql,
-          file.id,
-        );
-        current = encoded;
-      }
+    const probe = await probeMedia(paths.ffprobe, input, limits.timeoutMs);
+    if (probe.durationMs > limits.maxDurationSeconds * 1000) {
+      throw fail('INVALID_RECIPE', {
+        message: 'The media is longer than the configured maximum.',
+      });
     }
-    const body = readFileSync(current);
-    const probed = await probeMedia(paths.ffprobe, current, limits.timeoutMs);
-    const name = 'custom';
-    await storeVariant(sql, root, file, {
-      name,
-      recipeId: 'recipe',
-      body,
-      mime: current.endsWith('.mp3')
-        ? 'audio/mpeg'
-        : current.endsWith('.ogg')
-          ? 'audio/ogg'
-          : current.endsWith('.m4a')
-            ? 'audio/mp4'
-            : 'video/mp4',
-      extension: path.extname(current).slice(1) || 'bin',
-      width: probed.width,
-      height: probed.height,
-      durationMs: probed.durationMs,
-    });
-    await sql.run(
-      `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
-      [nowIso(), file.id],
-    );
-    return [name];
+    const work = mkdtempSync(path.join(tmpdir(), 'filevora-recipe-'));
+    try {
+      let current = input;
+      let index = 0;
+      for (const transform of transforms) {
+        const next = path.join(work, `step-${index}`);
+        index += 1;
+        if (transform.kind === 'video.trim') {
+          await runFfmpeg(
+            paths.ffmpeg,
+            [
+              '-y',
+              '-i',
+              current,
+              '-ss',
+              String(transform.startSeconds),
+              '-to',
+              String(transform.endSeconds),
+              '-c:v',
+              'libx264',
+              '-preset',
+              'veryfast',
+              '-crf',
+              '28',
+              '-c:a',
+              'aac',
+              '-movflags',
+              '+faststart',
+              '-progress',
+              'pipe:1',
+              '-nostats',
+              `${next}.mp4`,
+            ],
+            {
+              timeoutMs: limits.timeoutMs,
+              signal: hooks.signal,
+              durationMs: probe.durationMs,
+              onPid: (pid) => setRunner(hooks.jobId, pid),
+            },
+          );
+          current = `${next}.mp4`;
+        } else if (transform.kind === 'video.transcode') {
+          const height = transform.maxHeight ?? 720;
+          await runFfmpeg(
+            paths.ffmpeg,
+            [
+              '-y',
+              '-i',
+              current,
+              '-vf',
+              `scale=-2:'min(${height},ih)'`,
+              '-c:v',
+              'libx264',
+              '-preset',
+              'veryfast',
+              '-crf',
+              '28',
+              '-c:a',
+              'aac',
+              '-movflags',
+              '+faststart',
+              '-progress',
+              'pipe:1',
+              '-nostats',
+              `${next}.mp4`,
+            ],
+            {
+              timeoutMs: limits.timeoutMs,
+              signal: hooks.signal,
+              durationMs: probe.durationMs,
+              onPid: (pid) => setRunner(hooks.jobId, pid),
+            },
+          );
+          current = `${next}.mp4`;
+        } else {
+          const encoded = await encodeAudio(
+            paths.ffmpeg,
+            current,
+            next,
+            transform.codec ?? 'aac',
+            limits.timeoutMs,
+            hooks,
+            probe.durationMs,
+            sql,
+            file.id,
+          );
+          current = encoded;
+        }
+      }
+      const body = readFileSync(current);
+      const probed = await probeMedia(paths.ffprobe, current, limits.timeoutMs);
+      const name = 'custom';
+      await storeVariant(sql, storage, file, {
+        name,
+        recipeId: 'recipe',
+        body,
+        mime: current.endsWith('.mp3')
+          ? 'audio/mpeg'
+          : current.endsWith('.ogg')
+            ? 'audio/ogg'
+            : current.endsWith('.m4a')
+              ? 'audio/mp4'
+              : 'video/mp4',
+        extension: path.extname(current).slice(1) || 'bin',
+        width: probed.width,
+        height: probed.height,
+        durationMs: probed.durationMs,
+      });
+      await sql.run(
+        `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
+        [nowIso(), file.id],
+      );
+      return [name];
+    } finally {
+      setRunner(hooks.jobId, null);
+      rmSync(work, { recursive: true, force: true });
+    }
   } finally {
-    setRunner(hooks.jobId, null);
-    rmSync(work, { recursive: true, force: true });
+    await local.cleanup();
   }
 }
 
 async function publishMedia(
   sql: Sql,
-  root: string,
+  storage: StorageDriver,
   file: MediaFile,
   paths: { ffmpeg: string; ffprobe: string },
   limits: { timeoutMs: number; maxDurationSeconds: number; maxHeight: number },
@@ -405,146 +411,103 @@ async function publishMedia(
   kind: 'video' | 'audio',
 ): Promise<string[]> {
   if (!file.original_object_key) throw fail('NOT_FOUND');
-  const input = path.join(root, file.original_object_key);
-  const probe = await probeMedia(paths.ffprobe, input, limits.timeoutMs);
-  if (probe.durationMs > limits.maxDurationSeconds * 1000) {
-    throw fail('INVALID_RECIPE', {
-      message: 'The media is longer than the configured maximum.',
-    });
-  }
-  const work = mkdtempSync(path.join(tmpdir(), 'filevora-media-'));
-  const names: string[] = [];
+  const local = await materialize(storage, file.original_object_key);
+  const input = local.path;
   try {
-    if (kind === 'audio') {
-      const output = await encodeAudio(
-        paths.ffmpeg,
-        input,
-        path.join(work, 'optimized'),
-        'aac',
-        limits.timeoutMs,
-        hooks,
-        probe.durationMs,
-        sql,
-        file.id,
-      );
-      const body = readFileSync(output);
-      const probed = await probeMedia(paths.ffprobe, output, limits.timeoutMs);
-      await storeVariant(sql, root, file, {
-        name: 'optimized',
-        recipeId: 'web-optimized',
-        body,
-        mime: 'audio/mp4',
-        extension: 'm4a',
-        durationMs: probed.durationMs,
+    const probe = await probeMedia(paths.ffprobe, input, limits.timeoutMs);
+    if (probe.durationMs > limits.maxDurationSeconds * 1000) {
+      throw fail('INVALID_RECIPE', {
+        message: 'The media is longer than the configured maximum.',
       });
-      names.push('optimized');
-    } else {
-      const posterEncoder = selectPosterEncoder(
-        probeFfmpegEncoders(paths.ffmpeg),
-      );
-      const sharp = (await import('sharp')).default;
-      let poster: Buffer;
-      if (posterEncoder === 'libwebp') {
-        const posterWebp = path.join(work, 'poster.webp');
-        await runFfmpeg(
+    }
+    const work = mkdtempSync(path.join(tmpdir(), 'filevora-media-'));
+    const names: string[] = [];
+    try {
+      if (kind === 'audio') {
+        const output = await encodeAudio(
           paths.ffmpeg,
-          [
-            '-y',
-            '-ss',
-            '0',
-            '-i',
-            input,
-            '-frames:v',
-            '1',
-            '-c:v',
-            'libwebp',
-            posterWebp,
-          ],
-          {
-            timeoutMs: limits.timeoutMs,
-            signal: hooks.signal,
-            onPid: (pid) => setRunner(hooks.jobId, pid),
-          },
-        );
-        poster = readFileSync(posterWebp);
-      } else {
-        const posterPng = path.join(work, 'poster.png');
-        await runFfmpeg(
-          paths.ffmpeg,
-          ['-y', '-ss', '0', '-i', input, '-frames:v', '1', posterPng],
-          {
-            timeoutMs: limits.timeoutMs,
-            signal: hooks.signal,
-            onPid: (pid) => setRunner(hooks.jobId, pid),
-          },
-        );
-        poster = await sharp(posterPng)
-          .rotate()
-          .resize({ width: 320, withoutEnlargement: true })
-          .webp({ quality: 80 })
-          .toBuffer();
-      }
-      const posterInfo = await sharp(poster).metadata();
-      await storeVariant(sql, root, file, {
-        name: 'thumbnail',
-        recipeId: 'web-optimized',
-        body: poster,
-        mime: 'image/webp',
-        extension: 'webp',
-        width: posterInfo.width,
-        height: posterInfo.height,
-      });
-      names.push('thumbnail');
-      const optimized = path.join(work, 'optimized.mp4');
-      await runFfmpeg(
-        paths.ffmpeg,
-        [
-          '-y',
-          '-i',
           input,
-          '-vf',
-          "scale=-2:'min(720,ih)'",
-          '-c:v',
-          'libx264',
-          '-preset',
-          'veryfast',
-          '-crf',
-          '28',
-          '-c:a',
+          path.join(work, 'optimized'),
           'aac',
-          '-movflags',
-          '+faststart',
-          '-progress',
-          'pipe:1',
-          '-nostats',
-          optimized,
-        ],
-        {
-          timeoutMs: limits.timeoutMs,
-          signal: hooks.signal,
-          durationMs: probe.durationMs,
-          onPid: (pid) => setRunner(hooks.jobId, pid),
-          onProgress: jobProgress(file.id),
-        },
-      );
-      const optimizedProbe = await probeMedia(
-        paths.ffprobe,
-        optimized,
-        limits.timeoutMs,
-      );
-      await storeVariant(sql, root, file, {
-        name: 'optimized',
-        recipeId: 'web-optimized',
-        body: readFileSync(optimized),
-        mime: 'video/mp4',
-        extension: 'mp4',
-        width: optimizedProbe.width,
-        height: optimizedProbe.height,
-        durationMs: optimizedProbe.durationMs,
-      });
-      names.push('optimized');
-      if ((probe.height ?? 0) > 720 && limits.maxHeight >= 1080) {
-        const hd = path.join(work, 'hd.mp4');
+          limits.timeoutMs,
+          hooks,
+          probe.durationMs,
+          sql,
+          file.id,
+        );
+        const body = readFileSync(output);
+        const probed = await probeMedia(
+          paths.ffprobe,
+          output,
+          limits.timeoutMs,
+        );
+        await storeVariant(sql, storage, file, {
+          name: 'optimized',
+          recipeId: 'web-optimized',
+          body,
+          mime: 'audio/mp4',
+          extension: 'm4a',
+          durationMs: probed.durationMs,
+        });
+        names.push('optimized');
+      } else {
+        const posterEncoder = selectPosterEncoder(
+          probeFfmpegEncoders(paths.ffmpeg),
+        );
+        const sharp = (await import('sharp')).default;
+        let poster: Buffer;
+        if (posterEncoder === 'libwebp') {
+          const posterWebp = path.join(work, 'poster.webp');
+          await runFfmpeg(
+            paths.ffmpeg,
+            [
+              '-y',
+              '-ss',
+              '0',
+              '-i',
+              input,
+              '-frames:v',
+              '1',
+              '-c:v',
+              'libwebp',
+              posterWebp,
+            ],
+            {
+              timeoutMs: limits.timeoutMs,
+              signal: hooks.signal,
+              onPid: (pid) => setRunner(hooks.jobId, pid),
+            },
+          );
+          poster = readFileSync(posterWebp);
+        } else {
+          const posterPng = path.join(work, 'poster.png');
+          await runFfmpeg(
+            paths.ffmpeg,
+            ['-y', '-ss', '0', '-i', input, '-frames:v', '1', posterPng],
+            {
+              timeoutMs: limits.timeoutMs,
+              signal: hooks.signal,
+              onPid: (pid) => setRunner(hooks.jobId, pid),
+            },
+          );
+          poster = await sharp(posterPng)
+            .rotate()
+            .resize({ width: 320, withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
+        }
+        const posterInfo = await sharp(poster).metadata();
+        await storeVariant(sql, storage, file, {
+          name: 'thumbnail',
+          recipeId: 'web-optimized',
+          body: poster,
+          mime: 'image/webp',
+          extension: 'webp',
+          width: posterInfo.width,
+          height: posterInfo.height,
+        });
+        names.push('thumbnail');
+        const optimized = path.join(work, 'optimized.mp4');
         await runFfmpeg(
           paths.ffmpeg,
           [
@@ -552,7 +515,7 @@ async function publishMedia(
             '-i',
             input,
             '-vf',
-            "scale=-2:'min(1080,ih)'",
+            "scale=-2:'min(720,ih)'",
             '-c:v',
             'libx264',
             '-preset',
@@ -566,7 +529,7 @@ async function publishMedia(
             '-progress',
             'pipe:1',
             '-nostats',
-            hd,
+            optimized,
           ],
           {
             timeoutMs: limits.timeoutMs,
@@ -576,28 +539,80 @@ async function publishMedia(
             onProgress: jobProgress(file.id),
           },
         );
-        const hdProbe = await probeMedia(paths.ffprobe, hd, limits.timeoutMs);
-        await storeVariant(sql, root, file, {
-          name: 'hd',
+        const optimizedProbe = await probeMedia(
+          paths.ffprobe,
+          optimized,
+          limits.timeoutMs,
+        );
+        await storeVariant(sql, storage, file, {
+          name: 'optimized',
           recipeId: 'web-optimized',
-          body: readFileSync(hd),
+          body: readFileSync(optimized),
           mime: 'video/mp4',
           extension: 'mp4',
-          width: hdProbe.width,
-          height: hdProbe.height,
-          durationMs: hdProbe.durationMs,
+          width: optimizedProbe.width,
+          height: optimizedProbe.height,
+          durationMs: optimizedProbe.durationMs,
         });
-        names.push('hd');
+        names.push('optimized');
+        if ((probe.height ?? 0) > 720 && limits.maxHeight >= 1080) {
+          const hd = path.join(work, 'hd.mp4');
+          await runFfmpeg(
+            paths.ffmpeg,
+            [
+              '-y',
+              '-i',
+              input,
+              '-vf',
+              "scale=-2:'min(1080,ih)'",
+              '-c:v',
+              'libx264',
+              '-preset',
+              'veryfast',
+              '-crf',
+              '28',
+              '-c:a',
+              'aac',
+              '-movflags',
+              '+faststart',
+              '-progress',
+              'pipe:1',
+              '-nostats',
+              hd,
+            ],
+            {
+              timeoutMs: limits.timeoutMs,
+              signal: hooks.signal,
+              durationMs: probe.durationMs,
+              onPid: (pid) => setRunner(hooks.jobId, pid),
+              onProgress: jobProgress(file.id),
+            },
+          );
+          const hdProbe = await probeMedia(paths.ffprobe, hd, limits.timeoutMs);
+          await storeVariant(sql, storage, file, {
+            name: 'hd',
+            recipeId: 'web-optimized',
+            body: readFileSync(hd),
+            mime: 'video/mp4',
+            extension: 'mp4',
+            width: hdProbe.width,
+            height: hdProbe.height,
+            durationMs: hdProbe.durationMs,
+          });
+          names.push('hd');
+        }
       }
+      await sql.run(
+        `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
+        [nowIso(), file.id],
+      );
+      return names;
+    } finally {
+      setRunner(hooks.jobId, null);
+      rmSync(work, { recursive: true, force: true });
     }
-    await sql.run(
-      `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
-      [nowIso(), file.id],
-    );
-    return names;
   } finally {
-    setRunner(hooks.jobId, null);
-    rmSync(work, { recursive: true, force: true });
+    await local.cleanup();
   }
 }
 
@@ -710,7 +725,7 @@ function setRunner(jobId: string, pid: number | null): void {
 
 async function storeVariant(
   sql: Sql,
-  root: string,
+  storage: StorageDriver,
   file: MediaFile,
   input: {
     name: string;
@@ -735,7 +750,7 @@ async function storeVariant(
     input.name,
     input.extension,
   );
-  await writeBytes(root, key, input.body);
+  await storage.putObject({ key, body: input.body, contentType: input.mime });
   await sql.run(
     `INSERT INTO variants (
       id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, width, height, duration_ms, checksum, status, created_at

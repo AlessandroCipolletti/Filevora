@@ -1,6 +1,14 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { lstat, mkdir, open, rename, rm, stat } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  rename,
+  rm,
+  stat,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fail } from '../errors/error.js';
@@ -12,7 +20,7 @@ import type {
   StoredObject,
 } from '../types/index.js';
 
-const KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9/_.-]{0,500}$/;
+const KEY_PATTERN = /^[a-zA-Z0-9.][a-zA-Z0-9/_.-]{0,500}$/;
 
 export function assertSafeKey(key: string): void {
   if (
@@ -71,7 +79,7 @@ export function createFilesystemStorage(root: string): StorageDriver {
       const target = resolveInside(resolvedRoot, input.key);
       await refuseSymlink(target);
       await ensureParent(target);
-      const temp = `${target}.partial-${process.pid}`;
+      const temp = `${target}.partial-${process.pid}-${randomBytes(4).toString('hex')}`;
       const hash = createHash('sha256');
       let bytes = 0;
       const handle = await open(temp, 'wx', 0o600);
@@ -123,6 +131,58 @@ export function createFilesystemStorage(root: string): StorageDriver {
       const target = resolveInside(resolvedRoot, key);
       await rm(target, { force: true });
     },
+    async getObjectRange(
+      key: string,
+      start: number,
+      end: number,
+    ): Promise<Uint8Array> {
+      return readObjectRange(resolvedRoot, key, start, end);
+    },
+    async list(
+      prefix: string,
+    ): Promise<
+      Array<{ key: string; bytes: number; modifiedAt: string | null }>
+    > {
+      const slash = prefix.lastIndexOf('/');
+      const dirKey = slash >= 0 ? prefix.slice(0, slash) : '';
+      const startDir = dirKey
+        ? resolveInside(resolvedRoot, dirKey)
+        : resolvedRoot;
+      const found: Array<{
+        key: string;
+        bytes: number;
+        modifiedAt: string | null;
+      }> = [];
+      const walk = async (dir: string, keyPrefix: string): Promise<void> => {
+        const entries = await readdir(dir, { withFileTypes: true }).catch(
+          () => [],
+        );
+        for (const entry of entries) {
+          if (entry.isSymbolicLink()) continue;
+          const key = keyPrefix ? `${keyPrefix}/${entry.name}` : entry.name;
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            await walk(full, key);
+            continue;
+          }
+          if (!entry.isFile() || (prefix && !key.startsWith(prefix))) continue;
+          const info = await stat(full);
+          found.push({
+            key,
+            bytes: info.size,
+            modifiedAt: info.mtime.toISOString(),
+          });
+        }
+      };
+      await walk(startDir, dirKey);
+      return found;
+    },
+    localPath(key: string): string {
+      return resolveInside(resolvedRoot, key);
+    },
+    async close(): Promise<void> {
+      // Local files have no client to release.
+    },
   };
 }
 
@@ -167,7 +227,7 @@ export async function concatFiles(
 ): Promise<{ bytes: number; checksum: string }> {
   const target = resolveInside(root, destinationKey);
   await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-  const temp = `${target}.partial-${process.pid}`;
+  const temp = `${target}.partial-${process.pid}-${randomBytes(4).toString('hex')}`;
   const hash = createHash('sha256');
   let bytes = 0;
   const output = createWriteStream(temp, { flags: 'wx', mode: 0o600 });
@@ -211,7 +271,7 @@ export async function writeBytes(
 ): Promise<void> {
   const target = resolveInside(root, key);
   await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-  const temp = `${target}.partial-${process.pid}`;
+  const temp = `${target}.partial-${process.pid}-${randomBytes(4).toString('hex')}`;
   const handle = await open(temp, 'wx', 0o600);
   try {
     await handle.write(body);

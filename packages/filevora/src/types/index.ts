@@ -438,6 +438,16 @@ export interface StorageDriver {
   ): Promise<StoredObject>;
   abortMultipartUpload?(input: AbortMultipartInput): Promise<void>;
   signDownload?(input: SignDownloadInput): Promise<SignedUrl>;
+  /** Inclusive byte range. `end` is the last byte to return. */
+  getObjectRange(key: string, start: number, end: number): Promise<Uint8Array>;
+  /** Keys that start with `prefix`. An empty prefix lists the bucket or root. */
+  list(
+    prefix: string,
+  ): Promise<Array<{ key: string; bytes: number; modifiedAt: string | null }>>;
+  /** Absolute path when the object is already a local file. */
+  localPath?(key: string): string;
+  /** Release sockets. Filesystem storage has nothing to close. */
+  close?(): Promise<void>;
 }
 
 export interface ProbeResult {

@@ -75,9 +75,10 @@ export function createFilesHandler(
             : '';
       if (healthPath && request.method === 'GET' && pathname === healthPath) {
         const { runDoctor } = await import('../diagnostics/doctor.js');
-        const { workerConfigOptions } = await import('../worker/supervisor.js');
+        const { filesOptionsFromResolved } =
+          await import('../worker/supervisor.js');
         const report = await runDoctor(
-          workerConfigOptions(options.files.config),
+          filesOptionsFromResolved(options.files.config),
         );
         return json(report, report.ok ? 200 : 503, requestId);
       }

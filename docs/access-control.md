@@ -51,7 +51,7 @@ Issuing a signed URL sets `last_accessed_at`, which retention uses as access tim
 
 ## What a client receives
 
-Private assets: progress events, webhooks, and the versions route return signed `/content` URLs. When storage is S3, the original is an S3 presigned URL instead of a raw object URL. A URL with no signature cannot read the object.
+Private assets: progress events, webhooks, and the versions route return signed `/content` URLs. When storage is S3, the original is an S3 presigned URL instead of a raw object URL. A URL with no signature cannot read the object. Cold `GET /content` and `GET /public` read the object through the storage driver, including `Range`. Lite cards for those assets live in the bucket, not on the API host's disk.
 
 Public assets: those same responses use `/public/:assetId/:version`. That route does not require a principal and does not expire. It still refuses private assets.
 

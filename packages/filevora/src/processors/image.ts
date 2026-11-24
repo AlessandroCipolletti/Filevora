@@ -1,9 +1,9 @@
-import path from 'node:path';
 import { fail } from '../errors/error.js';
 import { assetObjectKey, createId, nowIso, sha256 } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
 import type { ExifMode } from '../safety/exif.js';
-import { writeBytes } from '../storage/filesystem.js';
+import { materialize } from '../storage/stage.js';
+import type { StorageDriver } from '../types/index.js';
 
 const TARGETS = [
   { name: 'thumbnail', width: 320 },
@@ -24,14 +24,39 @@ interface ImageFile {
  */
 export async function publishImagePreset(
   sql: Sql,
-  root: string,
+  storage: StorageDriver,
   file: ImageFile,
   maxPixels: number,
   exif: ExifMode = 'gps',
 ): Promise<string[]> {
   if (!file.original_object_key) throw fail('NOT_FOUND');
   const sharp = await loadSharp();
-  const input = path.join(root, file.original_object_key);
+  const local = await materialize(storage, file.original_object_key);
+  const input = local.path;
+  try {
+    return await publishImageFromPath(
+      sql,
+      storage,
+      file,
+      maxPixels,
+      exif,
+      sharp,
+      input,
+    );
+  } finally {
+    await local.cleanup();
+  }
+}
+
+async function publishImageFromPath(
+  sql: Sql,
+  storage: StorageDriver,
+  file: ImageFile,
+  maxPixels: number,
+  exif: ExifMode,
+  sharp: Awaited<ReturnType<typeof loadSharp>>,
+  input: string,
+): Promise<string[]> {
   let source: { width?: number; height?: number };
   try {
     source = await sharp(input, { limitInputPixels: maxPixels }).metadata();
@@ -65,7 +90,11 @@ export async function publishImagePreset(
     const info = await sharp(body).metadata();
     const id = createId('variant');
     const key = assetObjectKey(file.tenant_id, file.id, target.name, 'webp');
-    await writeBytes(root, key, body);
+    await storage.putObject({
+      key,
+      body,
+      contentType: 'image/webp',
+    });
     await sql.run(
       `INSERT INTO variants (
         id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, width, height,

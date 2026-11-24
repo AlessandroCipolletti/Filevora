@@ -4,13 +4,14 @@ import { hostSql } from './host-sql.js';
 import { migrate } from './migrate.js';
 import { openMysql } from './mysql-sql.js';
 import { openObjectSql } from './object-sql.js';
+import { openStorage } from '../storage/stage.js';
 import { openPostgres } from './postgres-sql.js';
 import { openSqlite, type Sql } from './sqlite.js';
 
 /** Open lite object cards or the host database. Does not create a default SQLite file. */
 export async function openBackend(config: ResolvedConfig): Promise<Sql> {
   if (config.metadata.mode === 'lite')
-    return openObjectSql(config.storage.root);
+    return openObjectSql(await openStorage(config.storage));
   if (!config.metadata.url && !config.metadata.filename) {
     throw fail('INVALID_CONFIG', {
       message:

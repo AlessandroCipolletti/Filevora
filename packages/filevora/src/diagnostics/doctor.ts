@@ -133,6 +133,48 @@ export async function runDoctor(
         }),
       );
     }
+  } else if (config?.storage.driver === 's3') {
+    let storage: { close?: () => Promise<void> } | undefined;
+    try {
+      const { openStorage } = await import('../storage/stage.js');
+      const driver = await openStorage(config.storage);
+      storage = driver;
+      const key = `.filevora/doctor-${process.pid}-${Date.now()}`;
+      await driver.putObject({
+        key,
+        body: Buffer.from('ok'),
+        contentType: 'text/plain',
+      });
+      const head = await driver.headObject(key);
+      await driver.deleteObject(key);
+      if (!head || head.bytes < 2) throw new Error('read mismatch');
+      checks.push(
+        described({
+          id: 'storage',
+          status: 'pass',
+          required: true,
+          message: 'S3 storage round trip succeeded.',
+          code: 'OK',
+          explanation: `Wrote, read, and deleted a probe in ${config.storage.s3.bucket}.`,
+          fix: 'No change is required.',
+        }),
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'request failed';
+      checks.push(
+        described({
+          id: 'storage',
+          status: 'fail',
+          required: true,
+          message: 'S3 storage round trip failed.',
+          code: 'DOCTOR_STORAGE_ROUNDTRIP',
+          explanation: `The bucket ${config.storage.s3.bucket} did not complete a write, read, and delete. ${detail}`,
+          fix: 'Check FILES_S3_BUCKET, FILES_S3_ENDPOINT, FILES_S3_REGION, and the access key pair. Confirm the process can reach the endpoint.',
+        }),
+      );
+    } finally {
+      await storage?.close?.();
+    }
   }
   if (!config || config.metadata.mode === 'lite') {
     checks.push(
