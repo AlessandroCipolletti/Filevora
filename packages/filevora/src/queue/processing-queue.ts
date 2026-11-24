@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { Queue, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { fail } from '../errors/error.js';
+import { fail, isFileSdkError } from '../errors/error.js';
 import { estimateRemainingMs } from '../progress/estimate.js';
 
 export const PROCESSING_QUEUE = 'filevora-processing';
@@ -50,7 +50,25 @@ export async function redisUrlFor(input: {
 }
 
 function connection(url: string) {
-  return { url, maxRetriesPerRequest: null as null };
+  return {
+    url,
+    maxRetriesPerRequest: null as null,
+    connectTimeout: 2_000,
+    enableOfflineQueue: false,
+    retryStrategy(times: number) {
+      if (times > 2) return null;
+      return 200;
+    },
+  };
+}
+
+function redisDown(error: unknown): never {
+  if (isFileSdkError(error)) throw error;
+  const message =
+    error instanceof Error ? error.message : 'Redis did not respond.';
+  throw fail('INVALID_CONFIG', {
+    message: `Could not reach Redis (${message}). Start the server named by REDIS_URL, or fix that URL. Asset ids stay in the metadata database, not in Redis.`,
+  });
 }
 
 export async function processingQueue(
@@ -63,6 +81,7 @@ export async function processingQueue(
   const queue = new Queue<ProcessingJobData>(name, {
     connection: connection(redisUrl),
   });
+  queue.on('error', () => undefined);
   queues.set(cacheKey, queue);
   return queue;
 }
@@ -84,7 +103,12 @@ export async function enqueueProcessingJob(input: {
     url,
     processingQueueName(input.env, input.scope),
   );
-  const current = await queue.getJob(input.id);
+  let current: Awaited<ReturnType<typeof queue.getJob>>;
+  try {
+    current = await queue.getJob(input.id);
+  } catch (error) {
+    redisDown(error);
+  }
   if (current) return input.id;
   try {
     await queue.add(
@@ -106,7 +130,8 @@ export async function enqueueProcessingJob(input: {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
-    if (!message.includes('Job') && !message.includes('exists')) throw error;
+    if (message.includes('Job') || message.includes('exists')) return input.id;
+    redisDown(error);
   }
   return input.id;
 }
@@ -217,7 +242,7 @@ export function startProcessingWorker(input: {
   lockDurationMs: number;
   processor: (job: Job<ProcessingJobData>) => Promise<Record<string, unknown>>;
 }): Worker<ProcessingJobData> {
-  return new Worker<ProcessingJobData>(
+  const worker = new Worker<ProcessingJobData>(
     input.queueName ?? PROCESSING_QUEUE,
     input.processor,
     {
@@ -228,4 +253,6 @@ export function startProcessingWorker(input: {
       maxStalledCount: 5,
     },
   );
+  worker.on('error', () => undefined);
+  return worker;
 }

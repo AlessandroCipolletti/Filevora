@@ -1,12 +1,25 @@
+import { fail } from '../errors/error.js';
 import type { Sql } from './sqlite.js';
 
 type Row = Record<string, unknown>;
 
 /** One Postgres connection. Queries are serialized so a transaction stays on it. */
-export async function openPostgres(url: string): Promise<Sql> {
+export async function openPostgres(
+  url: string,
+  schema = 'filevora',
+): Promise<Sql> {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema)) {
+    throw fail('INVALID_CONFIG', {
+      message:
+        'FILES_POSTGRES_SCHEMA must be a letter or underscore followed by letters, numbers, or underscores.',
+    });
+  }
   const pg = await import('pg');
   const client = new pg.Client({ connectionString: url });
   await client.connect();
+  const ident = `"${schema}"`;
+  await client.query(`CREATE SCHEMA IF NOT EXISTS ${ident}`);
+  await client.query(`SET search_path TO ${ident}`);
   let chain: Promise<unknown> = Promise.resolve();
   let inTx = false;
   const enqueue = <T>(fn: () => Promise<T>): Promise<T> => {

@@ -20,7 +20,7 @@ export async function openBackend(config: ResolvedConfig): Promise<Sql> {
   }
   const sql =
     config.metadata.driver === 'postgres'
-      ? await openPostgres(config.metadata.url ?? '')
+      ? await openPostgres(config.metadata.url ?? '', config.metadata.schema)
       : config.metadata.driver === 'mysql'
         ? await openMysql(config.metadata.url ?? '')
         : openSqlite(config.metadata.filename);

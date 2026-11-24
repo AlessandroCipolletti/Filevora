@@ -68,6 +68,28 @@ test('createFiles stores assets in PostgreSQL', async (t) => {
   await roundTrip(url, 'pg');
 });
 
+test('FILES_POSTGRES_SCHEMA selects the schema for new tables', async (t) => {
+  const url = process.env.FILEVORA_POSTGRES_URL;
+  if (!url) {
+    t.skip('FILEVORA_POSTGRES_URL is not set');
+    return;
+  }
+  const { openPostgres } = await import('../dist/metadata/postgres-sql.js');
+  const sql = await openPostgres(url, 'filevora_schema_probe');
+  try {
+    await sql.exec(
+      'CREATE TABLE IF NOT EXISTS filevora_schema_probe_mark (id text)',
+    );
+    const row = await sql.get<{ nspname: string }>(
+      `SELECT n.nspname AS nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = 'filevora_schema_probe_mark'`,
+    );
+    assert.equal(row?.nspname, 'filevora_schema_probe');
+  } finally {
+    await sql.run('DROP TABLE IF EXISTS filevora_schema_probe_mark');
+    await sql.close();
+  }
+});
+
 test('createFiles stores assets in MySQL', async (t) => {
   const url = process.env.FILEVORA_MYSQL_URL;
   if (!url) {

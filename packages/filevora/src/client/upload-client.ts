@@ -280,10 +280,15 @@ export function createUploadClient(options: UploadClientOptions) {
         },
       );
       if (response.processingState === 'failed') return response;
+      const stillReceiving =
+        response.processingState === 'none' &&
+        (response.uploadState === 'uploading' ||
+          response.uploadState === 'authorized');
       if (
-        response.processingState === 'ready' ||
-        response.processingState === 'none' ||
-        response.processingState === 'partially_ready'
+        !stillReceiving &&
+        (response.processingState === 'ready' ||
+          response.processingState === 'none' ||
+          response.processingState === 'partially_ready')
       ) {
         return response;
       }

@@ -154,6 +154,12 @@
 - Upload and URL import store the preset's versions next to `_original`. `POST /files/:assetId/transform` accepts `preset`. Single-output presets can be followed by `operations`. Unknown or incompatible names return `TRANSFORM_REJECTED` with `validPresets`.
 - Custom presets are `presets` in config or `FILEVORA_PRESETS` JSON, validated like transform operations. See `docs/presets.md`.
 
+### Config and client waits
+
+- S3 environment variables are `FILES_S3_*`. `FILES_POSTGRES_SCHEMA` is created and used as the Postgres search path.
+- `waitForProcessing` keeps polling while a URL import is still `uploading` with `processingState: "none"`.
+- An unreachable `REDIS_URL` fails with `INVALID_CONFIG` instead of retrying without a limit.
+
 ### Init templates
 
 - Generated handlers set `basePath: '/api/files'`, the same path as `filevora/upload-snippet.ts`. The Fastify plugin calls `reply.hijack()` before writing the raw response.
