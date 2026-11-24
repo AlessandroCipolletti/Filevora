@@ -58,8 +58,9 @@ export function assertConfiguredPreset(
 export function assertKnownPreset(
   name: string,
   custom: CustomPresetMap = {},
+  thumbnailWidth = 480,
 ): NamedPreset {
-  const preset = findPreset(name, custom);
+  const preset = findPreset(name, custom, thumbnailWidth);
   if (preset) return preset;
   const names = [
     ...presetNamesFor('image', custom),
@@ -114,6 +115,7 @@ export function expandTransform(
   input: unknown,
   mime: string,
   custom: CustomPresetMap = {},
+  thumbnailWidth = 480,
 ): ExpandedTransform {
   const record =
     input && typeof input === 'object' && !Array.isArray(input)
@@ -146,7 +148,11 @@ export function expandTransform(
       },
     });
   }
-  const preset = assertKnownPreset(parsed.data.preset ?? '', custom);
+  const preset = assertKnownPreset(
+    parsed.data.preset ?? '',
+    custom,
+    thumbnailWidth,
+  );
   const family = familyOf(mime);
   if (!preset.families.includes(family as PresetFamily)) {
     const action = presetQueueAction(preset.name, mime, custom);

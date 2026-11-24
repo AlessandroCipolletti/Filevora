@@ -76,6 +76,7 @@ export interface ResolvedConfig {
     visibility: 'private' | 'public';
     preserveOriginal: boolean;
     preset: string;
+    thumbnailWidth: 320 | 480;
     maxFileBytes: number;
     allowedMimeTypes: string[];
     maxFilesPerBatch: number;
@@ -364,6 +365,9 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
         ? { preserveOriginal: e.FILES_KEEP_ORIGINAL }
         : {}),
       ...(e.FILES_DEFAULT_PRESET ? { preset: e.FILES_DEFAULT_PRESET } : {}),
+      ...(e.FILES_THUMBNAIL_WIDTH
+        ? { thumbnailWidth: Number(e.FILES_THUMBNAIL_WIDTH) as 320 | 480 }
+        : {}),
       ...(e.FILES_MAX_FILE_BYTES !== undefined
         ? { maxFileBytes: e.FILES_MAX_FILE_BYTES }
         : {}),
@@ -451,8 +455,17 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
   };
 }
 
+const THUMBNAIL_WIDTH_MESSAGE =
+  'FILES_THUMBNAIL_WIDTH and defaults.thumbnailWidth must be 320 or 480.';
+
 function invalidConfig(error: ZodError): ReturnType<typeof fail> {
+  const thumbnail = error.issues.some((issue) =>
+    issue.path.some(
+      (part) => part === 'FILES_THUMBNAIL_WIDTH' || part === 'thumbnailWidth',
+    ),
+  );
   return fail('INVALID_CONFIG', {
+    ...(thumbnail ? { message: THUMBNAIL_WIDTH_MESSAGE } : {}),
     context: {
       issues: error.issues.slice(0, 8).map((issue) => ({
         path: issue.path.join('.'),
@@ -746,6 +759,7 @@ export function resolveConfig(
       visibility,
       preserveOriginal: input.defaults?.preserveOriginal ?? true,
       preset: presetName,
+      thumbnailWidth: input.defaults?.thumbnailWidth ?? 480,
       maxFileBytes: input.defaults?.maxFileBytes ?? 100 * 1024 * 1024,
       allowedMimeTypes: input.defaults?.allowedMimeTypes ?? [
         ...DEFAULT_MIME_TYPES,

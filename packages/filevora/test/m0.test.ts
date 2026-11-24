@@ -14,6 +14,7 @@ import { FileSdkError, fail } from '../dist/errors/error.js';
 import { createFilesHandler } from '../dist/http/index.js';
 import { createFiles } from '../dist/server/index.js';
 import { FILEVORA_VERSION } from '../dist/version.js';
+import { runDoctor } from '../dist/diagnostics/doctor.js';
 import { runWorker } from '../dist/worker/index.js';
 
 const requiredCodes = [
@@ -84,6 +85,58 @@ test('explicit options override environment and defaults', () => {
   assert.equal(config.defaults.visibility, 'private');
   assert.equal(config.defaults.preserveOriginal, true);
   assert.equal(config.metadata.schema, 'filevora');
+});
+
+test('thumbnail width defaults to 480 and only allows 320 or 480', () => {
+  assert.equal(resolveConfig({}).defaults.thumbnailWidth, 480);
+  assert.equal(
+    resolveConfig({}, { FILES_THUMBNAIL_WIDTH: '320' }).defaults.thumbnailWidth,
+    320,
+  );
+  assert.equal(
+    resolveConfig({ defaults: { thumbnailWidth: 320 } }).defaults
+      .thumbnailWidth,
+    320,
+  );
+  assert.equal(
+    resolveConfig(
+      { defaults: { thumbnailWidth: 480 } },
+      { FILES_THUMBNAIL_WIDTH: '320' },
+    ).defaults.thumbnailWidth,
+    480,
+  );
+  for (const env of ['640', '0', 'wide']) {
+    assert.throws(
+      () => resolveConfig({}, { FILES_THUMBNAIL_WIDTH: env }),
+      (error: unknown) => {
+        assert.ok(error instanceof FileSdkError);
+        assert.equal(error.code, 'INVALID_CONFIG');
+        assert.match(error.message, /320 or 480/);
+        return true;
+      },
+    );
+  }
+  assert.throws(
+    () =>
+      resolveConfig({
+        defaults: { thumbnailWidth: 200 as unknown as 320 },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof FileSdkError);
+      assert.equal(error.code, 'INVALID_CONFIG');
+      assert.match(error.message, /320 or 480/);
+      return true;
+    },
+  );
+});
+
+test('doctor reports the configured thumbnail width', async () => {
+  const report = await runDoctor(
+    { env: 'test', defaults: { thumbnailWidth: 320 } },
+    { FILES_ENV: 'test' },
+  );
+  const presets = report.checks.find((check) => check.id === 'presets');
+  assert.match(presets?.message ?? '', /Thumbnail width is 320/);
 });
 
 test('environment overrides defaults when options omit the field', () => {

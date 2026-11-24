@@ -2,6 +2,10 @@
 
 ## 0.1.0
 
+### Thumbnail width
+
+- `FILES_THUMBNAIL_WIDTH` and `defaults.thumbnailWidth` set the web-optimized image thumbnail, the built-in `thumbnail` preset, and the legacy video poster. Allowed values are 320 and 480. The default changed from 320 to 480. Optimized 1280, HD 1920, and video 720/1080 are unchanged. Any other value is `INVALID_CONFIG`.
+
 ### Framework helpers
 
 - `filevora/next`, `filevora/express`, `filevora/fastify`, and `filevora/hono` adapt the existing request handler. They do not render UI.
@@ -71,7 +75,7 @@
 
 ### M4 — Image variants
 
-- Sharp writes `thumbnail` (320), `optimized` (1280), and `hd` (1920) WebP variants.
+- Sharp writes `thumbnail` (`FILES_THUMBNAIL_WIDTH`, default 480), `optimized` (1280), and `hd` (1920) WebP variants.
 - Variants are not enlarged past the source. A second job does not publish duplicate rows.
 - Private delivery tokens return the WebP bytes. The original checksum is unchanged.
 - Images over `imageMaxPixels` fail the job and leave no variant. The original remains.

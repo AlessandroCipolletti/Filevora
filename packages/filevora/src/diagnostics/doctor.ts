@@ -343,12 +343,12 @@ export async function runDoctor(
         id: 'presets',
         status: 'pass',
         required: false,
-        message: `Default preset ${config.defaults.preset} is available.`,
+        message: `Default preset ${config.defaults.preset} is available. Thumbnail width is ${config.defaults.thumbnailWidth}.`,
         code: 'OK',
         explanation:
           custom.length === 0
-            ? 'Built-in image and video presets are available. No custom presets are configured.'
-            : `Custom presets: ${custom.map((preset) => preset.name).join(', ')}.`,
+            ? 'Built-in image and video presets are available. No custom presets are configured. FILES_THUMBNAIL_WIDTH is 320 or 480.'
+            : `Custom presets: ${custom.map((preset) => preset.name).join(', ')}. FILES_THUMBNAIL_WIDTH is 320 or 480.`,
         fix: 'Set FILES_DEFAULT_PRESET or define presets in config. See docs/presets.md.',
       }),
     );

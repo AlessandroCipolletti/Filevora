@@ -351,6 +351,7 @@ async function executeJob(
       timeoutMs: config.queue.timeoutSeconds * 1000,
       maxDurationSeconds: config.processing.videoMaxDurationSeconds,
       maxHeight: config.processing.videoMaxOutputHeight,
+      thumbnailWidth: config.defaults.thumbnailWidth,
     };
     const hooks = { jobId: job.id ?? data.fileId, signal };
     try {
@@ -402,7 +403,7 @@ async function executeJob(
           framePresetFromPayload(requested, data.payload.outputs) ??
           pdfStillPresetFromPayload(requested, data.payload.outputs) ??
           audioToolPresetFromPayload(requested, data.payload.outputs) ??
-          findPreset(requested, config.presets);
+          findPreset(requested, config.presets, config.defaults.thumbnailWidth);
         if (!named) {
           throw fail('TRANSFORM_REJECTED', {
             message: `Unknown preset "${requested}".`,
@@ -437,6 +438,7 @@ async function executeJob(
             file,
             config.processing.imageMaxPixels,
             config.safety.exif,
+            config.defaults.thumbnailWidth,
           );
           await notifyTerminal(sql, config, data, 'processing.completed');
           return { variants: names, processingState: 'ready' };

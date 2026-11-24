@@ -184,6 +184,55 @@ test('a stored database uses the same preset versions', async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('the thumbnail preset follows the configured width', async () => {
+  const body = await sharp({
+    create: {
+      width: 2000,
+      height: 1000,
+      channels: 3,
+      background: { r: 9, g: 9, b: 9 },
+    },
+  })
+    .png()
+    .toBuffer();
+  const wide = createTestFiles();
+  const narrow = createTestFiles({ defaults: { thumbnailWidth: 320 } });
+  try {
+    const full = await upload(wide, body, 'wide.png', 'thumbnail');
+    const small = await upload(narrow, body, 'wide.png', 'thumbnail');
+    const optimized = await upload(wide, body, 'set.png', 'web-optimized');
+    const optimizedNarrow = await upload(
+      narrow,
+      body,
+      'set.png',
+      'web-optimized',
+    );
+    assert.equal(
+      full.variants.find((variant) => variant.name === 'thumbnail')?.width,
+      480,
+    );
+    assert.equal(
+      small.variants.find((variant) => variant.name === 'thumbnail')?.width,
+      320,
+    );
+    const wideByName = Object.fromEntries(
+      optimized.variants.map((variant) => [variant.name, variant.width]),
+    );
+    const narrowByName = Object.fromEntries(
+      optimizedNarrow.variants.map((variant) => [variant.name, variant.width]),
+    );
+    assert.equal(wideByName.thumbnail, 480);
+    assert.equal(wideByName.optimized, 1280);
+    assert.equal(wideByName.hd, 1920);
+    assert.equal(narrowByName.thumbnail, 320);
+    assert.equal(narrowByName.optimized, 1280);
+    assert.equal(narrowByName.hd, 1920);
+  } finally {
+    await wide.close();
+    await narrow.close();
+  }
+});
+
 test('custom presets that reuse a built-in name are rejected', () => {
   assert.throws(
     () =>

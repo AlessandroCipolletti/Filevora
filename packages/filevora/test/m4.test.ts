@@ -85,7 +85,7 @@ test('web-optimized variants keep the original and do not upscale', async () => 
     const byName = Object.fromEntries(
       ready.variants.map((variant) => [variant.name, variant]),
     );
-    assert.equal(byName.thumbnail?.width, 320);
+    assert.equal(byName.thumbnail?.width, 480);
     assert.equal(byName.optimized?.width, 1280);
     assert.equal(byName.hd?.width, 1920);
     const delivery = await handler(
@@ -108,7 +108,7 @@ test('web-optimized variants keep the original and do not upscale', async () => 
     assert.equal(thumb.status, 200);
     assert.equal(thumb.headers.get('content-type'), 'image/webp');
     const meta = await sharp(Buffer.from(await thumb.arrayBuffer())).metadata();
-    assert.equal(meta.width, 320);
+    assert.equal(meta.width, 480);
     assert.equal(meta.format, 'webp');
     assert.equal(meta.exif, undefined);
 

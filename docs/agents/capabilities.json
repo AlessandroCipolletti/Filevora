@@ -1013,6 +1013,11 @@
         "appliesTo": "both"
       },
       {
+        "key": "defaults.thumbnailWidth",
+        "type": "union",
+        "appliesTo": "both"
+      },
+      {
         "key": "defaults.maxFileBytes",
         "type": "number",
         "appliesTo": "both"
@@ -1691,6 +1696,16 @@
         "key": "FILES_TENANT_QUOTA_BYTES",
         "type": "string",
         "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_THUMBNAIL_WIDTH",
+        "type": "string",
+        "enum": [
+          "320",
+          "480"
+        ],
+        "default": 480,
         "appliesTo": "both"
       },
       {

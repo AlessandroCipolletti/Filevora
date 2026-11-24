@@ -2,7 +2,7 @@
 
 A preset is a name for a transform. Upload, URL import, and `POST /files/:assetId/transform` accept that name instead of raw width and height. The same preset works in lite and stored mode. Versions show up on `GET /files/:assetId/versions` and on the progress event, with the same signed URLs as any other version.
 
-`web-optimized` is the default (`FILES_DEFAULT_PRESET`). It is the existing image and video pipeline: WebP thumbnail, optimized, and HD for images, a poster plus H.264 renditions for video, and AAC for audio.
+`web-optimized` is the default (`FILES_DEFAULT_PRESET`). It is the existing image and video pipeline: WebP thumbnail, optimized, and HD for images, a poster plus H.264 renditions for video, and AAC for audio. The thumbnail width and the legacy video poster width are `FILES_THUMBNAIL_WIDTH` or `defaults.thumbnailWidth`: `320` or `480`, default `480`. Any other value is `INVALID_CONFIG`. Optimized 1280, HD 1920, and video 720/1080 stay fixed.
 
 ## Built-in presets
 
@@ -10,8 +10,8 @@ Image versions are WebP. `contain` does not enlarge the source. `cover` crops to
 
 | Preset | Media | Versions | What it produces |
 | --- | --- | --- | --- |
-| `web-optimized` | image, video, audio | `thumbnail`, `optimized`, `hd` (audio: `optimized` only) | Image WebP at 320, 1280, and 1920 wide, without enlargement. Video poster plus 720p, and 1080p when the source is taller than 720. Audio AAC in an M4A file. |
-| `thumbnail` | image | `thumbnail` | WebP, 320 wide, contain. |
+| `web-optimized` | image, video, audio | `thumbnail`, `optimized`, `hd` (audio: `optimized` only) | Image WebP at `FILES_THUMBNAIL_WIDTH` (default 480), 1280, and 1920 wide, without enlargement. Video poster uses the same thumbnail width, plus 720p, and 1080p when the source is taller than 720. Audio AAC in an M4A file. |
+| `thumbnail` | image | `thumbnail` | WebP, `FILES_THUMBNAIL_WIDTH` wide (default 480), contain. |
 | `avatar` | image | `avatar` | WebP, 512×512, cover. |
 | `og-image` | image | `og` | WebP, 1200×630, cover. |
 | `hero` | image | `hero` | WebP, 1920 wide, contain. |
@@ -99,6 +99,6 @@ createFiles({
 
 Or `FILEVORA_PRESETS` as the same JSON object. Explicit `presets` in code wins over the environment variable. Names must be lowercase and must not reuse a built-in name. Each operation must match `family` (`image`, `video`, or `pdf`) and the transform schema (`image.resize`, `image.crop`, `video.resize`, `video.crop`, `video.trim`, `video.poster`, `video.thumbnails`, `video.sprite`, `pdf.removePages`, `pdf.pages`). `video.resize` may omit `width`; height is scaled and the width stays even. Poster, thumbnail, and sprite operations are stored as versions and cannot be mixed with a resize, crop, or trim in the same custom preset.
 
-`filevora doctor` reports the default preset and any custom names. `filevora init` writes `FILES_DEFAULT_PRESET=web-optimized` into the env template.
+`filevora doctor` reports the default preset, the thumbnail width, and any custom names. `filevora init` writes `FILES_DEFAULT_PRESET=web-optimized` and `FILES_THUMBNAIL_WIDTH=480` into the env template.
 
 `listPresets()` from `filevora/server` returns the built-in and custom summaries.

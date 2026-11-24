@@ -57,7 +57,7 @@ export const BUILTIN_PRESETS: NamedPreset[] = [
     source: 'builtin',
     delivery: 'legacy',
     outputs: [
-      imageResize('thumbnail', 320),
+      imageResize('thumbnail', 480),
       imageResize('optimized', 1280),
       imageResize('hd', 1920),
     ],
@@ -67,7 +67,7 @@ export const BUILTIN_PRESETS: NamedPreset[] = [
     families: ['image'],
     source: 'builtin',
     delivery: 'transform',
-    outputs: [imageResize('thumbnail', 320)],
+    outputs: [imageResize('thumbnail', 480)],
   },
   {
     name: 'avatar',
@@ -307,9 +307,10 @@ export function customPresetMap(value: unknown): CustomPresetMap {
 export function findPreset(
   name: string,
   custom: CustomPresetMap = {},
+  thumbnailWidth = 480,
 ): NamedPreset | undefined {
   const builtin = BUILTIN_PRESETS.find((preset) => preset.name === name);
-  if (builtin) return builtin;
+  if (builtin) return withThumbnailWidth(builtin, thumbnailWidth);
   const extra = custom[name];
   if (!extra) return undefined;
   return customToNamed(name, extra);
@@ -330,6 +331,29 @@ export function presetNamesFor(
   return listPresets(custom)
     .filter((preset) => preset.families.includes(family as PresetFamily))
     .map((preset) => preset.name);
+}
+
+function withThumbnailWidth(
+  preset: NamedPreset,
+  thumbnailWidth: number,
+): NamedPreset {
+  if (preset.name !== 'web-optimized' && preset.name !== 'thumbnail') {
+    return preset;
+  }
+  return {
+    ...preset,
+    outputs: preset.outputs.map((output) => {
+      if (output.version !== 'thumbnail') return output;
+      return {
+        ...output,
+        operations: output.operations.map((operation) =>
+          operation.op === 'image.resize'
+            ? { ...operation, width: thumbnailWidth }
+            : operation,
+        ),
+      };
+    }),
+  };
 }
 
 function customToNamed(name: string, preset: CustomPreset): NamedPreset {

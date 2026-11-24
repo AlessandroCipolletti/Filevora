@@ -247,7 +247,12 @@ export async function publishVideoPreset(
   storage: StorageDriver,
   file: MediaFile,
   paths: { ffmpeg: string; ffprobe: string },
-  limits: { timeoutMs: number; maxDurationSeconds: number; maxHeight: number },
+  limits: {
+    timeoutMs: number;
+    maxDurationSeconds: number;
+    maxHeight: number;
+    thumbnailWidth?: number;
+  },
   hooks: { jobId: string; signal?: AbortSignal },
 ): Promise<string[]> {
   return publishMedia(sql, storage, file, paths, limits, hooks, 'video');
@@ -419,7 +424,12 @@ async function publishMedia(
   storage: StorageDriver,
   file: MediaFile,
   paths: { ffmpeg: string; ffprobe: string },
-  limits: { timeoutMs: number; maxDurationSeconds: number; maxHeight: number },
+  limits: {
+    timeoutMs: number;
+    maxDurationSeconds: number;
+    maxHeight: number;
+    thumbnailWidth?: number;
+  },
   hooks: { jobId: string; signal?: AbortSignal },
   kind: 'video' | 'audio',
 ): Promise<string[]> {
@@ -468,6 +478,13 @@ async function publishMedia(
           probeFfmpegEncoders(paths.ffmpeg),
         );
         const sharp = (await import('sharp')).default;
+        const thumbnailWidth = limits.thumbnailWidth ?? 480;
+        const resizePoster = (source: string) =>
+          sharp(source)
+            .rotate()
+            .resize({ width: thumbnailWidth, withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
         let poster: Buffer;
         if (posterEncoder === 'libwebp') {
           const posterWebp = path.join(work, 'poster.webp');
@@ -491,7 +508,7 @@ async function publishMedia(
               onPid: (pid) => setRunner(hooks.jobId, pid),
             },
           );
-          poster = readFileSync(posterWebp);
+          poster = await resizePoster(posterWebp);
         } else {
           const posterPng = path.join(work, 'poster.png');
           await runFfmpeg(
@@ -503,11 +520,7 @@ async function publishMedia(
               onPid: (pid) => setRunner(hooks.jobId, pid),
             },
           );
-          poster = await sharp(posterPng)
-            .rotate()
-            .resize({ width: 320, withoutEnlargement: true })
-            .webp({ quality: 80 })
-            .toBuffer();
+          poster = await resizePoster(posterPng);
         }
         const posterInfo = await sharp(poster).metadata();
         await storeVariant(sql, storage, file, {

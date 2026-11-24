@@ -5,11 +5,13 @@ import type { ExifMode } from '../safety/exif.js';
 import { materialize } from '../storage/stage.js';
 import type { StorageDriver } from '../types/index.js';
 
-const TARGETS = [
-  { name: 'thumbnail', width: 320 },
-  { name: 'optimized', width: 1280 },
-  { name: 'hd', width: 1920 },
-] as const;
+function imageTargets(thumbnailWidth: number) {
+  return [
+    { name: 'thumbnail', width: thumbnailWidth },
+    { name: 'optimized', width: 1280 },
+    { name: 'hd', width: 1920 },
+  ] as const;
+}
 
 interface ImageFile {
   id: string;
@@ -28,6 +30,7 @@ export async function publishImagePreset(
   file: ImageFile,
   maxPixels: number,
   exif: ExifMode = 'gps',
+  thumbnailWidth = 480,
 ): Promise<string[]> {
   if (!file.original_object_key) throw fail('NOT_FOUND');
   const sharp = await loadSharp();
@@ -42,6 +45,7 @@ export async function publishImagePreset(
       exif,
       sharp,
       input,
+      thumbnailWidth,
     );
   } finally {
     await local.cleanup();
@@ -56,6 +60,7 @@ async function publishImageFromPath(
   exif: ExifMode,
   sharp: Awaited<ReturnType<typeof loadSharp>>,
   input: string,
+  thumbnailWidth: number,
 ): Promise<string[]> {
   let source: { width?: number; height?: number };
   try {
@@ -73,7 +78,7 @@ async function publishImageFromPath(
     });
   }
   const names: string[] = [];
-  for (const target of TARGETS) {
+  for (const target of imageTargets(thumbnailWidth)) {
     const existing = await sql.get<{ id: string }>(
       `SELECT id FROM variants WHERE file_id = ? AND name = ? AND recipe_id = ? AND recipe_version = ?`,
       [file.id, target.name, 'web-optimized', 1],

@@ -897,7 +897,12 @@ export class FileService {
         },
       });
     }
-    const expanded = expandTransform(body, detected, this.config.presets);
+    const expanded = expandTransform(
+      body,
+      detected,
+      this.config.presets,
+      this.config.defaults.thumbnailWidth,
+    );
     if (expanded.mode === 'versions') {
       const now = nowIso();
       const jobId =

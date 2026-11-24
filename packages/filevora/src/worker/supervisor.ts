@@ -81,6 +81,7 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
       maxFileBytes: config.defaults.maxFileBytes,
       allowedMimeTypes: config.defaults.allowedMimeTypes,
       preset: config.defaults.preset,
+      thumbnailWidth: config.defaults.thumbnailWidth,
     },
     ...(Object.keys(config.presets).length > 0
       ? { presets: config.presets }

@@ -81,6 +81,7 @@ const ENV_DEFAULTS: Record<string, string | number | boolean | null> = {
   FILES_DEFAULT_VISIBILITY: 'private',
   FILES_KEEP_ORIGINAL: true,
   FILES_DEFAULT_PRESET: 'web-optimized',
+  FILES_THUMBNAIL_WIDTH: 480,
   FILEVORA_PRESETS: null,
   FILES_MAX_FILE_BYTES: 104_857_600,
   FILES_ALLOWED_MIME_TYPES: null,
