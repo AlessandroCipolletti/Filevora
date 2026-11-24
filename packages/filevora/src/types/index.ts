@@ -1,5 +1,11 @@
 import type { ErrorCategory } from '../errors/catalog.js';
 
+export type {
+  AssetTransform,
+  AssetTransformInput,
+  AssetTransformOperation,
+} from '../transform/schema.js';
+
 /** Who is calling. The host application creates this after its own authentication. */
 export interface Principal {
   /** Stable user id inside the host application. Never taken from the browser body. */

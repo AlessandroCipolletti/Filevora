@@ -11,6 +11,8 @@ import {
   publishVideoPreset,
 } from '../processors/ffmpeg.js';
 import { publishImagePreset } from '../processors/image.js';
+import { applyAssetTransform } from '../transform/apply.js';
+import type { AssetTransformOperation } from '../transform/schema.js';
 import {
   type ProcessingJobData,
   processingQueue,
@@ -163,6 +165,29 @@ async function executeJob(
         hooks,
       );
       return { variants: names, processingState: 'ready' };
+    }
+    if (data.type === 'transform') {
+      const jobPayload = data.payload as {
+        sourceFileId?: string;
+        sourceKey?: string;
+        mime?: string;
+        operations?: AssetTransformOperation[];
+      };
+      await applyAssetTransform({
+        sql,
+        root: config.storage.root,
+        ffmpeg: config.processing.ffmpegPath,
+        ffprobe: config.processing.ffprobePath,
+        timeoutMs: config.queue.timeoutSeconds * 1000,
+        jobId: job.id ?? data.fileId,
+        sourceId: jobPayload.sourceFileId ?? data.fileId,
+        targetId: data.fileId,
+        tenantId: data.tenantId,
+        mime: jobPayload.mime ?? file.detected_mime ?? '',
+        sourceKey: jobPayload.sourceKey ?? file.original_object_key ?? '',
+        operations: jobPayload.operations ?? [],
+      });
+      return { variants: ['_original'], processingState: 'ready' };
     }
     if (data.type === 'preset') {
       if (file.detected_mime?.startsWith('image/')) {

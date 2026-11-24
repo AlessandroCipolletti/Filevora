@@ -116,6 +116,13 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Transform an existing asset
+
+- `POST /files/:assetId/transform` accepts one config object and returns `{ launched, jobId, assetId }` immediately. The job uses the BullMQ queue.
+- `replace` defaults to true and keeps the asset id. `false` creates a new id. Lite mode finds `{assetId}_original.*`. Stored mode reads the metadata database.
+- Operations: `image.resize`, `image.crop`, `video.resize`, `video.crop`, `video.trim`, `pdf.removePages`. Invalid configs return `TRANSFORM_REJECTED` with `field`, `reason`, `detectedType`, and `validOperations`.
+- Progress events for upload, URL download, and transforms share `phase`, `percentage`, `etaMs`, and `terminal`. The terminal success event adds `versions` with signed URLs. Older fields `fileId`, `state`, `quiet`, and `terminal` stay.
+
 ### Import from a URL
 
 - `POST /assets/from-url` and `createUploadClient().fromUrl(url)` return `assetId` before the download finishes.

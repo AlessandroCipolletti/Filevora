@@ -28,6 +28,7 @@ import {
   readPdf,
 } from '../processors/normalize.js';
 import { renderPdfFirstPage } from '../processors/pdf-preview.js';
+import type { ProgressEvent } from '../progress/event.js';
 import { streamsDetailedProgress } from '../progress/estimate.js';
 import {
   closeProcessingQueue,
@@ -36,6 +37,11 @@ import {
   readProcessingProgress,
   removeProcessingJob,
 } from '../queue/processing-queue.js';
+import {
+  assertTransformFits,
+  parseAssetTransform,
+} from '../transform/schema.js';
+import { measureOriginal } from '../transform/apply.js';
 import { downloadRemote } from '../remote/download.js';
 import { checkRemoteUrl } from '../remote/policy.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
@@ -209,6 +215,103 @@ export class FileService {
     });
   }
 
+  private async locateOriginal(
+    assetId: string,
+    ctx: RequestContext,
+  ): Promise<{ row: FileRow | null; key: string }> {
+    const sql = await this.db();
+    if (this.config.metadata.mode === 'lite') {
+      const key = await this.probeOriginal(ctx.principal.tenantId, assetId);
+      if (!key) {
+        throw fail('ASSET_NOT_FOUND', {
+          message: 'No {assetId}_original file was found for this asset.',
+          context: { assetId },
+        });
+      }
+      const row = await sql.get<FileRow>(
+        'SELECT * FROM files WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
+        [assetId, ctx.principal.tenantId],
+      );
+      return { row: row ?? null, key };
+    }
+    const row = await sql.get<FileRow>(
+      'SELECT * FROM files WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
+      [assetId, ctx.principal.tenantId],
+    );
+    if (!row?.original_object_key) {
+      throw fail('ASSET_NOT_FOUND', {
+        message: 'The asset was not found in the metadata database.',
+        context: { assetId },
+      });
+    }
+    return { row, key: row.original_object_key };
+  }
+
+  private async probeOriginal(
+    tenantId: string,
+    assetId: string,
+  ): Promise<string | null> {
+    if (this.config.storage.driver !== 'filesystem') return null;
+    const { readdir } = await import('node:fs/promises');
+    const dir = path.join(this.root(), tenantPath(tenantId));
+    const names = await readdir(dir).catch(() => [] as string[]);
+    const name = names.find((entry) =>
+      entry.startsWith(`${assetId}_original.`),
+    );
+    return name ? `${tenantPath(tenantId)}/${name}` : null;
+  }
+
+  private async uploadPercent(fileId: string): Promise<number | null> {
+    try {
+      const session = await (
+        await this.db()
+      ).get<{ id: string; part_count: number }>(
+        'SELECT * FROM upload_sessions WHERE file_id = ?',
+        [fileId],
+      );
+      if (!session?.part_count) return null;
+      const parts = await (
+        await this.db()
+      ).all<PartRow>('SELECT * FROM upload_parts WHERE upload_session_id = ?', [
+        session.id,
+      ]);
+      return Math.min(
+        100,
+        Math.round((parts.length / session.part_count) * 100),
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private async progressVersions(
+    fileId: string,
+    baseUrl: string,
+    ctx: RequestContext,
+  ): Promise<ProgressEvent['versions']> {
+    const delivery = await this.getDeliveryUrls(fileId, { baseUrl }, ctx);
+    const versions: NonNullable<ProgressEvent['versions']> = {};
+    if (delivery.original) {
+      versions._original = {
+        version: '_original',
+        status: 'ready',
+        url: delivery.original.url,
+        mime: delivery.original.mimeType,
+        bytes: delivery.original.bytes,
+      };
+    }
+    for (const [name, variant] of Object.entries(delivery.variants)) {
+      versions[name] = {
+        version: name,
+        status: 'ready',
+        url: variant.url,
+        mime: variant.mimeType,
+        bytes: variant.bytes,
+      };
+    }
+    return versions;
+  }
+
   private async deleteAssetObjects(
     tenantId: string,
     assetId: string,
@@ -307,6 +410,116 @@ export class FileService {
       createdAt: now,
       updatedAt: now,
       runAfter: now,
+    };
+  }
+
+  /**
+   * Queue a transform and return immediately. `replace` defaults to true and
+   * keeps the same asset id. `false` creates a new asset id.
+   */
+  async transform(
+    assetId: string,
+    input: unknown,
+    ctx: RequestContext,
+  ): Promise<{
+    launched: true;
+    jobId: string;
+    assetId: string;
+    sourceAssetId: string;
+    replace: boolean;
+  }> {
+    const config = parseAssetTransform(input);
+    const located = await this.locateOriginal(assetId, ctx);
+    const prefix = await readPrefix(this.root(), located.key);
+    const detected = sniffMime(prefix);
+    if (!detected) {
+      throw fail('TRANSFORM_REJECTED', {
+        message: 'The original file did not match a supported type.',
+        context: {
+          field: 'operations',
+          reason: 'The original bytes did not match image, video, or PDF.',
+          detectedType: null,
+          validOperations: [],
+        },
+      });
+    }
+    const bounds = await measureOriginal(
+      this.root(),
+      located.key,
+      detected,
+      this.config.processing.ffprobePath,
+    );
+    assertTransformFits(config.operations, detected, bounds);
+    const replace = config.replace !== false;
+    const targetId = replace ? assetId : createId('file');
+    const now = nowIso();
+    const jobId = createId('job');
+    const metadata = {
+      ...(located.row ? safeMeta(located.row.metadata_json) : {}),
+      filevoraJobId: jobId,
+      filevoraTransform: '1',
+    };
+    if (!replace) {
+      await (
+        await this.db()
+      ).run(
+        `INSERT INTO files (
+          id, tenant_id, owner_id, original_name, declared_mime, detected_mime, bytes, checksum,
+          original_object_key, visibility, upload_state, processing_state, preset, metadata_json,
+          pinned, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL, 'private', 'verified', 'queued', ?, ?, 0, ?, ?, NULL)`,
+        [
+          targetId,
+          ctx.principal.tenantId,
+          ctx.principal.id,
+          located.row?.original_name ?? 'transform',
+          detected,
+          detected,
+          this.config.defaults.preset,
+          JSON.stringify(metadata),
+          now,
+          now,
+        ],
+      );
+    } else {
+      await (
+        await this.db()
+      ).run(
+        `UPDATE files SET processing_state = 'queued', metadata_json = ?, updated_at = ? WHERE id = ?`,
+        [JSON.stringify(metadata), now, targetId],
+      );
+    }
+    await removeProcessingJob({
+      env: this.config.env,
+      redisUrl: this.config.queue.redisUrl,
+      id: `preset_${assetId}`,
+      scope: this.config.storage.root,
+    });
+    await enqueueProcessingJob({
+      env: this.config.env,
+      redisUrl: this.config.queue.redisUrl,
+      id: jobId,
+      fileId: targetId,
+      tenantId: ctx.principal.tenantId,
+      type: 'transform',
+      payload: {
+        schemaVersion: 1,
+        sourceFileId: assetId,
+        sourceKey: located.key,
+        mime: detected,
+        operations: config.operations,
+      },
+      maxAttempts: 1,
+      backoffMs: this.config.queue.backoffBaseMs,
+      scope: this.config.storage.root,
+    });
+    this.ensureWorker();
+    return {
+      launched: true,
+      jobId,
+      assetId: targetId,
+      sourceAssetId: assetId,
+      replace,
     };
   }
 
@@ -539,8 +752,15 @@ export class FileService {
     return { ...job, state: 'cancelled' };
   }
 
-  async processingSnapshot(fileId: string, ctx: RequestContext) {
+  async processingSnapshot(
+    fileId: string,
+    ctx: RequestContext,
+    opts?: { baseUrl?: string },
+  ): Promise<ProgressEvent> {
     const record = await this.get(fileId, ctx);
+    const jobId = record.metadata.filevoraJobId ?? null;
+    const errorCode = record.metadata.filevoraImportError;
+    const base = { fileId: record.id, assetId: record.id, jobId };
     if (
       record.metadata.filevoraSource === 'remote-url' &&
       record.uploadState !== 'verified'
@@ -550,9 +770,9 @@ export class FileService {
       const total = progress?.total ?? null;
       const received = progress?.received ?? 0;
       return {
-        fileId,
+        ...base,
         state: failed ? 'failed' : 'downloading',
-        phase: 'download' as const,
+        phase: 'download',
         percentage:
           total && total > 0
             ? Math.min(100, Math.round((received / total) * 100))
@@ -560,31 +780,47 @@ export class FileService {
         etaMs: null,
         quiet: false,
         terminal: failed,
-        ...(record.metadata.filevoraImportError
-          ? { errorCode: record.metadata.filevoraImportError }
-          : {}),
+        ...(errorCode ? { errorCode } : {}),
+      };
+    }
+    if (
+      record.uploadState === 'uploading' ||
+      record.uploadState === 'authorized'
+    ) {
+      return {
+        ...base,
+        phase: 'upload',
+        state: record.uploadState,
+        percentage: await this.uploadPercent(record.id),
+        etaMs: null,
+        quiet: false,
+        terminal: false,
       };
     }
     const progress = await readProcessingProgress(fileId);
     const quiet = !streamsDetailedProgress(record.detectedMime);
-    const fileDone =
+    const failed = record.processingState === 'failed';
+    const terminal =
       record.processingState === 'none' ||
       record.processingState === 'ready' ||
       record.processingState === 'partially_ready' ||
-      record.processingState === 'failed' ||
+      failed ||
       record.processingState === 'deleted';
+    const versions =
+      terminal && record.uploadState === 'verified' && !failed && opts?.baseUrl
+        ? await this.progressVersions(record.id, opts.baseUrl, ctx)
+        : undefined;
     return {
-      fileId,
+      ...base,
+      phase: 'processing',
       state: record.processingState,
       percentage:
         progress.ratio == null ? null : Math.round(progress.ratio * 100),
       etaMs: quiet ? null : progress.etaMs,
       quiet,
-      terminal: fileDone,
-      phase: 'processing' as const,
-      ...(record.metadata.filevoraImportError
-        ? { errorCode: record.metadata.filevoraImportError }
-        : {}),
+      terminal,
+      ...(errorCode ? { errorCode } : {}),
+      ...(versions ? { versions } : {}),
     };
   }
 
@@ -1685,6 +1921,18 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } {
   if (splitAt <= 0)
     throw fail('INVALID_CONFIG', { message: 'The list cursor is invalid.' });
   return { createdAt: raw.slice(0, splitAt), id: raw.slice(splitAt + 1) };
+}
+
+function safeMeta(raw: string | null | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
 }
 
 function remoteFilename(raw: string): string {

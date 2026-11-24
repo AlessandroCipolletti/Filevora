@@ -1,18 +1,11 @@
-export interface ProcessingUpdate {
-  fileId: string;
-  state: string;
-  phase?: 'download' | 'processing';
-  percentage: number | null;
-  etaMs: number | null;
-  quiet: boolean;
-  terminal: boolean;
-  errorCode?: string;
-}
+import type { ProgressEvent } from '../progress/event.js';
+
+export type { ProgressEvent as ProcessingUpdate } from '../progress/event.js';
 
 /** Parse an SSE body. Resolves when a terminal update arrives or the body ends. */
 export async function readEventStream(
   response: Response,
-  onEvent: (update: ProcessingUpdate) => void,
+  onEvent: (update: ProgressEvent) => void,
 ): Promise<void> {
   const reader = response.body?.getReader();
   if (!reader) throw new Error('The progress response has no body.');
@@ -31,7 +24,7 @@ export async function readEventStream(
         .map((line) => line.slice(5).trim())
         .join('\n');
       if (!data || data.startsWith('{') === false) continue;
-      const update = JSON.parse(data) as ProcessingUpdate;
+      const update = JSON.parse(data) as ProgressEvent;
       onEvent(update);
       if (update.terminal) return;
     }

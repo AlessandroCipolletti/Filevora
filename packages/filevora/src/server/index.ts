@@ -28,4 +28,10 @@ export function createFiles(options: FilesOptions = {}): Files {
 }
 
 export type { CreateSessionInput, RequestContext } from './service.js';
+export {
+  assetTransformSchema,
+  type AssetTransform,
+  type AssetTransformInput,
+  type AssetTransformOperation,
+} from '../transform/schema.js';
 export type { FilesOptions, ResolvedConfig };

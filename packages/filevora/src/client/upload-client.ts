@@ -125,6 +125,20 @@ export function createUploadClient(options: UploadClientOptions) {
   const progressPollMs = options.progress?.pollMs ?? 1000;
   let store = options.resumeStore;
   const sinceLoad: UploadHistoryItem[] = [];
+  const rememberVersions = (fileId: string, update: ProcessingUpdate) => {
+    const versions = update.versions;
+    if (!versions) return;
+    const item = sinceLoad.find((entry) => entry.fileId === fileId);
+    if (!item) return;
+    item.originalUrl = versions._original?.url;
+    item.variants = Object.entries(versions)
+      .filter(([name]) => name !== '_original')
+      .map(([name, version]) => ({
+        name,
+        url: version.url ?? '',
+        mimeType: version.mime ?? '',
+      }));
+  };
   let historySeq = 0;
 
   function storeFor(uploadOptions: UploadOptions | undefined): ResumeStore {
@@ -310,7 +324,10 @@ export function createUploadClient(options: UploadClientOptions) {
       { headers: await headers(options.headers), signal },
     );
     if (!response.ok) throw await errorFrom(response);
-    await readEventStream(response, listener);
+    await readEventStream(response, (update) => {
+      listener(update);
+      if (update.terminal) rememberVersions(fileId, update);
+    });
   }
 
   async function watchPoll(
@@ -333,7 +350,10 @@ export function createUploadClient(options: UploadClientOptions) {
         },
       )) as unknown as ProcessingUpdate;
       listener(update);
-      if (update.terminal) return;
+      if (update.terminal) {
+        rememberVersions(fileId, update);
+        return;
+      }
       await delay(pollMs);
     }
   }
@@ -388,6 +408,36 @@ export function createUploadClient(options: UploadClientOptions) {
     };
   }
 
+  async function transform(
+    assetId: string,
+    config: Record<string, unknown>,
+  ): Promise<{
+    launched: true;
+    jobId: string;
+    assetId: string;
+    sourceAssetId: string;
+    replace: boolean;
+  }> {
+    return (await request(
+      doFetch,
+      `${endpoint}/files/${encodeURIComponent(assetId)}/transform`,
+      {
+        method: 'POST',
+        headers: {
+          ...(await headers(options.headers)),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(config),
+      },
+    )) as {
+      launched: true;
+      jobId: string;
+      assetId: string;
+      sourceAssetId: string;
+      replace: boolean;
+    };
+  }
+
   async function fromUrl(
     url: string,
   ): Promise<{ assetId: string; id: string }> {
@@ -419,6 +469,7 @@ export function createUploadClient(options: UploadClientOptions) {
     endpoint,
     upload,
     fromUrl,
+    transform,
     waitForProcessing,
     watchProcessing,
     history,

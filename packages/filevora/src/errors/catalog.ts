@@ -521,6 +521,22 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
+  TRANSFORM_REJECTED: {
+    httpStatus: 400,
+    category: 'processing',
+    retryable: false,
+    message: 'The asset transform was rejected.',
+    resolution: resolution(
+      'docs/errors/TRANSFORM_REJECTED.md',
+      'The config does not match the sniffed media type, or a crop, trim, or page list is outside the file. context.field is the offending key, context.reason says why, context.detectedType is the sniffed type, and context.validOperations lists what that type accepts.',
+      [
+        action(
+          'match_type',
+          'Use only the operations listed in validOperations for the detected type.',
+        ),
+      ],
+    ),
+  },
   INVALID_RECIPE: {
     httpStatus: 400,
     category: 'processing',

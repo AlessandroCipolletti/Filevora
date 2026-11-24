@@ -161,6 +161,10 @@ async function sessions(
     );
     return kind === 'all' ? rows : rows[0];
   }
+  if (/file_id = \?$/i.test(sql)) {
+    const rows = await inner.all(`${SESSION_SELECT} AND id = ?`, params);
+    return kind === 'all' ? rows : rows[0];
+  }
   if (/WHERE id = \?$/i.test(sql)) {
     const rows = await inner.all(
       `${SESSION_SELECT} AND session_id = ?`,

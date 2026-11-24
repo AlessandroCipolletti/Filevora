@@ -122,6 +122,7 @@ interface Route {
     | 'delete'
     | 'delivery'
     | 'progress'
+    | 'transform'
     | 'versions';
   sessionId?: string;
   fileId?: string;
@@ -192,6 +193,14 @@ function matchRoute(method: string, pathname: string): Route | null {
       fileId: decodeURIComponent(versions[1]),
     };
   }
+  const transform = /^\/files\/([^/]+)\/transform$/.exec(pathname);
+  if (transform?.[1] && method === 'POST') {
+    return {
+      operation: 'process.request',
+      name: 'transform',
+      fileId: decodeURIComponent(transform[1]),
+    };
+  }
   const progress = /^\/files\/([^/]+)\/progress$/.exec(pathname);
   if (progress?.[1] && method === 'GET') {
     return {
@@ -221,6 +230,14 @@ async function dispatch(
   requestId: string,
 ): Promise<Response> {
   const ctx = { principal };
+  if (route.name === 'transform' && route.fileId) {
+    const body = await readJson(request);
+    return json(
+      await options.files.transform(route.fileId, body, ctx),
+      202,
+      requestId,
+    );
+  }
   if (route.name === 'from-url') {
     const body = await readJson(request);
     const record = asRecord(body);
@@ -412,7 +429,9 @@ async function dispatch(
     );
     if (wantsJson) {
       return json(
-        await options.files.processingSnapshot(route.fileId, ctx),
+        await options.files.processingSnapshot(route.fileId, ctx, {
+          baseUrl: `${origin}${basePath}`,
+        }),
         200,
         requestId,
       );
@@ -428,6 +447,7 @@ async function dispatch(
             const snapshot = await options.files.processingSnapshot(
               fileId,
               ctx,
+              { baseUrl: `${origin}${basePath}` },
             );
             const line = JSON.stringify(snapshot);
             const emit = !snapshot.quiet || snapshot.terminal;
