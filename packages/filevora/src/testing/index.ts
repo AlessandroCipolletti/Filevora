@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { FilesOptions } from '../config/schema.js';
 import type { ProgressEvent } from '../progress/event.js';
+import { signDeliveryToken } from '../security/delivery.js';
 import { createFiles, type Files } from '../server/index.js';
 import type { FileRecord, Principal } from '../types/index.js';
 
@@ -164,4 +165,36 @@ export async function assertProgress(
     assert.equal(typeof version.url, 'string');
   }
   return event;
+}
+
+/** Sign a `/content` URL with the test signing secret. */
+export function signTestDeliveryUrl(
+  assetId: string,
+  options: {
+    version?: string;
+    expiresIn?: number;
+    download?: string;
+    ip?: string;
+    salt?: string;
+    secret?: string;
+    baseUrl?: string;
+  } = {},
+): string {
+  const exp = Math.floor(Date.now() / 1000) + (options.expiresIn ?? 900);
+  const token = signDeliveryToken(
+    options.secret ?? 'filevora-test-signing-secret',
+    {
+      assetId,
+      version:
+        options.version === '_original' || !options.version
+          ? 'original'
+          : options.version,
+      exp,
+      salt: options.salt ?? '',
+      ...(options.download ? { download: options.download } : {}),
+      ...(options.ip ? { ip: options.ip } : {}),
+    },
+  );
+  const base = (options.baseUrl ?? 'http://files.test').replace(/\/$/, '');
+  return `${base}/content/${token}`;
 }

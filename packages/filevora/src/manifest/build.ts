@@ -39,6 +39,8 @@ const ENV_DEFAULTS: Record<string, string | number | boolean | null> = {
   FILES_CONFIG_STRICT: true,
   FILES_PUBLIC_BASE_URL: null,
   FILES_SIGNING_SECRET: null,
+  FILEVORA_SIGNING_SECRET: null,
+  FILEVORA_DEFAULT_VISIBILITY: 'private',
   FILES_STORAGE_DRIVER: 'filesystem',
   FILES_STORAGE_ROOT: './.files/objects',
   FILES_S3_ENDPOINT: null,

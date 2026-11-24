@@ -57,7 +57,13 @@ import {
   webhookFields,
   type WebhookRequest,
 } from '../webhooks/target.js';
-import { assertUnexpired, readToken, signToken } from '../security/token.js';
+import {
+  plainDeliveryPath,
+  safeDownloadName,
+  signDeliveryToken,
+  verifyDeliveryToken,
+  versionTokenName,
+} from '../security/delivery.js';
 import {
   concatFiles,
   createFilesystemStorage,
@@ -118,6 +124,7 @@ interface FileRow {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  url_salt?: string | null;
 }
 
 interface SessionRow {
@@ -203,6 +210,16 @@ export class FileService {
     this.storageReady = true;
   }
 
+  private signingKeys(): string[] {
+    if (this.config.signingSecrets.length > 0)
+      return this.config.signingSecrets;
+    return [this.secretFor()];
+  }
+
+  private freshSalt(): string {
+    return randomBytes(16).toString('base64url');
+  }
+
   private secretFor(): string {
     if (this.secret) return this.secret;
     if (this.config.signingSecret) return this.config.signingSecret;
@@ -210,7 +227,7 @@ export class FileService {
     if (this.config.env === 'production') {
       throw fail('INVALID_CONFIG', {
         message:
-          'Set FILES_SIGNING_SECRET. Lite mode does not keep a signing secret in a database file.',
+          'Set FILEVORA_SIGNING_SECRET. Lite mode does not keep a signing secret on the asset card.',
       });
     }
     return randomBytes(32).toString('base64url');
@@ -542,6 +559,12 @@ export class FileService {
           now,
         ],
       );
+      await (
+        await this.db()
+      ).run('UPDATE files SET url_salt = ? WHERE id = ?', [
+        this.freshSalt(),
+        targetId,
+      ]);
     } else {
       await (
         await this.db()
@@ -962,6 +985,10 @@ export class FileService {
           now,
         ],
       );
+      await sql.run('UPDATE files SET url_salt = ? WHERE id = ?', [
+        this.freshSalt(),
+        fileId,
+      ]);
       await sql.run(
         `INSERT INTO upload_sessions (
           id, file_id, tenant_id, owner_id, status, transport, part_size, declared_bytes, part_count,
@@ -1027,12 +1054,18 @@ export class FileService {
    * The download and the normal encoding queue continue after this returns.
    */
   async createFromUrl(
-    input: { url: string; webhook?: WebhookRequest; preset?: string },
+    input: {
+      url: string;
+      webhook?: WebhookRequest;
+      preset?: string;
+      visibility?: Visibility;
+    },
     ctx: RequestContext,
   ): Promise<FileRecord> {
     await checkRemoteUrl(input.url, this.config.remote, 'request');
     const preset = input.preset ?? this.config.defaults.preset;
     assertKnownPreset(preset, this.config.presets);
+    const visibility = this.resolveVisibility(input.visibility);
     const sql = await this.db();
     if (this.config.storage.driver === 's3') await this.s3();
     const now = nowIso();
@@ -1043,12 +1076,13 @@ export class FileService {
         id, tenant_id, owner_id, original_name, declared_mime, detected_mime, bytes, checksum,
         original_object_key, visibility, upload_state, processing_state, preset, metadata_json,
         pinned, created_at, updated_at, deleted_at
-      ) VALUES (?, ?, ?, ?, 'application/octet-stream', NULL, 0, NULL, NULL, 'private', 'uploading', 'none', ?, ?, 0, ?, ?, NULL)`,
+      ) VALUES (?, ?, ?, ?, 'application/octet-stream', NULL, 0, NULL, NULL, ?, 'uploading', 'none', ?, ?, 0, ?, ?, NULL)`,
       [
         fileId,
         ctx.principal.tenantId,
         ctx.principal.id,
         filename,
+        visibility,
         preset,
         JSON.stringify({
           filevoraSource: 'remote-url',
@@ -1058,6 +1092,10 @@ export class FileService {
         now,
       ],
     );
+    await sql.run('UPDATE files SET url_salt = ? WHERE id = ?', [
+      this.freshSalt(),
+      fileId,
+    ]);
     const stop = new AbortController();
     const timer = setTimeout(() => stop.abort(), this.config.remote.timeoutMs);
     this.remoteStops.add(stop);
@@ -1661,41 +1699,38 @@ export class FileService {
       throw fail('INVALID_CONFIG', {
         message: 'Delivery TTL is outside the allowed range.',
       });
+    const row = await (
+      await this.db()
+    ).get<FileRow>('SELECT * FROM files WHERE id = ?', [record.id]);
+    const salt = row?.url_salt ?? '';
+    const visibility = row?.visibility === 'public' ? 'public' : 'private';
     const exp = Math.floor(Date.now() / 1000) + ttl;
-    const token = signToken(this.secret ?? '', {
-      f: record.id,
-      n: 'original',
-      exp,
-    });
     const base = input.baseUrl.replace(/\/$/, '');
-    let originalUrl = `${base}/content/${token}`;
-    if (this.config.storage.driver === 's3') {
-      const stored = await (
-        await this.db()
-      ).get<FileRow>('SELECT * FROM files WHERE id = ?', [record.id]);
+    const signed = (version: string) =>
+      `${base}${this.contentPath(record.id, version, salt, exp)}`;
+    let originalUrl =
+      visibility === 'public'
+        ? `${base}${plainDeliveryPath(record.id, '_original')}`
+        : signed('original');
+    if (visibility === 'private' && this.config.storage.driver === 's3') {
       const storage = await this.s3();
-      if (stored?.original_object_key && storage.signDownload) {
-        const signed = await storage.signDownload({
-          key: stored.original_object_key,
+      if (row?.original_object_key && storage.signDownload) {
+        const presigned = await storage.signDownload({
+          key: row.original_object_key,
           expiresInSeconds: ttl,
           contentType: record.detectedMime ?? record.declaredMime,
           fileName: record.originalName,
         });
-        originalUrl = signed.url;
+        originalUrl = presigned.url;
       }
     }
-    const row = await (
-      await this.db()
-    ).get<FileRow>('SELECT * FROM files WHERE id = ?', [record.id]);
     const variants: DeliveryResult['variants'] = {};
     for (const variant of await loadVariants(await this.db(), record.id)) {
-      const variantToken = signToken(this.secret ?? '', {
-        f: record.id,
-        n: variant.id,
-        exp,
-      });
       variants[variant.name] = {
-        url: `${base}/content/${variantToken}`,
+        url:
+          visibility === 'public'
+            ? `${base}${plainDeliveryPath(record.id, variant.name)}`
+            : signed(variant.name),
         expiresAt: new Date(exp * 1000).toISOString(),
         mimeType: variant.mimeType,
         bytes: variant.bytes,
@@ -1733,6 +1768,7 @@ export class FileService {
   async openOriginal(
     token: string,
     range?: { start: number; end?: number },
+    ip?: string,
   ): Promise<{
     record: FileRecord;
     body: Uint8Array | ReadableStream<Uint8Array>;
@@ -1740,60 +1776,261 @@ export class FileService {
     end: number;
     total: number;
     contentType: string;
+    fileName: string;
   }> {
-    const sql = await this.db();
-    const payload = readToken(this.secret ?? '', token);
-    const kind = payload?.n;
-    const fileId = payload?.f;
-    const exp = payload?.exp;
-    if (typeof kind !== 'string' || typeof fileId !== 'string') {
-      throw fail('UNAUTHORIZED', {
-        message: 'The delivery token is expired or invalid.',
+    const claims = verifyDeliveryToken(token, this.signingKeys());
+    if (claims.ip && claims.ip !== ip) {
+      throw fail('DELIVERY_IP_DENIED', {
+        message: `This URL is bound to ${claims.ip}.`,
       });
     }
-    assertUnexpired(exp);
+    const opened = await this.readDeliveredObject(
+      claims.assetId,
+      claims.version,
+      claims.salt,
+    );
+    if (range) {
+      const start = range.start;
+      const end = range.end ?? opened.total - 1;
+      this.assertRange(start, end, opened.total);
+      const body = await readObjectRange(
+        this.root(),
+        opened.objectKey,
+        start,
+        end,
+      );
+      return {
+        ...opened,
+        body,
+        start,
+        end,
+        fileName: claims.download ?? opened.fileName,
+      };
+    }
+    const stream = await this.storage?.getObject(opened.objectKey);
+    if (!stream) throw fail('STORAGE_UNAVAILABLE');
+    return {
+      ...opened,
+      body: stream,
+      start: 0,
+      end: opened.total - 1,
+      fileName: claims.download ?? opened.fileName,
+    };
+  }
+
+  async openPublic(
+    assetId: string,
+    version: string,
+    range?: { start: number; end?: number },
+  ): Promise<{
+    record: FileRecord;
+    body: Uint8Array | ReadableStream<Uint8Array>;
+    start: number;
+    end: number;
+    total: number;
+    contentType: string;
+    fileName: string;
+  }> {
+    const sql = await this.db();
     const row = await sql.get<FileRow>(
       'SELECT * FROM files WHERE id = ? AND deleted_at IS NULL',
-      [fileId],
+      [assetId],
     );
-    if (!row?.original_object_key) throw fail('NOT_FOUND');
-    let objectKey = row.original_object_key;
-    let total = row.bytes;
-    let contentType = row.detected_mime ?? row.declared_mime;
-    if (kind !== 'original') {
-      const variant = await sql.get<{
-        storage_key: string;
-        bytes: number;
-        mime: string;
-      }>(
-        `SELECT storage_key, bytes, mime FROM variants WHERE id = ? AND file_id = ? AND status = 'ready'`,
-        [kind, fileId],
-      );
-      if (!variant) throw fail('NOT_FOUND');
-      objectKey = variant.storage_key;
-      total = variant.bytes;
-      contentType = variant.mime;
+    if (!row || row.visibility !== 'public') {
+      throw fail('DELIVERY_PRIVATE', {
+        message: 'A missing or private asset is not served from /public.',
+      });
     }
-    const start = range?.start ?? 0;
-    const end = range?.end ?? total - 1;
+    const opened = await this.readDeliveredObject(
+      assetId,
+      versionTokenName(version),
+      row.url_salt ?? '',
+      true,
+    );
+    if (range) {
+      const start = range.start;
+      const end = range.end ?? opened.total - 1;
+      this.assertRange(start, end, opened.total);
+      const body = await readObjectRange(
+        this.root(),
+        opened.objectKey,
+        start,
+        end,
+      );
+      return { ...opened, body, start, end };
+    }
+    const stream = await this.storage?.getObject(opened.objectKey);
+    if (!stream) throw fail('STORAGE_UNAVAILABLE');
+    return { ...opened, body: stream, start: 0, end: opened.total - 1 };
+  }
+
+  async signUrl(
+    assetId: string,
+    options: {
+      version?: string;
+      expiresIn?: number;
+      download?: string;
+      ip?: string;
+      baseUrl?: string;
+    },
+    ctx: RequestContext,
+  ): Promise<{ url: string; expiresAt: string }> {
+    await this.get(assetId, ctx);
+    const row = await (
+      await this.db()
+    ).get<FileRow>('SELECT * FROM files WHERE id = ?', [assetId]);
+    if (!row) throw fail('DELIVERY_NOT_FOUND');
+    const ttl = options.expiresIn ?? this.config.delivery.urlTtlSeconds;
+    if (ttl < 30 || ttl > 86_400) {
+      throw fail('INVALID_CONFIG', {
+        message: 'Delivery TTL is outside the allowed range.',
+      });
+    }
+    const exp = Math.floor(Date.now() / 1000) + ttl;
+    const pathName = this.contentPath(
+      assetId,
+      versionTokenName(options.version ?? '_original'),
+      row.url_salt ?? '',
+      exp,
+      options.download,
+      options.ip,
+    );
+    await this.touchAccess(assetId);
+    const base = (
+      options.baseUrl ??
+      this.config.publicBaseUrl ??
+      'http://localhost'
+    ).replace(/\/$/, '');
+    return {
+      url: `${base}${pathName}`,
+      expiresAt: new Date(exp * 1000).toISOString(),
+    };
+  }
+
+  async setVisibility(
+    assetId: string,
+    visibility: Visibility,
+    ctx: RequestContext,
+  ): Promise<FileRecord> {
+    await this.get(assetId, ctx);
+    const next = this.resolveVisibility(visibility);
+    await (
+      await this.db()
+    ).run('UPDATE files SET visibility = ?, updated_at = ? WHERE id = ?', [
+      next,
+      nowIso(),
+      assetId,
+    ]);
+    return this.get(assetId, ctx);
+  }
+
+  async revokeUrls(
+    assetId: string,
+    ctx: RequestContext,
+  ): Promise<{ assetId: string; revoked: true }> {
+    await this.get(assetId, ctx);
+    await (
+      await this.db()
+    ).run('UPDATE files SET url_salt = ?, updated_at = ? WHERE id = ?', [
+      this.freshSalt(),
+      nowIso(),
+      assetId,
+    ]);
+    return { assetId, revoked: true };
+  }
+
+  private contentPath(
+    assetId: string,
+    version: string,
+    salt: string,
+    exp: number,
+    download?: string,
+    ip?: string,
+  ): string {
+    const token = signDeliveryToken(this.signingKeys()[0] ?? '', {
+      assetId,
+      version: versionTokenName(version),
+      exp,
+      salt,
+      ...(download ? { download } : {}),
+      ...(ip ? { ip } : {}),
+    });
+    return `/content/${token}`;
+  }
+
+  private async touchAccess(assetId: string): Promise<void> {
+    await (
+      await this.db()
+    )
+      .run(
+        'UPDATE files SET last_accessed_at = ?, updated_at = ? WHERE id = ?',
+        [nowIso(), nowIso(), assetId],
+      )
+      .catch(() => undefined);
+  }
+
+  private assertRange(start: number, end: number, total: number): void {
     if (start < 0 || start >= total || end < start || end >= total) {
       throw fail('INVALID_CONFIG', {
         message: 'The requested byte range is outside the object.',
       });
     }
-    if (range) {
-      const body = await readObjectRange(this.root(), objectKey, start, end);
-      return { record: mapFile(row), body, start, end, total, contentType };
+  }
+
+  private async readDeliveredObject(
+    assetId: string,
+    version: string,
+    salt: string,
+    skipSalt = false,
+  ): Promise<{
+    record: FileRecord;
+    objectKey: string;
+    total: number;
+    contentType: string;
+    fileName: string;
+  }> {
+    const sql = await this.db();
+    const row = await sql.get<FileRow>(
+      'SELECT * FROM files WHERE id = ? AND deleted_at IS NULL',
+      [assetId],
+    );
+    if (!row?.original_object_key) throw fail('DELIVERY_NOT_FOUND');
+    if (!skipSalt && (row.url_salt ?? '') !== salt) {
+      throw fail('DELIVERY_REVOKED');
     }
-    const stream = await this.storage?.getObject(objectKey);
-    if (!stream) throw fail('STORAGE_UNAVAILABLE');
+    let objectKey = row.original_object_key;
+    let total = row.bytes;
+    let contentType = row.detected_mime ?? row.declared_mime;
+    if (version !== 'original' && version !== '_original') {
+      const variant =
+        (await sql.get<{
+          storage_key: string;
+          bytes: number;
+          mime: string;
+        }>(
+          `SELECT storage_key, bytes, mime FROM variants WHERE file_id = ? AND name = ? AND status = 'ready'`,
+          [assetId, version],
+        )) ??
+        (await sql.get<{
+          storage_key: string;
+          bytes: number;
+          mime: string;
+        }>(
+          `SELECT storage_key, bytes, mime FROM variants WHERE id = ? AND file_id = ? AND status = 'ready'`,
+          [version, assetId],
+        ));
+      if (!variant) throw fail('DELIVERY_NOT_FOUND');
+      objectKey = variant.storage_key;
+      total = variant.bytes;
+      contentType = variant.mime;
+    }
+    await this.touchAccess(assetId);
     return {
       record: mapFile(row),
-      body: stream,
-      start,
-      end,
+      objectKey,
       total,
       contentType,
+      fileName: safeDownloadName(row.original_name),
     };
   }
 

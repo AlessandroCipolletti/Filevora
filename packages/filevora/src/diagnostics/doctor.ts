@@ -271,6 +271,7 @@ export async function runDoctor(
   );
   checks.push(await scannerCheck(env));
   if (config) checks.push(await webhookCheck(config));
+  if (config) checks.push(signingSecretCheck(config));
   if (config) {
     const custom = listPresets(config.presets).filter(
       (preset) => preset.source === 'custom',
@@ -462,6 +463,34 @@ function tcpOpen(host: string, port: number): Promise<boolean> {
     socket.once('connect', () => done(true));
     socket.once('timeout', () => done(false));
     socket.once('error', () => done(false));
+  });
+}
+
+function signingSecretCheck(config: ResolvedConfig): DoctorCheck {
+  const missing =
+    config.defaults.visibility !== 'public' &&
+    config.signingSecrets.length === 0;
+  if (!missing) {
+    return described({
+      id: 'signing',
+      status: 'pass',
+      required: false,
+      message: 'A signing secret is configured.',
+      code: 'OK',
+      explanation:
+        'FILEVORA_SIGNING_SECRET signs private delivery URLs. The first key signs and every key verifies.',
+      fix: 'No change is required.',
+    });
+  }
+  return described({
+    id: 'signing',
+    status: 'warn',
+    required: false,
+    message: 'Private delivery has no FILEVORA_SIGNING_SECRET.',
+    code: 'DOCTOR_SIGNING_SECRET',
+    explanation:
+      'The default visibility is private, so downloads need an HMAC secret. Without one, each process invents a key and other processes cannot verify the URLs.',
+    fix: 'Set FILEVORA_SIGNING_SECRET to a long random string. During rotation, keep the previous key in the comma-separated list.',
   });
 }
 

@@ -110,12 +110,13 @@ Each line is implemented in this package. Status of what an automated test cover
 - **Manifest and MCP.** `filevora manifest --json` and `readManifest()` return the versioned capability document. `filevora mcp` exposes lookup, config validation, and doctor over stdio with no extra dependency. [docs/agents/manifest.md](docs/agents/manifest.md)
 - **Storage.** Filesystem, or S3-compatible storage via `FILEVORA_S3_*`. `filevora init --profile local-s3` writes a MinIO Compose file and does not start Docker.
 - **Metadata databases.** Lite has none. Stored uses PostgreSQL, MySQL or MariaDB, or SQLite, chosen by the database URL scheme.
+- **Access control.** Assets are `private` or `public` (default `private`). Private downloads use HMAC `/content` URLs or S3 presigned URLs. Public downloads use `/public`. `signUrl` signs a version. `POST /files/:assetId/revoke-urls` invalidates older links. [docs/access-control.md](docs/access-control.md)
 
 `provider: "managed"` throws `FEATURE_NOT_AVAILABLE`. This package does not bill, issue accounts, or render a UI.
 
 ## HTTP API
 
-Routes come from `HTTP_ROUTES`. The host principal is required on every route except `GET /content/:token`, which uses the signed token. Paths are relative to `basePath` (for example `/api/files`).
+Routes come from `HTTP_ROUTES`. The host principal is required on every route except `GET /content/:token` and `GET /public/:assetId/:version`. Paths are relative to `basePath` (for example `/api/files`).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -131,11 +132,14 @@ Routes come from `HTTP_ROUTES`. The host principal is required on every route ex
 | `GET` | `/files` | List files for the tenant. Stored mode only. |
 | `GET` | `/files/:fileId` | Read one file. |
 | `DELETE` | `/files/:fileId` | Soft-delete the asset and its versions. |
-| `GET` | `/files/:fileId/versions` | Signed URLs for every ready version, including `_original`. |
+| `GET` | `/files/:fileId/versions` | Signed URLs for every ready version of a private asset. Public assets use `/public` URLs. |
 | `POST` | `/files/:fileId/transform` | Queue a transform. Body may be `operations` or `preset` (single-output presets accept extra `operations` after the preset). Returns `{ launched, jobId, assetId, sourceAssetId, replace }`. |
 | `GET` | `/files/:fileId/progress` | Progress event as `text/event-stream` or JSON. |
 | `POST` | `/files/:fileId/delivery` | Sign delivery URLs. Optional `expiresInSeconds`. |
-| `GET` | `/content/:token` | Download bytes for a signed token. No principal. |
+| `GET` | `/content/:token` | Download bytes for a signed token. No principal. 403 with a `DELIVERY_*` code when the token is bad. |
+| `GET` | `/public/:assetId/:version` | Download a public asset with no signature. Private assets return `DELIVERY_PRIVATE`. |
+| `PUT` | `/files/:fileId/visibility` | Set `public` or `private`. |
+| `POST` | `/files/:fileId/revoke-urls` | Rotate the asset salt so older signed URLs fail. |
 
 `GET /health` is not in that table. It exists only when the handler is created with `health: true` (or `{ path }`). It returns the doctor report with no authentication. HTTP 200 when required checks pass, 503 when one fails.
 
@@ -147,9 +151,9 @@ Public entry points match `package.json` `exports` and `catalog.exports` in the 
 
 ### `filevora/server`
 
-`createFiles(options?)` returns a `Files` instance: sessions, URL import, transform, get, list, delete, delivery URLs, progress snapshots, retention, and normalize. `listPresets()` lists built-in and custom preset names. Construction does not spawn a worker.
+`createFiles(options?)` returns a `Files` instance: sessions, URL import, transform, get, list, delete, delivery URLs, `signUrl`, `setVisibility`, `revokeUrls`, progress snapshots, retention, and normalize. `listPresets()` lists built-in and custom preset names. `verifyDeliveryToken` checks an HMAC token. Construction does not spawn a worker.
 
-Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, `RequestContext`, `listPresets`, `PresetSummary`, `assetTransformSchema`, `AssetTransform`, `AssetTransformInput`, `AssetTransformOperation`.
+Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, `RequestContext`, `listPresets`, `PresetSummary`, `signDeliveryToken`, `verifyDeliveryToken`, `DeliveryClaims`, `assetTransformSchema`, `AssetTransform`, `AssetTransformInput`, `AssetTransformOperation`.
 
 ### `filevora/client`
 
@@ -167,7 +171,7 @@ Browser-safe. It does not import Node, `sharp`, or a cloud SDK.
 
 ### `filevora/testing`
 
-`createTestFiles`, `uploadBytes`, `assertProgress`, `samplePng`, `samplePdf`, `sampleMp4`. [docs/agents/testing.md](docs/agents/testing.md)
+`createTestFiles`, `uploadBytes`, `assertProgress`, `samplePng`, `samplePdf`, `sampleMp4`, and `signTestDeliveryUrl`. [docs/agents/testing.md](docs/agents/testing.md)
 
 ### `filevora/manifest`
 
@@ -217,6 +221,8 @@ Start at [llms.txt](llms.txt). The manifest is the source of truth for routes, e
 - [docs/agents/verification.md](docs/agents/verification.md)
 - [Presets](docs/presets.md) — built-in image and video presets and custom recipes
 - [docs/agents/presets.md](docs/agents/presets.md)
+- [docs/access-control.md](docs/access-control.md)
+- [docs/agents/access-control.md](docs/agents/access-control.md)
 - [docs/configuration.md](docs/configuration.md)
 - [docs/architecture.md](docs/architecture.md)
 - [docs/security.md](docs/security.md)

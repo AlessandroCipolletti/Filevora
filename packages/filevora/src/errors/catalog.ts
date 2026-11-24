@@ -766,6 +766,113 @@ export const ERROR_CATALOG = {
       [action('public_https', 'Register an HTTPS endpoint that you control.')],
     ),
   },
+  DELIVERY_MALFORMED: {
+    httpStatus: 403,
+    category: 'auth',
+    retryable: false,
+    message: 'The delivery token is malformed.',
+    resolution: resolution(
+      'docs/errors/DELIVERY_MALFORMED.md',
+      'The token is not a base64 payload plus an HMAC. It was truncated or was not produced by signUrl.',
+      [
+        action(
+          'sign_again',
+          'Call signUrl again and use the returned URL unchanged.',
+        ),
+      ],
+    ),
+  },
+  DELIVERY_BAD_SIGNATURE: {
+    httpStatus: 403,
+    category: 'auth',
+    retryable: false,
+    message: 'The delivery signature is invalid.',
+    resolution: resolution(
+      'docs/errors/DELIVERY_BAD_SIGNATURE.md',
+      'The HMAC does not match any configured signing key. The URL was edited, or it was signed by a key that has been removed.',
+      [
+        action(
+          'check_keys',
+          'Keep the previous key in FILEVORA_SIGNING_SECRET while tokens signed with it are still valid.',
+        ),
+      ],
+    ),
+  },
+  DELIVERY_EXPIRED: {
+    httpStatus: 403,
+    category: 'auth',
+    retryable: false,
+    message: 'The delivery URL has expired.',
+    resolution: resolution(
+      'docs/errors/DELIVERY_EXPIRED.md',
+      'exp is in the past. Delivery URLs are short-lived. Request a new one.',
+      [action('renew', 'Call signUrl or GET the versions route again.')],
+    ),
+  },
+  DELIVERY_REVOKED: {
+    httpStatus: 403,
+    category: 'auth',
+    retryable: false,
+    message: 'The delivery URL was revoked.',
+    resolution: resolution(
+      'docs/errors/DELIVERY_REVOKED.md',
+      'The per-asset url salt changed after this token was signed. Older URLs no longer match.',
+      [
+        action(
+          'sign_again',
+          'Issue a new URL. Rotate the salt only when existing links should die.',
+        ),
+      ],
+    ),
+  },
+  DELIVERY_IP_DENIED: {
+    httpStatus: 403,
+    category: 'auth',
+    retryable: false,
+    message: 'The delivery URL is bound to a different IP.',
+    resolution: resolution(
+      'docs/errors/DELIVERY_IP_DENIED.md',
+      'The token contains an ip claim and the request IP does not match it.',
+      [
+        action(
+          'resign',
+          'Sign again without ip, or from the client that will fetch the URL.',
+        ),
+      ],
+    ),
+  },
+  DELIVERY_PRIVATE: {
+    httpStatus: 403,
+    category: 'auth',
+    retryable: false,
+    message: 'This asset is private.',
+    resolution: resolution(
+      'docs/errors/DELIVERY_PRIVATE.md',
+      'The plain /public URL is only for visibility public. A missing asset card is private.',
+      [
+        action(
+          'use_signed',
+          'Fetch a signed /content URL, or set visibility to public when that is intended.',
+        ),
+      ],
+    ),
+  },
+  DELIVERY_NOT_FOUND: {
+    httpStatus: 403,
+    category: 'auth',
+    retryable: false,
+    message: 'The delivery target was not found.',
+    resolution: resolution(
+      'docs/errors/DELIVERY_NOT_FOUND.md',
+      'The asset or version in the token does not exist or was deleted.',
+      [
+        action(
+          'check_version',
+          'Use _original or a version name returned by the versions route.',
+        ),
+      ],
+    ),
+  },
 } as const satisfies Record<string, ErrorSpec>;
 
 for (const spec of Object.values(ERROR_CATALOG)) {

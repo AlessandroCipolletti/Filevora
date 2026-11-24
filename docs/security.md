@@ -9,6 +9,7 @@ Current:
 - Error payloads redact secret-like keys and credential patterns and omit stacks.
 - Production refuses unacknowledged local durability and temp-dir object roots.
 - The browser entry is built without Node modules.
+- Private assets are not served from a bare storage path. Downloads use an HMAC `/content` token or, on S3, a presigned URL. Public assets use `/public` and a missing asset card stays private. See [access-control.md](access-control.md).
 
 Tested in this repository:
 

@@ -154,6 +154,14 @@
 - Upload and URL import store the preset's versions next to `_original`. `POST /files/:assetId/transform` accepts `preset`. Single-output presets can be followed by `operations`. Unknown or incompatible names return `TRANSFORM_REJECTED` with `validPresets`.
 - Custom presets are `presets` in config or `FILEVORA_PRESETS` JSON, validated like transform operations. See `docs/presets.md`.
 
+### Signed delivery
+
+- Assets are `private` by default (`FILEVORA_DEFAULT_VISIBILITY`). `PUT /files/:assetId/visibility` changes it. A missing lite asset card stays private.
+- `FILEVORA_SIGNING_SECRET` signs `/content` URLs. A comma-separated list rotates keys: the first signs, all of them verify. `signUrl` and `verifyDeliveryToken` are the SDK helpers.
+- Private progress, webhook, and version URLs are signed. S3 originals are presigned. Public assets use `/public/:assetId/:version`.
+- `POST /files/:assetId/revoke-urls` rotates `url_salt` (a column in stored mode, a field on the lite card). Expired, tampered, revoked, and IP-bound URLs return HTTP 403 with `DELIVERY_*` codes.
+- Issuing a signed URL updates `last_accessed_at`. See `docs/access-control.md`.
+
 ### Transform an existing asset
 
 - `POST /files/:assetId/transform` accepts one config object and returns `{ launched, jobId, assetId }` immediately. The job uses the BullMQ queue.

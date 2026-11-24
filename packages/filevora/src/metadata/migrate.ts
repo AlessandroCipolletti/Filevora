@@ -9,6 +9,7 @@ export async function migrate(
   for (const statement of [
     ...hostStatements(dialect),
     'ALTER TABLE filevora_assets ADD COLUMN last_accessed_at TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN url_salt TEXT',
   ]) {
     try {
       await db.exec(statement);

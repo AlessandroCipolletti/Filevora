@@ -14,6 +14,7 @@ Each check has `id`, `status` (`pass`, `fail`, or `warn`), `code`, `explanation`
 | `ffmpeg` / `ffprobe` | Looks for both binaries. |
 | `scanner` | When `FILEVORA_MALWARE_SCAN=clamav`, opens a TCP connection to clamd. |
 | `webhook` | Checks that a configured URL has a secret and passes the URL-import SSRF rules. |
+| `signing` | Warns `DOCTOR_SIGNING_SECRET` when visibility is private and `FILEVORA_SIGNING_SECRET` is unset. |
 
 `runDoctor` from `filevora/server` is not a public export. Import it from the package diagnostics through the CLI, or mount the health route:
 

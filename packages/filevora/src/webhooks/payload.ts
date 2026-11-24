@@ -2,7 +2,12 @@ import type { ResolvedConfig } from '../config/load.js';
 import type { Sql } from '../metadata/sqlite.js';
 import type { ProgressEvent } from '../progress/event.js';
 import { streamsDetailedProgress } from '../progress/estimate.js';
-import { signToken } from '../security/token.js';
+import {
+  plainDeliveryPath,
+  resolveSigningSecrets,
+  signDeliveryToken,
+  versionTokenName,
+} from '../security/delivery.js';
 
 const TERMINAL = new Set([
   'none',
@@ -29,9 +34,11 @@ export async function webhookProgress(
     metadata_json: string;
     original_name: string;
     original_object_key: string | null;
+    visibility: string | null;
+    url_salt: string | null;
   }>(
     `SELECT upload_state, processing_state, detected_mime, declared_mime, bytes, checksum,
-            metadata_json, original_name, original_object_key
+            metadata_json, original_name, original_object_key, visibility, url_salt
      FROM files WHERE id = ?`,
     [fileId],
   );
@@ -70,21 +77,45 @@ export async function webhookProgress(
   }
   const base = (config.publicBaseUrl ?? 'http://localhost').replace(/\/$/, '');
   const exp = Math.floor(Date.now() / 1000) + config.delivery.urlTtlSeconds;
-  const secret = config.signingSecret ?? '';
-  let originalUrl = `${base}/content/${signToken(secret, { f: fileId, n: 'original', exp })}`;
-  if (config.storage.driver === 's3' && row.original_object_key) {
+  const secrets = resolveSigningSecrets(config);
+  const secret = secrets[0] ?? '';
+  const visibility = row.visibility === 'public' ? 'public' : 'private';
+  const salt = row.url_salt ?? '';
+  const signed = (version: string) =>
+    `${base}/content/${signDeliveryToken(secret, {
+      assetId: fileId,
+      version: versionTokenName(version),
+      exp,
+      salt,
+    })}`;
+  let originalUrl =
+    visibility === 'public'
+      ? `${base}${plainDeliveryPath(fileId, '_original')}`
+      : signed('original');
+  if (
+    visibility === 'private' &&
+    config.storage.driver === 's3' &&
+    row.original_object_key
+  ) {
     const { createS3Storage } = await import('../storage/s3.js');
     const storage = createS3Storage(config.storage.s3);
     if (storage.signDownload) {
-      const signed = await storage.signDownload({
+      const presigned = await storage.signDownload({
         key: row.original_object_key,
         expiresInSeconds: config.delivery.urlTtlSeconds,
         contentType: row.detected_mime ?? row.declared_mime,
         fileName: row.original_name,
       });
-      originalUrl = signed.url;
+      originalUrl = presigned.url;
     }
   }
+  await sql
+    .run('UPDATE files SET last_accessed_at = ?, updated_at = ? WHERE id = ?', [
+      new Date().toISOString(),
+      new Date().toISOString(),
+      fileId,
+    ])
+    .catch(() => undefined);
   const versions: NonNullable<ProgressEvent['versions']> = {
     _original: {
       version: '_original',
@@ -107,7 +138,10 @@ export async function webhookProgress(
     versions[variant.name] = {
       version: variant.name,
       status: 'ready',
-      url: `${base}/content/${signToken(secret, { f: fileId, n: variant.id, exp })}`,
+      url:
+        visibility === 'public'
+          ? `${base}${plainDeliveryPath(fileId, variant.name)}`
+          : signed(variant.name),
       mime: variant.mime,
       bytes: variant.bytes,
     };

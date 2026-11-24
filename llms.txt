@@ -18,6 +18,7 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Webhooks](docs/agents/webhooks.md) — optional signed completion webhooks. The body matches the terminal SSE event. Targets use the URL-import SSRF checks. Localhost needs `FILES_WEBHOOKS_ALLOW_LOOPBACK`.
 - [Transform](docs/agents/transform.md) — `POST /files/:assetId/transform` with one config object. `replace` defaults to true. `preset` names a built-in or custom recipe. Progress events share `phase`, `percentage`, `etaMs`, and a terminal `versions` list.
 - [Presets](docs/presets.md) and [docs/agents/presets.md](docs/agents/presets.md) — named image and video presets. `FILEVORA_PRESETS` or `presets` in config adds custom ones. Default `web-optimized` is unchanged.
+- [Access control](docs/access-control.md) and [docs/agents/access-control.md](docs/agents/access-control.md) — `public` or `private` assets, HMAC delivery URLs, key rotation, and URL revocation.
 - [Architecture](docs/architecture.md)
 - [Security](docs/security.md)
 - [Changelog](CHANGELOG.md)

@@ -94,6 +94,16 @@ export function createFilesHandler(
           requestId,
         );
       }
+      const publicMatch = /^\/public\/([^/]+)\/([^/]+)$/.exec(pathname);
+      if (request.method === 'GET' && publicMatch?.[1] && publicMatch[2]) {
+        return await sendPublic(
+          options.files,
+          decodeURIComponent(publicMatch[1]),
+          decodeURIComponent(publicMatch[2]),
+          request,
+          requestId,
+        );
+      }
       const principal = await options.authenticate(request);
       if (!principal?.id || !principal.tenantId)
         throw fail('UNAUTHORIZED', { requestId });
@@ -171,12 +181,17 @@ async function dispatch(
     }
     const webhook = webhookFrom(record.webhook);
     const preset = stringField(record, 'preset');
+    const visibility =
+      record.visibility === 'public' || record.visibility === 'private'
+        ? record.visibility
+        : undefined;
     return json(
       await options.files.createFromUrl(
         {
           url,
           ...(webhook ? { webhook } : {}),
           ...(preset ? { preset } : {}),
+          ...(visibility ? { visibility } : {}),
         },
         ctx,
       ),
@@ -427,6 +442,29 @@ async function dispatch(
       requestId,
     );
   }
+  if (route.name === 'visibility' && route.fileId) {
+    const body = await readJson(request);
+    const record = asRecord(body);
+    const visibility = record.visibility;
+    if (visibility !== 'public' && visibility !== 'private') {
+      throw fail('INVALID_CONFIG', {
+        message: 'visibility must be public or private.',
+        requestId,
+      });
+    }
+    return json(
+      await options.files.setVisibility(route.fileId, visibility, ctx),
+      200,
+      requestId,
+    );
+  }
+  if (route.name === 'revoke-urls' && route.fileId) {
+    return json(
+      await options.files.revokeUrls(route.fileId, ctx),
+      200,
+      requestId,
+    );
+  }
   if (route.name === 'delivery' && route.fileId) {
     const body = await readJson(request).catch(() => ({}));
     const record = asRecord(body);
@@ -455,12 +493,58 @@ async function sendContent(
 ): Promise<Response> {
   const rangeHeader = request.headers.get('range');
   const range = rangeHeader ? parseRange(rangeHeader) : undefined;
-  const opened = await files.openOriginal(decodeURIComponent(token), range);
+  const opened = await files.openOriginal(
+    decodeURIComponent(token),
+    range,
+    clientIp(request),
+  );
   const headers = new Headers({
     'content-type': opened.contentType,
     'x-content-type-options': 'nosniff',
     'cache-control': 'private, no-store',
-    'content-disposition': `attachment; filename="${opened.record.originalName.replace(/"/g, '')}"`,
+    'content-disposition': `attachment; filename="${opened.fileName.replace(/"/g, '')}"`,
+    'accept-ranges': 'bytes',
+    'x-request-id': requestId,
+  });
+  if (range) {
+    headers.set(
+      'content-range',
+      `bytes ${opened.start}-${opened.end}/${opened.total}`,
+    );
+    headers.set('content-length', String(opened.end - opened.start + 1));
+    const bytes =
+      opened.body instanceof Uint8Array ? opened.body : new Uint8Array();
+    return new Response(bytes, { status: 206, headers });
+  }
+  headers.set('content-length', String(opened.total));
+  const stream =
+    opened.body instanceof Uint8Array
+      ? new Response(opened.body).body
+      : opened.body;
+  return new Response(stream, { status: 200, headers });
+}
+
+function clientIp(request: Request): string | undefined {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0]?.trim() || undefined;
+  return request.headers.get('x-real-ip') ?? undefined;
+}
+
+async function sendPublic(
+  files: Files,
+  assetId: string,
+  version: string,
+  request: Request,
+  requestId: string,
+): Promise<Response> {
+  const rangeHeader = request.headers.get('range');
+  const range = rangeHeader ? parseRange(rangeHeader) : undefined;
+  const opened = await files.openPublic(assetId, version, range);
+  const headers = new Headers({
+    'content-type': opened.contentType,
+    'x-content-type-options': 'nosniff',
+    'cache-control': 'public, max-age=60',
+    'content-disposition': `inline; filename="${opened.fileName.replace(/"/g, '')}"`,
     'accept-ranges': 'bytes',
     'x-request-id': requestId,
   });

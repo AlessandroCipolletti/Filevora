@@ -71,6 +71,7 @@
     "uploadHistory": "tested",
     "metadataModes": "tested",
     "namedPresets": "tested",
+    "signedDelivery": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -85,7 +86,8 @@
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
     "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs.",
     "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest.",
-    "Named presets expand to transform operations. The default web-optimized preset still publishes thumbnail, optimized, and hd. Custom presets are a presets object or FILEVORA_PRESETS JSON. See docs/presets.md."
+    "Named presets expand to transform operations. The default web-optimized preset still publishes thumbnail, optimized, and hd. Custom presets are a presets object or FILEVORA_PRESETS JSON. See docs/presets.md.",
+    "Private assets are served with HMAC delivery URLs or S3 presigned URLs. Public assets use /public. FILEVORA_SIGNING_SECRET is a comma-separated key list. A missing asset card is private. See docs/access-control.md."
   ],
   "catalog": {
     "schema": "filevora.manifest/2",
@@ -136,6 +138,7 @@
           "AssetTransformInput",
           "AssetTransformOperation",
           "CreateSessionInput",
+          "DeliveryClaims",
           "Files",
           "FilesOptions",
           "PresetSummary",
@@ -143,7 +146,9 @@
           "ResolvedConfig",
           "assetTransformSchema",
           "createFiles",
-          "listPresets"
+          "listPresets",
+          "signDeliveryToken",
+          "verifyDeliveryToken"
         ]
       },
       {
@@ -155,6 +160,7 @@
           "sampleMp4",
           "samplePdf",
           "samplePng",
+          "signTestDeliveryUrl",
           "uploadBytes"
         ]
       },
@@ -382,6 +388,7 @@
           "body": {
             "url": "string",
             "preset": "string?",
+            "visibility": "private | public?",
             "webhook": "{ url: string, secret?: string }?"
           }
         },
@@ -548,6 +555,65 @@
         }
       },
       {
+        "method": "PUT",
+        "path": "/files/:fileId/visibility",
+        "operation": "file.visibility",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          },
+          "body": "{ visibility: \"public\" | \"private\" }"
+        },
+        "response": {
+          "status": 200,
+          "body": "FileRecord"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/files/:fileId/revoke-urls",
+        "operation": "delivery.revoke",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "{ assetId, revoked: true }"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/public/:assetId/:version",
+        "operation": "delivery.sign",
+        "auth": "token",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "assetId": "string",
+            "version": "string"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "file bytes"
+        }
+      },
+      {
         "method": "GET",
         "path": "/content/:token",
         "operation": "delivery.sign",
@@ -617,6 +683,11 @@
       {
         "key": "signingSecret",
         "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "signingSecrets",
+        "type": "string[]",
         "appliesTo": "both"
       },
       {
@@ -1641,6 +1712,16 @@
         "appliesTo": "stored"
       },
       {
+        "key": "FILEVORA_DEFAULT_VISIBILITY",
+        "type": "string",
+        "enum": [
+          "private",
+          "public"
+        ],
+        "default": "private",
+        "appliesTo": "both"
+      },
+      {
         "key": "FILEVORA_EXIF_STRIP",
         "type": "string",
         "enum": [
@@ -1729,6 +1810,12 @@
         "key": "FILEVORA_REMOTE_TIMEOUT_MS",
         "type": "string",
         "default": 120000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_SIGNING_SECRET",
+        "type": "string",
+        "default": null,
         "appliesTo": "both"
       },
       {
@@ -2100,6 +2187,62 @@
         "retryable": false,
         "cause": "Webhook targets must be HTTPS in production. Loopback and private addresses are rejected so the worker cannot be used as a proxy.",
         "fix": "Register an HTTPS endpoint that you control."
+      },
+      {
+        "code": "DELIVERY_MALFORMED",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The token is not a base64 payload plus an HMAC. It was truncated or was not produced by signUrl.",
+        "fix": "Call signUrl again and use the returned URL unchanged."
+      },
+      {
+        "code": "DELIVERY_BAD_SIGNATURE",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The HMAC does not match any configured signing key. The URL was edited, or it was signed by a key that has been removed.",
+        "fix": "Keep the previous key in FILEVORA_SIGNING_SECRET while tokens signed with it are still valid."
+      },
+      {
+        "code": "DELIVERY_EXPIRED",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "exp is in the past. Delivery URLs are short-lived. Request a new one.",
+        "fix": "Call signUrl or GET the versions route again."
+      },
+      {
+        "code": "DELIVERY_REVOKED",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The per-asset url salt changed after this token was signed. Older URLs no longer match.",
+        "fix": "Issue a new URL. Rotate the salt only when existing links should die."
+      },
+      {
+        "code": "DELIVERY_IP_DENIED",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The token contains an ip claim and the request IP does not match it.",
+        "fix": "Sign again without ip, or from the client that will fetch the URL."
+      },
+      {
+        "code": "DELIVERY_PRIVATE",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The plain /public URL is only for visibility public. A missing asset card is private.",
+        "fix": "Fetch a signed /content URL, or set visibility to public when that is intended."
+      },
+      {
+        "code": "DELIVERY_NOT_FOUND",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The asset or version in the token does not exist or was deleted.",
+        "fix": "Use _original or a version name returned by the versions route."
       }
     ],
     "progress": {

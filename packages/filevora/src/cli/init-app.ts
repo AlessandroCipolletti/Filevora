@@ -250,6 +250,8 @@ function envTemplate(mode: 'lite' | 'stored', databaseUrl?: string): string {
     'FILES_STORAGE_ROOT=./.files/objects',
     'REDIS_URL=redis://127.0.0.1:6379',
     'FILES_DEFAULT_PRESET=web-optimized',
+    'FILEVORA_DEFAULT_VISIBILITY=private',
+    'FILEVORA_SIGNING_SECRET=replace-with-a-long-random-string',
   ];
   if (mode === 'stored') {
     lines.push(

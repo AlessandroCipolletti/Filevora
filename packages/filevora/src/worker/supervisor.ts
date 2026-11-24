@@ -16,6 +16,9 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
     singleHostAcknowledged: true,
     ...(config.publicBaseUrl ? { publicBaseUrl: config.publicBaseUrl } : {}),
     signingSecret: config.signingSecret,
+    ...(config.signingSecrets.length > 0
+      ? { signingSecrets: config.signingSecrets }
+      : {}),
     webhooks: {
       allowLoopback: config.webhooks.allowLoopback,
       ...(config.webhooks.url ? { url: config.webhooks.url } : {}),

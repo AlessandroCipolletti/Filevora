@@ -112,6 +112,15 @@ export async function startS3Emulator(options: {
         return;
       }
       if (req.method === 'GET') {
+        const headerAuth = Boolean(req.headers.authorization);
+        const querySigned = [...url.searchParams.keys()].some(
+          (key) => key.toLowerCase() === 'x-amz-signature',
+        );
+        if (!headerAuth && !querySigned) {
+          res.writeHead(403, cors());
+          res.end('unsigned');
+          return;
+        }
         const object = objects.get(key);
         if (!object) {
           res.writeHead(404);

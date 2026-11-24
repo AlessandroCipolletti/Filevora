@@ -36,3 +36,8 @@ export {
 } from '../transform/schema.js';
 export type { FilesOptions, ResolvedConfig };
 export { listPresets, type PresetSummary } from '../presets/catalog.js';
+export {
+  signDeliveryToken,
+  verifyDeliveryToken,
+  type DeliveryClaims,
+} from '../security/delivery.js';

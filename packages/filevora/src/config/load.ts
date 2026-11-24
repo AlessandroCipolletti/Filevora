@@ -23,6 +23,8 @@ export interface ResolvedConfig {
   strict: boolean;
   publicBaseUrl?: string;
   signingSecret?: string;
+  /** First entry signs new URLs. Every entry verifies, so a previous key can stay during rotation. */
+  signingSecrets: string[];
   storage: {
     driver: 'filesystem' | 's3';
     root: string;
@@ -352,8 +354,11 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
         : {}),
     },
     defaults: {
-      ...(e.FILES_DEFAULT_VISIBILITY
-        ? { visibility: e.FILES_DEFAULT_VISIBILITY }
+      ...(e.FILEVORA_DEFAULT_VISIBILITY || e.FILES_DEFAULT_VISIBILITY
+        ? {
+            visibility:
+              e.FILEVORA_DEFAULT_VISIBILITY ?? e.FILES_DEFAULT_VISIBILITY,
+          }
         : {}),
       ...(e.FILES_KEEP_ORIGINAL !== undefined
         ? { preserveOriginal: e.FILES_KEEP_ORIGINAL }
@@ -662,6 +667,13 @@ export function resolveConfig(
     });
   }
 
+  const signingSecrets = parseSigningSecrets(
+    input.signingSecrets,
+    input.signingSecret,
+    env.FILEVORA_SIGNING_SECRET,
+    env.FILES_SIGNING_SECRET,
+  );
+
   const resolved: ResolvedConfig = {
     env: sdkEnv,
     provider,
@@ -669,7 +681,8 @@ export function resolveConfig(
     singleHostAcknowledged,
     strict: input.strict ?? true,
     ...(input.publicBaseUrl ? { publicBaseUrl: input.publicBaseUrl } : {}),
-    ...(input.signingSecret ? { signingSecret: input.signingSecret } : {}),
+    ...(signingSecrets[0] ? { signingSecret: signingSecrets[0] } : {}),
+    signingSecrets,
     storage: {
       driver: storageDriver,
       root,
@@ -831,6 +844,38 @@ export function resolveConfig(
     });
   }
   return resolved;
+}
+
+function parseSigningSecrets(
+  list: string[] | undefined,
+  single: string | undefined,
+  filevora: string | undefined,
+  files: string | undefined,
+): string[] {
+  const chosen = list?.length
+    ? list
+    : splitSecrets(filevora).length
+      ? splitSecrets(filevora)
+      : single
+        ? [single]
+        : splitSecrets(files);
+  for (const secret of chosen) {
+    if (secret.length < 16) {
+      throw fail('INVALID_CONFIG', {
+        message:
+          'Each FILEVORA_SIGNING_SECRET entry must be at least 16 characters.',
+      });
+    }
+  }
+  return chosen;
+}
+
+function splitSecrets(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
 /** Config view safe to print. Secrets and connection passwords are removed. */

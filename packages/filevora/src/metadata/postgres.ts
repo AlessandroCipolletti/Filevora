@@ -27,6 +27,7 @@ export async function applyPostgresSchema(
   for (const statement of [
     ...hostStatements('postgres'),
     'ALTER TABLE filevora_assets ADD COLUMN last_accessed_at TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN url_salt TEXT',
   ]) {
     try {
       if (db.exec) await db.exec(statement);

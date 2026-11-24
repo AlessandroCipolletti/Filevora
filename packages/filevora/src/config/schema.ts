@@ -40,6 +40,7 @@ export const filesOptionsSchema = z
     strict: z.boolean().optional(),
     publicBaseUrl: z.string().url().optional(),
     signingSecret: z.string().min(16).optional(),
+    signingSecrets: z.array(z.string().min(16)).max(8).optional(),
     storage: z
       .object({
         driver: z.enum(['filesystem', 's3', 'managed']).optional(),
@@ -229,6 +230,8 @@ const envShape = {
   FILES_CONFIG_STRICT: boolString.optional(),
   FILES_PUBLIC_BASE_URL: z.string().url().optional(),
   FILES_SIGNING_SECRET: z.string().min(16).optional(),
+  FILEVORA_SIGNING_SECRET: z.string().optional(),
+  FILEVORA_DEFAULT_VISIBILITY: z.enum(['private', 'public']).optional(),
   FILES_STORAGE_DRIVER: z.enum(['filesystem', 's3', 'managed']).optional(),
   FILES_STORAGE_ROOT: z.string().optional(),
   FILES_S3_ENDPOINT: z.string().url().optional(),
