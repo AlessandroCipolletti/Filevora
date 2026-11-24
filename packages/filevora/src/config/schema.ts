@@ -182,6 +182,8 @@ export const filesOptionsSchema = z
     webhooks: z
       .object({
         allowLoopback: z.boolean().optional(),
+        url: z.string().url().optional(),
+        secret: z.string().min(1).optional(),
       })
       .optional(),
     safety: z
@@ -293,6 +295,8 @@ const envShape = {
   FILES_CLOUD_ENDPOINT: z.string().optional(),
   FILES_CLOUD_PROJECT_ID: z.string().optional(),
   FILES_WEBHOOKS_ALLOW_LOOPBACK: boolString.optional(),
+  FILEVORA_WEBHOOK_URL: z.string().url().optional(),
+  FILEVORA_WEBHOOK_SECRET: z.string().min(1).optional(),
   FILEVORA_REMOTE_MAX_BYTES: byteString.optional(),
   FILEVORA_REMOTE_CONNECT_TIMEOUT_MS: byteString.optional(),
   FILEVORA_REMOTE_TIMEOUT_MS: byteString.optional(),

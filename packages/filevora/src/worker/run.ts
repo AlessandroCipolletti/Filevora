@@ -22,6 +22,12 @@ import {
   startProcessingWorker,
 } from '../queue/processing-queue.js';
 import { JOB_SCHEMA_VERSION } from '../version.js';
+import {
+  enqueueWebhookJob,
+  postWebhook,
+  type WebhookEventName,
+} from '../webhooks/deliver.js';
+import { webhookProgress } from '../webhooks/payload.js';
 import { heartbeatSupervisor } from './supervisor.js';
 
 export interface WorkerRunOptions {
@@ -131,6 +137,25 @@ async function executeJob(
   config: ResolvedConfig,
 ): Promise<Record<string, unknown>> {
   const data = job.data;
+  if (data.type === 'webhook') {
+    const payload = data.payload as {
+      url?: string;
+      secret?: string;
+      event?: string;
+      body?: string;
+    };
+    if (!payload.url || !payload.secret || !payload.body) {
+      return { delivered: false };
+    }
+    await postWebhook({
+      url: payload.url,
+      secret: payload.secret,
+      event: payload.event ?? 'processing.completed',
+      body: payload.body,
+      config,
+    });
+    return { delivered: true };
+  }
   if (data.schemaVersion > JOB_SCHEMA_VERSION)
     throw fail('JOB_VERSION_UNSUPPORTED');
   const signal = new AbortController().signal;
@@ -190,6 +215,7 @@ async function executeJob(
         limits,
         hooks,
       );
+      await notifyTerminal(sql, config, data, 'processing.completed');
       return { variants: names, processingState: 'ready' };
     }
     if (data.type === 'transform') {
@@ -215,6 +241,7 @@ async function executeJob(
         exif: config.safety.exif,
         ...(config.safety.scanner ? { scanner: config.safety.scanner } : {}),
       });
+      await notifyTerminal(sql, config, data, 'transform.completed');
       return { variants: ['_original'], processingState: 'ready' };
     }
     if (data.type === 'preset') {
@@ -226,6 +253,7 @@ async function executeJob(
           config.processing.imageMaxPixels,
           config.safety.exif,
         );
+        await notifyTerminal(sql, config, data, 'processing.completed');
         return { variants: names, processingState: 'ready' };
       }
       if (file.detected_mime?.startsWith('video/')) {
@@ -237,6 +265,7 @@ async function executeJob(
           limits,
           hooks,
         );
+        await notifyTerminal(sql, config, data, 'processing.completed');
         return { variants: names, processingState: 'ready' };
       }
       if (file.detected_mime?.startsWith('audio/')) {
@@ -248,6 +277,7 @@ async function executeJob(
           limits,
           hooks,
         );
+        await notifyTerminal(sql, config, data, 'processing.completed');
         return { variants: names, processingState: 'ready' };
       }
       throw fail('PROCESSOR_UNAVAILABLE', {
@@ -256,6 +286,7 @@ async function executeJob(
     }
     throw fail('INVALID_RECIPE', { message: `Unknown job type ${data.type}.` });
   } catch (error) {
+    if (data.type === 'webhook') throw error;
     const sdk = isFileSdkError(error)
       ? error
       : fail('FFMPEG_FAILED', { message: 'The job failed.' });
@@ -277,10 +308,53 @@ async function executeJob(
             ]
           : [new Date().toISOString(), data.fileId],
       );
+      await notifyTerminal(sql, config, data, 'processing.failed');
     }
     const wrapped = new Error(`${sdk.code}: ${sdk.message}`);
     if (!sdk.retryable) wrapped.name = 'UnrecoverableError';
     throw wrapped;
+  }
+}
+
+async function notifyTerminal(
+  sql: Sql,
+  config: ResolvedConfig,
+  data: ProcessingJobData,
+  event: WebhookEventName,
+): Promise<void> {
+  try {
+    const row = await sql.get<{ metadata_json: string }>(
+      'SELECT metadata_json FROM files WHERE id = ?',
+      [data.fileId],
+    );
+    const meta = parseMeta(row?.metadata_json);
+    const url = meta.filevoraWebhookUrl || config.webhooks.url;
+    const secret = meta.filevoraWebhookSecret || config.webhooks.secret;
+    if (!url || !secret) return;
+    const progress = await webhookProgress(sql, config, data.fileId);
+    await enqueueWebhookJob({
+      config,
+      fileId: data.fileId,
+      tenantId: data.tenantId,
+      event,
+      url,
+      secret,
+      body: JSON.stringify(progress),
+    });
+  } catch {
+    // Delivery is queued separately. A snapshot problem must not fail the encode.
+  }
+}
+
+function parseMeta(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
   }
 }
 

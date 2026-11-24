@@ -112,6 +112,8 @@ export interface ResolvedConfig {
   };
   webhooks: {
     allowLoopback: boolean;
+    url?: string;
+    secret?: string;
   };
   safety: {
     exif: 'gps' | 'all' | 'none';
@@ -424,6 +426,10 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
     webhooks: {
       ...(e.FILES_WEBHOOKS_ALLOW_LOOPBACK !== undefined
         ? { allowLoopback: e.FILES_WEBHOOKS_ALLOW_LOOPBACK }
+        : {}),
+      ...(e.FILEVORA_WEBHOOK_URL ? { url: e.FILEVORA_WEBHOOK_URL } : {}),
+      ...(e.FILEVORA_WEBHOOK_SECRET
+        ? { secret: e.FILEVORA_WEBHOOK_SECRET }
         : {}),
     },
   };
@@ -765,6 +771,8 @@ export function resolveConfig(
     },
     webhooks: {
       allowLoopback: input.webhooks?.allowLoopback ?? sdkEnv !== 'production',
+      ...(input.webhooks?.url ? { url: input.webhooks.url } : {}),
+      ...(input.webhooks?.secret ? { secret: input.webhooks.secret } : {}),
     },
     safety: {
       exif: input.safety?.exif ?? 'gps',

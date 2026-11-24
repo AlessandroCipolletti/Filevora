@@ -116,6 +116,12 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Completion webhooks
+
+- Optional `FILEVORA_WEBHOOK_URL` and `FILEVORA_WEBHOOK_SECRET`, or a per-request `webhook` object.
+- Events are `upload.completed`, `processing.completed`, `processing.failed`, and `transform.completed`. The body is the progress event, signed with `X-Filevora-Timestamp` and `X-Filevora-Signature`.
+- Delivery retries through BullMQ. Targets use the URL-import SSRF checks. Localhost requires `FILES_WEBHOOKS_ALLOW_LOOPBACK`.
+
 ### Test helpers
 
 - `filevora/testing` exports `createTestFiles`, image, PDF, and video fixtures, `uploadBytes`, and `assertProgress`.

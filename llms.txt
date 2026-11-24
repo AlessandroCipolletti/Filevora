@@ -11,6 +11,7 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Configuration](docs/configuration.md) — no `FILEVORA_DATABASE_URL` is lite mode; a URL selects stored mode. Schemes: `postgres://`, `postgresql://`, `mysql://`, `mariadb://`, `sqlite://` or a file path. Migrate creates only `filevora_assets` and `filevora_asset_versions`. `POST /assets/from-url` imports an http(s) URL. The SDK sniffs the bytes and blocks private and metadata addresses.
 - Upload safety: optional `FILEVORA_MALWARE_SCAN=clamav` after the original is stored and before encoding. `FILEVORA_EXIF_STRIP=gps` (default) drops location metadata from image versions. `FILEVORA_TYPE_MAX_BYTES` limits size by sniffed type.
 - [Testing](docs/agents/testing.md) — `filevora/testing` runs filesystem lite mode with synchronous processing. No Redis or S3.
+- [Webhooks](docs/agents/webhooks.md) — optional signed completion webhooks. The body matches the terminal SSE event. Targets use the URL-import SSRF checks. Localhost needs `FILES_WEBHOOKS_ALLOW_LOOPBACK`.
 - [Transform](docs/agents/transform.md) — `POST /files/:assetId/transform` with one config object. `replace` defaults to true. Progress events share `phase`, `percentage`, `etaMs`, and a terminal `versions` list.
 - [Architecture](docs/architecture.md)
 - [Security](docs/security.md)

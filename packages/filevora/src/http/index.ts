@@ -248,8 +248,12 @@ async function dispatch(
         requestId,
       });
     }
+    const webhook = webhookFrom(record.webhook);
     return json(
-      await options.files.createFromUrl({ url }, ctx),
+      await options.files.createFromUrl(
+        { url, ...(webhook ? { webhook } : {}) },
+        ctx,
+      ),
       202,
       requestId,
     );
@@ -293,6 +297,9 @@ async function dispatch(
           : {}),
         ...(record.visibility === 'public' || record.visibility === 'private'
           ? { visibility: record.visibility }
+          : {}),
+        ...(webhookFrom(record.webhook)
+          ? { webhook: webhookFrom(record.webhook) }
           : {}),
       },
       { principal, ...(policy.ownerId ? { ownerId: policy.ownerId } : {}) },
@@ -601,6 +608,19 @@ async function readJson(request: Request): Promise<unknown> {
   } catch {
     throw fail('INVALID_CONFIG', { message: 'The request body is not JSON.' });
   }
+}
+
+function webhookFrom(
+  value: unknown,
+): { url: string; secret?: string } | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.url !== 'string') return undefined;
+  return {
+    url: record.url,
+    ...(typeof record.secret === 'string' ? { secret: record.secret } : {}),
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

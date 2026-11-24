@@ -40,6 +40,7 @@ export interface UploadOptions {
     maxPersistedBytes?: number;
   };
   checksum?: string;
+  webhook?: { url: string; secret?: string };
   signal?: AbortSignal;
   onProgress?: (progress: UploadProgress) => void;
 }
@@ -411,6 +412,7 @@ export function createUploadClient(options: UploadClientOptions) {
   async function transform(
     assetId: string,
     config: Record<string, unknown>,
+    transformOptions: { webhook?: { url: string; secret?: string } } = {},
   ): Promise<{
     launched: true;
     jobId: string;
@@ -427,7 +429,12 @@ export function createUploadClient(options: UploadClientOptions) {
           ...(await headers(options.headers)),
           'content-type': 'application/json',
         },
-        body: JSON.stringify(config),
+        body: JSON.stringify({
+          ...config,
+          ...(transformOptions.webhook
+            ? { webhook: transformOptions.webhook }
+            : {}),
+        }),
       },
     )) as {
       launched: true;
@@ -440,6 +447,7 @@ export function createUploadClient(options: UploadClientOptions) {
 
   async function fromUrl(
     url: string,
+    importOptions: { webhook?: { url: string; secret?: string } } = {},
   ): Promise<{ assetId: string; id: string }> {
     const created = (await request(doFetch, `${endpoint}/assets/from-url`, {
       method: 'POST',
@@ -447,7 +455,10 @@ export function createUploadClient(options: UploadClientOptions) {
         ...(await headers(options.headers)),
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({
+        url,
+        ...(importOptions.webhook ? { webhook: importOptions.webhook } : {}),
+      }),
     })) as { id?: string; asset?: { assetId?: string } };
     const assetId = created.asset?.assetId ?? created.id;
     if (!assetId) {
@@ -627,6 +638,7 @@ async function createSession(
       ...(uploadOptions.preset ? { preset: uploadOptions.preset } : {}),
       ...(uploadOptions.metadata ? { metadata: uploadOptions.metadata } : {}),
       ...(uploadOptions.checksum ? { checksum: uploadOptions.checksum } : {}),
+      ...(uploadOptions.webhook ? { webhook: uploadOptions.webhook } : {}),
     }),
   })) as unknown as SessionResponse;
   created.idempotencyKey = idempotencyKey;

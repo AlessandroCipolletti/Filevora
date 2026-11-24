@@ -14,7 +14,13 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
     provider: config.provider,
     runtime: 'long-running',
     singleHostAcknowledged: true,
+    ...(config.publicBaseUrl ? { publicBaseUrl: config.publicBaseUrl } : {}),
     signingSecret: config.signingSecret,
+    webhooks: {
+      allowLoopback: config.webhooks.allowLoopback,
+      ...(config.webhooks.url ? { url: config.webhooks.url } : {}),
+      ...(config.webhooks.secret ? { secret: config.webhooks.secret } : {}),
+    },
     storage: {
       driver: config.storage.driver,
       root: path.resolve(config.storage.root),

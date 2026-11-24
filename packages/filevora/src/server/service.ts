@@ -46,6 +46,15 @@ import { downloadRemote } from '../remote/download.js';
 import { assertDetectedSize } from '../safety/limits.js';
 import { checkRemoteUrl } from '../remote/policy.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
+import {
+  enqueueWebhookJob,
+  type WebhookEventName,
+} from '../webhooks/deliver.js';
+import {
+  assertWebhookUrl,
+  webhookFields,
+  type WebhookRequest,
+} from '../webhooks/target.js';
 import { assertUnexpired, readToken, signToken } from '../security/token.js';
 import {
   concatFiles,
@@ -85,6 +94,7 @@ export interface CreateSessionInput {
   metadata?: Record<string, string>;
   preset?: string;
   visibility?: Visibility;
+  webhook?: WebhookRequest;
 }
 
 interface FileRow {
@@ -429,7 +439,9 @@ export class FileService {
     sourceAssetId: string;
     replace: boolean;
   }> {
-    const config = parseAssetTransform(input);
+    const raw = isRecord(input) ? input : {};
+    const webhook = webhookRequest(raw.webhook);
+    const config = parseAssetTransform(withoutWebhook(raw));
     const located = await this.locateOriginal(assetId, ctx);
     const prefix = await readPrefix(this.root(), located.key);
     const detected = sniffMime(prefix);
@@ -462,6 +474,7 @@ export class FileService {
       ...(located.row ? safeMeta(located.row.metadata_json) : {}),
       filevoraJobId: jobId,
       filevoraTransform: '1',
+      ...(await this.checkedWebhook(webhook)),
     };
     if (!replace) {
       await (
@@ -900,8 +913,12 @@ export class FileService {
     }
     let metadata: Record<string, string>;
     try {
-      metadata = metadataObject(input.metadata);
+      metadata = {
+        ...metadataObject(input.metadata),
+        ...(await this.checkedWebhook(input.webhook)),
+      };
     } catch (error) {
+      if (isFileSdkError(error)) throw error;
       throw fail('INVALID_CONFIG', {
         message: error instanceof Error ? error.message : 'Invalid metadata.',
       });
@@ -1020,7 +1037,7 @@ export class FileService {
    * The download and the normal encoding queue continue after this returns.
    */
   async createFromUrl(
-    input: { url: string },
+    input: { url: string; webhook?: WebhookRequest },
     ctx: RequestContext,
   ): Promise<FileRecord> {
     await checkRemoteUrl(input.url, this.config.remote, 'request');
@@ -1041,7 +1058,10 @@ export class FileService {
         ctx.principal.id,
         filename,
         this.config.defaults.preset,
-        JSON.stringify({ filevoraSource: 'remote-url' }),
+        JSON.stringify({
+          filevoraSource: 'remote-url',
+          ...(await this.checkedWebhook(input.webhook)),
+        }),
         now,
         now,
       ],
@@ -1110,24 +1130,36 @@ export class FileService {
         this.config.defaults.maxFileBytes,
       );
       if (await this.acceptOriginal(fileId, key, remote.mime, stored.bytes)) {
-        await this.enqueuePreset(fileId, remote.mime, ctx);
+        const queued = await this.enqueuePreset(fileId, remote.mime, ctx);
+        if (!queued) await this.queueWebhook(fileId, ctx, 'upload.completed');
       }
     } catch (error) {
       if (key) await this.storage?.deleteObject(key).catch(() => undefined);
       const code = isFileSdkError(error) ? error.code : 'REMOTE_URL_BLOCKED';
       const now = nowIso();
+      const current = await (
+        await this.db()
+      ).get<{ metadata_json: string }>(
+        'SELECT metadata_json FROM files WHERE id = ?',
+        [fileId],
+      );
+      const meta = safeMeta(current?.metadata_json);
       await (
         await this.db()
       ).run(
         `UPDATE files SET upload_state = 'expired', processing_state = 'failed', metadata_json = ?, updated_at = ? WHERE id = ?`,
         [
           JSON.stringify({
+            ...meta,
             filevoraSource: 'remote-url',
             filevoraImportError: code,
           }),
           now,
           fileId,
         ],
+      );
+      await this.queueWebhook(fileId, ctx, 'processing.failed').catch(
+        () => undefined,
       );
     }
   }
@@ -1278,7 +1310,9 @@ export class FileService {
         bytes,
       )
     ) {
-      await this.enqueuePreset(session.file_id, detected, ctx);
+      const queued = await this.enqueuePreset(session.file_id, detected, ctx);
+      if (!queued)
+        await this.queueWebhook(session.file_id, ctx, 'upload.completed');
     }
     return this.get(session.file_id, ctx);
   }
@@ -1464,7 +1498,9 @@ export class FileService {
         assembled.bytes,
       )
     ) {
-      await this.enqueuePreset(session.file_id, detected, ctx);
+      const queued = await this.enqueuePreset(session.file_id, detected, ctx);
+      if (!queued)
+        await this.queueWebhook(session.file_id, ctx, 'upload.completed');
     }
     return this.get(session.file_id, ctx);
   }
@@ -1886,8 +1922,9 @@ export class FileService {
     fileId: string,
     mime: string,
     ctx: RequestContext,
-  ): Promise<void> {
-    if (!/^(image|video|audio)\//.test(mime)) return;
+  ): Promise<boolean> {
+    if (!/^(image|video|audio)\//.test(mime)) return false;
+    await this.queueWebhook(fileId, ctx, 'upload.completed');
     const sync = this.config.processing.mode === 'sync';
     await this.dispatchJob({
       id: sync ? `inline_${fileId}` : `preset_${fileId}`,
@@ -1897,13 +1934,65 @@ export class FileService {
       payload: { schemaVersion: 1 },
       maxAttempts: this.config.queue.maxAttempts,
     });
-    if (sync) return;
-    await (
-      await this.db()
-    ).run(
-      `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ? AND processing_state = 'none'`,
-      [nowIso(), fileId],
+    if (!sync) {
+      await (
+        await this.db()
+      ).run(
+        `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ? AND processing_state = 'none'`,
+        [nowIso(), fileId],
+      );
+    }
+    return true;
+  }
+
+  private async checkedWebhook(
+    request: WebhookRequest | undefined,
+  ): Promise<Record<string, string>> {
+    if (!request?.url && !this.config.webhooks.url) return {};
+    const url = request?.url ?? this.config.webhooks.url;
+    if (!url) return {};
+    await assertWebhookUrl(url, this.config);
+    const secret = request?.secret || this.config.webhooks.secret;
+    if (!secret) {
+      throw fail('WEBHOOK_REJECTED', {
+        message:
+          'A webhook URL needs a secret, from the request or FILEVORA_WEBHOOK_SECRET.',
+      });
+    }
+    return webhookFields(
+      { url, ...(request?.secret ? { secret: request.secret } : {}) },
+      this.config.webhooks.secret,
     );
+  }
+
+  private async queueWebhook(
+    fileId: string,
+    ctx: RequestContext,
+    event: WebhookEventName,
+  ): Promise<void> {
+    const row = await (
+      await this.db()
+    ).get<{ metadata_json: string }>(
+      'SELECT metadata_json FROM files WHERE id = ?',
+      [fileId],
+    );
+    const meta = safeMeta(row?.metadata_json);
+    const url = meta.filevoraWebhookUrl || this.config.webhooks.url;
+    const secret = meta.filevoraWebhookSecret || this.config.webhooks.secret;
+    if (!url || !secret) return;
+    const progress = await this.processingSnapshot(fileId, ctx, {
+      baseUrl: this.config.publicBaseUrl ?? 'http://localhost',
+    });
+    await enqueueWebhookJob({
+      config: this.config,
+      fileId,
+      tenantId: ctx.principal.tenantId,
+      event,
+      url,
+      secret,
+      body: JSON.stringify(progress),
+    });
+    if (this.config.processing.mode !== 'sync') this.ensureWorker();
   }
 
   /** BullMQ in every mode except test `sync`, which finishes the job before returning. */
@@ -2061,7 +2150,7 @@ function mapFile(row: FileRow): FileRecord {
     uploadState: row.upload_state as FileRecord['uploadState'],
     processingState: row.processing_state as FileRecord['processingState'],
     preset: row.preset,
-    metadata: JSON.parse(row.metadata_json) as Record<string, string>,
+    metadata: publicMetadata(row.metadata_json),
     pinned: row.pinned === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -2080,6 +2169,32 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } {
   if (splitAt <= 0)
     throw fail('INVALID_CONFIG', { message: 'The list cursor is invalid.' });
   return { createdAt: raw.slice(0, splitAt), id: raw.slice(splitAt + 1) };
+}
+
+function publicMetadata(raw: string): Record<string, string> {
+  const metadata = safeMeta(raw);
+  delete metadata.filevoraWebhookSecret;
+  return metadata;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function webhookRequest(value: unknown): WebhookRequest | undefined {
+  if (!isRecord(value) || typeof value.url !== 'string') return undefined;
+  return {
+    url: value.url,
+    ...(typeof value.secret === 'string' ? { secret: value.secret } : {}),
+  };
+}
+
+function withoutWebhook(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...value };
+  delete next.webhook;
+  return next;
 }
 
 function safeMeta(raw: string | null | undefined): Record<string, string> {
