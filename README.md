@@ -1,73 +1,243 @@
 # Filevora
 
-Headless TypeScript SDK for resumable file upload, storage, processing, and delivery. One package, no Filevora account, no hosted control plane. Your application keeps users, permissions, and business data. Filevora keeps the file lifecycle.
+Filevora is a headless TypeScript SDK for the file lifecycle: resumable upload, private storage, background derivatives, and short-lived delivery. It runs inside your Node app. There is no Filevora account, API key, or hosted control plane.
 
-**Use it when** an app needs uploads, private delivery, and background derivatives without rebuilding that stack.
+Your application keeps users, permissions, and business records. Filevora keeps bytes, versions, and processing jobs.
 
-**It replaces** a hand-rolled multipart uploader, local object directory, job table, and worker process. It does not replace your auth, database of business records, or UI.
+The package is not on npm yet. Install it from this repository. Node `>=22.13`.
 
-**Install** (once the package is published; until then, install this repository):
+## Contents
 
-```bash
-npm install filevora
-```
+- [Quick start](#quick-start)
+- [Lite and stored](#lite-and-stored)
+- [Features](#features)
+- [HTTP API](#http-api)
+- [SDK](#sdk)
+- [CLI](#cli)
+- [For coding agents](#for-coding-agents)
+- [Develop this repository](#develop-this-repository)
 
-**Cloud account:** none. `provider: "managed"` fails with `FEATURE_NOT_AVAILABLE`.
+## Quick start
 
-**Runs locally:** yes. Filesystem storage, SQLite, the browser upload helper, and the worker are covered by tests.
+**1. Create the server.** With no database URL this is lite mode: files on disk, no metadata database.
 
 ```ts
 import { createFiles } from 'filevora/server';
 
 const files = createFiles({
   storage: { driver: 'filesystem', root: './.files/objects' },
-  metadata: { driver: 'sqlite', filename: './.files/metadata.sqlite' },
 });
 ```
 
-Constructing `createFiles` validates configuration and does not spawn a worker. The first upload opens SQLite. `createFilesHandler` from `filevora/http` accepts chunked uploads and returns short-lived download tokens. `createUploadClient` from `filevora/client` uploads in parts, retries, pauses, and resumes from a stored session. `complete()` resolves when the original is stored, not when processing finishes. `filevora doctor --json` checks Node, config, the filesystem, SQLite, FFmpeg, libwebp, and pdftoppm. A queued job starts one child worker. Image presets produce WebP thumbnail, optimized, and HD variants with Sharp and do not enlarge the source. Video presets produce an H.264 MP4 and a WebP poster. FFmpeg encodes that poster only when `ffmpeg -encoders` lists libwebp. FFmpeg 8.1.2 on the local verification machine does not, so Sharp encodes the poster and `doctor` warns. Audio presets produce AAC in an M4A file. S3 uploads in the default tests go to an in-process emulator with presigned part URLs. The secret is absent from those URLs. Set `FILEVORA_S3_ENDPOINT`, `FILEVORA_S3_BUCKET`, `FILEVORA_S3_ACCESS_KEY_ID`, and `FILEVORA_S3_SECRET_ACCESS_KEY` to run the networked S3 test. Docker was unavailable here, so that test was skipped. Postgres queue SQL is tested with PGlite in one process. Set `FILEVORA_POSTGRES_URL` to run the networked Postgres test. `psql` was not installed here, so that test was skipped. `createFiles` still opens SQLite. PDF fixtures return literal text or `OCR_NOT_CONFIGURED`. When `pdftoppm` is on PATH, normalize stores a PNG of page 1. CSV and XLSX return row counts and masked errors. Retention dry-run lists old files without deleting them. Pins are skipped. A file with no touch timestamp is not inactivity-eligible.
+`createFiles` validates configuration and does not start a worker. The object directory opens on the first upload.
 
-| Checked in this repo                 | Result                                             |
-| ------------------------------------ | -------------------------------------------------- |
-| Node                                 | `>=22.13`, verified locally on darwin Node v26.5.0 |
-| Browser entry                        | bundles without Node built-ins                     |
-| Filesystem upload and SQLite restart | tested on darwin Node v26.5.0                      |
-| Resumable browser upload             | tested with an interrupted 5-part upload           |
-| Embedded worker crash recovery       | tested: one child pid, killed job finishes once    |
-| Sharp image variants                 | tested: 320, 1280, and 1920 WebP, no upscale       |
-| FFmpeg video and audio               | tested: H.264 MP4, AAC M4A, Sharp WebP poster on FFmpeg 8.1.2 |
-| S3 multipart upload                  | emulator tested; networked test skipped without `FILEVORA_S3_ENDPOINT` |
-| Postgres queue                       | PGlite tested; networked test skipped without `FILEVORA_POSTGRES_URL` |
-| PDF text, page-1 PNG, CSV/XLSX       | text and rows tested; page PNG tested with pdftoppm 26.04.0 |
-| Retention dry-run and pins           | tested; missing touch evidence is not idle         |
-| Managed hosting, billing, accounts   | unsupported                                        |
+**2. Mount the HTTP handler.** You authenticate the caller. Filevora ignores `ownerId` and `tenantId` in the request body.
 
-```bash
-npx filevora capabilities --json
-npx filevora config validate --json
-npx filevora doctor --json
+```ts
+import { createFilesHandler } from 'filevora/http';
+
+const handler = createFilesHandler({
+  files,
+  health: true,
+  async authenticate(request) {
+    const id = request.headers.get('x-user');
+    const tenantId = request.headers.get('x-tenant');
+    if (!id || !tenantId) return null;
+    return { id, tenantId };
+  },
+  async authorize() {
+    return true;
+  },
+  async policy() {
+    return {};
+  },
+});
 ```
 
-**Develop this repository:**
+`handler` is `(request: Request) => Promise<Response>`. In Node, pass it through `handleNodeRequest` from `filevora/http`. `health: true` serves `GET /health` with no principal. A working host is in [examples/node-minimal](examples/node-minimal).
+
+**3. Upload from the browser.** `complete()` resolves when the original is stored. Encoding may still be running.
+
+```ts
+import { createUploadClient } from 'filevora/client';
+
+const client = createUploadClient({ endpoint: '/api/files' });
+const uploaded = await client.upload(file).complete();
+```
+
+**4. Run a worker** so queued image, video, audio, and webhook jobs finish. Several machines can share one Redis URL.
+
+```bash
+REDIS_URL=redis://127.0.0.1:6379 npx filevora worker
+```
+
+To scaffold the handler, a client snippet, and an env file without prompts:
+
+```bash
+npx filevora init --framework express --mode lite --dry-run --json
+```
+
+## Lite and stored
+
+Mode follows the environment. Omit `FILEVORA_DATABASE_URL` and the SDK uses **lite**. Set that URL and it uses **stored**. `FILEVORA_METADATA_MODE` can override the choice. Stored mode without a database URL throws `INVALID_CONFIG`.
+
+| | Lite | Stored |
+| --- | --- | --- |
+| When | No `FILEVORA_DATABASE_URL` | `postgres://`, `postgresql://`, `mysql://`, `mariadb://`, `sqlite://`, or a SQLite file path |
+| Metadata | A JSON card next to the object | Your database. `filevora migrate` creates only `filevora_assets` and `filevora_asset_versions` |
+| List `GET /files` and `GET /assets` | `FEATURE_REQUIRES_STORED_MODE` | Lists the signed-in tenant |
+| Queue | Redis (BullMQ) in both modes. Asset ids are not stored in Redis | Same |
+| Object key | `{tenantHash}/{assetId}_{version}.{ext}` in both modes | Same |
+
+`mariadb://` is rewritten to `mysql://`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE` turns it off. Names and defaults are in [.env.example](.env.example). Rules are in [docs/configuration.md](docs/configuration.md).
+
+## Features
+
+Each line is implemented in this package. Status of what an automated test covers is in the [capability manifest](docs/agents/capabilities.json). Deeper notes stay in the linked docs.
+
+- **Upload.** Resumable chunked sessions, pause, retry, and resume after refresh. `complete()` means the original is stored. [docs/agents/install.md](docs/agents/install.md)
+- **URL import.** `POST /assets/from-url` returns an asset id, then the SDK downloads the URL, sniffs the bytes, and queues the same encoding jobs. Private and metadata addresses are rejected. [docs/configuration.md](docs/configuration.md)
+- **Transform.** One config object: `image.resize`, `image.crop`, `video.resize`, `video.crop`, `video.trim`, `pdf.removePages`. `replace` defaults to true. [docs/agents/transform.md](docs/agents/transform.md)
+- **Processing.** Image presets write WebP thumbnail, optimized, and HD with Sharp and do not enlarge the source. Video presets write an H.264 MP4 and a WebP poster. Audio presets write AAC in an M4A file. PDF text extraction reads literal text; `pdftoppm` stores a PNG of page 1 when it is on `PATH`. CSV and XLSX return row counts. OCR returns `OCR_NOT_CONFIGURED`.
+- **Progress.** `GET /files/:fileId/progress` is one event shape for upload, download, and processing: `phase`, `state`, `percentage`, `etaMs`, and a terminal `versions` list. SSE is the default. JSON is the fallback. The browser client sends the host `Authorization` header.
+- **Versions and delivery.** `GET /files/:fileId/versions` returns signed URLs. `_original` is available as soon as the upload is verified, including while encoding is queued or after it fails.
+- **Webhooks.** Optional `FILEVORA_WEBHOOK_URL` or a per-request `webhook`. Events are `upload.completed`, `processing.completed`, `processing.failed`, and `transform.completed`. The body is the terminal progress event, HMAC-signed. [docs/agents/webhooks.md](docs/agents/webhooks.md)
+- **Retention and cleanup.** `FILES_RETENTION_*` and `FILES_UNUSED_RETENTION_DAYS`. A delivery URL updates `last_accessed_at` (the asset row in stored mode, the asset card in lite). Cleanup also removes old orphans. Pins are kept. [docs/agents/retention.md](docs/agents/retention.md)
+- **Upload safety.** Optional ClamAV scan after the original is stored and before encoding. No scanner means the scan is skipped. `FILEVORA_EXIF_STRIP` defaults to `gps`. `FILEVORA_TYPE_MAX_BYTES` limits size by the sniffed type, not the extension.
+- **Test helpers.** `filevora/testing` uses a temporary filesystem, lite mode, and synchronous processing. No Redis or S3. [docs/agents/testing.md](docs/agents/testing.md)
+- **Init and doctor.** `filevora init` detects Express, Fastify, Hono, Next.js, or Node and writes files only with `--force` when they already exist. `filevora doctor` checks config, mode, storage, Redis, the database, ffmpeg, ffprobe, the scanner, and webhooks. `health: true` serves that report. [docs/agents/init.md](docs/agents/init.md) · [docs/agents/doctor.md](docs/agents/doctor.md)
+- **Manifest and MCP.** `filevora manifest --json` and `readManifest()` return the versioned capability document. `filevora mcp` exposes lookup, config validation, and doctor over stdio with no extra dependency. [docs/agents/manifest.md](docs/agents/manifest.md)
+- **Storage.** Filesystem, or S3-compatible storage via `FILEVORA_S3_*`. `filevora init --profile local-s3` writes a MinIO Compose file and does not start Docker.
+- **Metadata databases.** Lite has none. Stored uses PostgreSQL, MySQL or MariaDB, or SQLite, chosen by the database URL scheme.
+
+`provider: "managed"` throws `FEATURE_NOT_AVAILABLE`. This package does not bill, issue accounts, or render a UI.
+
+## HTTP API
+
+Routes come from `HTTP_ROUTES`. The host principal is required on every route except `GET /content/:token`, which uses the signed token. Paths are relative to `basePath` (for example `/api/files`).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/sessions` | Start a resumable upload. Returns the session and part URLs. |
+| `GET` | `/sessions/:sessionId` | Read an upload session. |
+| `PUT` | `/sessions/:sessionId/parts/:partNumber` | Write one raw part. |
+| `POST` | `/sessions/:sessionId/complete` | Assemble the original and queue processing. Returns the file record. |
+| `POST` | `/sessions/:sessionId/abort` | Abort the session. |
+| `GET` | `/assets` | List asset ids. Stored mode only. |
+| `POST` | `/retention/cleanup` | Run retention. Body `{ dryRun?: boolean }`. |
+| `POST` | `/assets/from-url` | Import an http(s) URL. Returns the file record before the download finishes. |
+| `POST` | `/files/batch` | Read many files by id. |
+| `GET` | `/files` | List files for the tenant. Stored mode only. |
+| `GET` | `/files/:fileId` | Read one file. |
+| `DELETE` | `/files/:fileId` | Soft-delete the asset and its versions. |
+| `GET` | `/files/:fileId/versions` | Signed URLs for every ready version, including `_original`. |
+| `POST` | `/files/:fileId/transform` | Queue a transform. Returns `{ launched, jobId, assetId, sourceAssetId, replace }`. |
+| `GET` | `/files/:fileId/progress` | Progress event as `text/event-stream` or JSON. |
+| `POST` | `/files/:fileId/delivery` | Sign delivery URLs. Optional `expiresInSeconds`. |
+| `GET` | `/content/:token` | Download bytes for a signed token. No principal. |
+
+`GET /health` is not in that table. It exists only when the handler is created with `health: true` (or `{ path }`). It returns the doctor report with no authentication. HTTP 200 when required checks pass, 503 when one fails.
+
+Request and response shapes, which mode each route allows, and every error code are in the manifest (`catalog.endpoints`, `catalog.errors`).
+
+## SDK
+
+Public entry points match `package.json` `exports` and `catalog.exports` in the manifest.
+
+### `filevora/server`
+
+`createFiles(options?)` returns a `Files` instance: sessions, URL import, transform, get, list, delete, delivery URLs, progress snapshots, retention, and normalize. Construction does not spawn a worker.
+
+Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, `RequestContext`, `assetTransformSchema`, `AssetTransform`, `AssetTransformInput`, `AssetTransformOperation`.
+
+### `filevora/client`
+
+Browser-safe. It does not import Node, `sharp`, or a cloud SDK.
+
+`createUploadClient({ endpoint })` returns `upload`, `fromUrl`, `transform`, `waitForProcessing`, `watchProcessing`, `history`, and `pending`. `uploadClientOptionsFromEnv` reads `FILEVORA_RESUME_*` and `FILEVORA_PROGRESS_*` in the host and passes them into the client. Resume stores: `createIndexedDbResumeStore`, `createMemoryResumeStore`.
+
+### `filevora/http`
+
+`createFilesHandler(options)` and `handleNodeRequest(handler, req, res)`. Options include `authenticate`, `authorize`, `policy`, `basePath`, and `health`.
+
+### `filevora/worker`
+
+`startWorker`, `runWorker`, and `ensureEmbeddedWorker`. Importing the module does not start a process.
+
+### `filevora/testing`
+
+`createTestFiles`, `uploadBytes`, `assertProgress`, `samplePng`, `samplePdf`, `sampleMp4`. [docs/agents/testing.md](docs/agents/testing.md)
+
+### `filevora/manifest`
+
+`readManifest()` reads the manifest shipped in the package. `buildManifest` is the generator used by `pnpm manifest`.
+
+### `filevora/types`
+
+Shared types, including `Principal`, `FileRecord`, `UploadSession`, and `DeliveryResult`. Progress event fields are `catalog.progress` in the manifest. The complete symbol list is `catalog.exports` for this module.
+
+## CLI
+
+The binary is `filevora`. The command list is `CLI_COMMANDS` in the package, which is also `cli` in the manifest.
+
+| Command | What it does |
+| --- | --- |
+| `capabilities --json` | Print the capability manifest. |
+| `manifest --json` | Print the same manifest. |
+| `config validate --json` | Resolve config and print it with secrets redacted. |
+| `doctor --json` | Run health checks. Exit code 1 when a required check fails. |
+| `mcp` | MCP stdio server: `manifest_lookup`, `validate_config`, `doctor`. |
+| `migrate` | Create `filevora_assets` and `filevora_asset_versions`. Stored mode only. |
+| `cleanup [--dry-run] [--json]` | Run retention. `--tenant` selects the tenant. |
+| `init [--framework express\|fastify\|hono\|next\|node] [--mode lite\|stored] [--dry-run] [--json]` | Write handler, client snippet, and env template. Refuses to overwrite without `--force`. Also accepts `--dir` and `--database-url`. |
+| `init --profile local-s3` | Write a MinIO Compose file. Does not start Docker. |
+| `worker` | Process the BullMQ queue. |
+| `--help` | List commands. |
+| `--version` | Print the package version. |
+
+## For coding agents
+
+Start at [llms.txt](llms.txt). The manifest is the source of truth for routes, exports, environment variables, and error codes.
+
+- [AGENTS.md](AGENTS.md) — repository rules, commands, and layout
+- [llms.txt](llms.txt) — index of agent docs
+- [docs/agents/capabilities.json](docs/agents/capabilities.json) — versioned manifest (exports, routes, env, errors, progress)
+- [docs/agents/capabilities.schema.json](docs/agents/capabilities.schema.json) — schema
+- [docs/agents/manifest.md](docs/agents/manifest.md) — how the manifest is generated
+- [docs/agents/install.md](docs/agents/install.md)
+- [docs/agents/decision-guide.md](docs/agents/decision-guide.md)
+- [docs/agents/init.md](docs/agents/init.md)
+- [docs/agents/doctor.md](docs/agents/doctor.md)
+- [docs/agents/testing.md](docs/agents/testing.md)
+- [docs/agents/transform.md](docs/agents/transform.md)
+- [docs/agents/webhooks.md](docs/agents/webhooks.md)
+- [docs/agents/retention.md](docs/agents/retention.md)
+- [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md)
+- [docs/agents/verification.md](docs/agents/verification.md)
+- [docs/configuration.md](docs/configuration.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/security.md](docs/security.md)
+
+```bash
+npx filevora manifest --json
+npx filevora doctor --json
+npx filevora mcp
+```
+
+```ts
+import { readManifest } from 'filevora/manifest';
+```
+
+## Develop this repository
 
 ```bash
 pnpm install
-pnpm dev
-pnpm dev:client
-pnpm run ci
+pnpm dev          # Vite library build, watch
+pnpm dev:client   # browser client only, http://127.0.0.1:5173
+pnpm run ci       # typecheck, lint, knip, circular, manifest check
 pnpm test
 ```
 
-`pnpm dev` is Vite library mode in watch. It rewrites `packages/filevora/dist` as one ES module per source file. `pnpm dev:client` serves the browser client at `http://127.0.0.1:5173` and does not start a Node server. `pnpm build` is that same library build, and it also writes the `.d.ts` files. `tsc` still typechecks the sources. It no longer emits the JavaScript. Public imports stay `filevora/server`, `filevora/client`, `filevora/http`, `filevora/worker`, and `filevora/types`.
-
-Upload tasks emit `progress` with `percentage`, `bytesUploaded`, and `totalBytes`, and accept `onProgress`. Resume after refresh uses the resume store. The host reads `FILEVORA_RESUME_*` and `FILEVORA_PROGRESS_*` from its environment and passes `uploadClientOptionsFromEnv` into the client. Names and defaults are in `.env.example`. `watchProcessing` reads `GET /files/:id/progress` as server-sent events, and polls the same path as JSON if the stream fails. Video and audio jobs include percent and `etaMs`. Image jobs emit one terminal event. `history()` lists this page load, including in-flight items and completed items with short-lived delivery URLs. `pending()` lists interrupted sessions still in the resume store. The upload session's `assetId` (the same value as `fileId`) is the id the host stores. `FILEVORA_METADATA_MODE=lite` (the default) keeps bytes in object storage and the queue in Redis. It does not create a database file. `GET /files/:assetId` probes `{tenantHash}/{assetId}_{version}.{ext}`. Listing in lite returns `FEATURE_REQUIRES_STORED_MODE`. Omit `FILEVORA_DATABASE_URL` for lite. Set it to select stored mode: `postgres://` or `postgresql://`, `mysql://` or `mariadb://`, or `sqlite://` / a file path. `npx filevora migrate` creates only `filevora_assets` and `filevora_asset_versions`. `GET /assets` then lists ids. Redis is only the BullMQ processing queue. `GET /files/:assetId/versions` returns signed URLs for every ready version. `_original` is included as soon as the upload is verified, including while encoding is queued or after it fails. Object keys are `{tenantHash}/{assetId}_{version}.{ext}`, for example `{assetId}_original.png` and `{assetId}_thumbnail.webp`. Retention uses `FILES_RETENTION_MAX_AGE_DAYS` and `FILES_UNUSED_RETENTION_DAYS`. A delivery URL updates `last_accessed_at`. Lite mode stores that time on the asset card and falls back to the creation time. `filevora cleanup --dry-run` and `POST /retention/cleanup` report what would be removed, including old orphan files. See `docs/agents/retention.md`.
-
-Optional webhooks (`FILEVORA_WEBHOOK_URL` and `FILEVORA_WEBHOOK_SECRET`, or a per-request `webhook`) send upload, processing, and transform results. The body matches the terminal progress event. Requests are HMAC-signed and retried on the processing queue. Localhost targets need `FILES_WEBHOOKS_ALLOW_LOOPBACK`. See `docs/agents/webhooks.md`.
-
-Tests of code built on Filevora can import `filevora/testing`. `createTestFiles()` uses a temporary filesystem and runs encoding in the same call, with no Redis or S3. See `docs/agents/testing.md`.
-
-After an original is stored, an optional malware scanner runs before encoding. No scanner means the scan is skipped. `FILEVORA_MALWARE_SCAN=clamav` uses a ClamAV INSTREAM adapter. Infected files are quarantined with `MALWARE_DETECTED`. Image versions drop GPS metadata unless `FILEVORA_EXIF_STRIP=none`. `FILEVORA_TYPE_MAX_BYTES` limits size by the sniffed type. `POST /files/:assetId/transform` takes one config object and returns `{ launched, jobId, assetId }` immediately. `replace` defaults to true (same id, files replaced). `false` creates a new id. Operations are `image.resize`, `image.crop`, `video.resize`, `video.crop`, `video.trim`, and `pdf.removePages`. A mismatch is `TRANSFORM_REJECTED` with `field`, `reason`, `detectedType`, and `validOperations`. See `docs/agents/transform.md`. `POST /assets/from-url` with `{ "url" }` returns `assetId` immediately. The SDK downloads the URL itself, sniffs the bytes, stores `{assetId}_original.{ext}`, and queues the same encoding jobs. Progress reports `state: "downloading"` and then the processing states. Private, loopback, link-local, and metadata addresses are rejected. `FILEVORA_REMOTE_ALLOW_PRIVATE=true` allows them on the URL you pass, not on a redirect. Run workers with `REDIS_URL=redis://127.0.0.1:6379 npx filevora worker`. Several machines can share that Redis URL. `processing.concurrency` is the number of jobs one worker process runs at once.
-
-Agent notes: [docs/agents/install.md](docs/agents/install.md), [docs/agents/decision-guide.md](docs/agents/decision-guide.md), [docs/agents/capabilities.json](docs/agents/capabilities.json). `npx filevora init --json --dry-run` scaffolds a handler, an upload snippet, and an env file for lite or stored mode. `npx filevora doctor --json` checks config, storage, Redis, the database, ffmpeg, and webhooks. A handler with `health: true` serves that report at `GET /health`. `npx filevora manifest --json` prints that manifest. `import { readManifest } from 'filevora/manifest'` reads it from code. `npx filevora mcp` serves it to a coding agent over stdio.
+Use `pnpm run ci`, not bare `pnpm ci`. Public imports are `filevora/server`, `filevora/client`, `filevora/http`, `filevora/worker`, `filevora/types`, `filevora/testing`, and `filevora/manifest`. Contributor rules are in [AGENTS.md](AGENTS.md).
 
 License: MIT.
