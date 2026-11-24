@@ -511,7 +511,8 @@ export class FileService {
         payload: {
           schemaVersion: 1,
           preset: expanded.preset.name,
-          ...(expanded.preset.name === 'frames'
+          ...(expanded.preset.name === 'frames' ||
+          expanded.preset.name === 'pdf-stills'
             ? { outputs: expanded.preset.outputs }
             : {}),
         },

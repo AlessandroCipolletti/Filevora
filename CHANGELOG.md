@@ -2,6 +2,11 @@
 
 ## 0.1.0
 
+### PDF page thumbnails
+
+- `pdf.pages` renders selected pages, or every page, to PNG, JPEG, or WebP. `dpi`, `width`, and `height` set the size. Presets `pdf-pages` and `pdf-cover` do the same.
+- Rendering uses Poppler's `pdftoppm`. Install `poppler-utils` or `brew install poppler`. `filevora doctor` warns when it is missing. A page-image job then fails with `PROCESSOR_UNAVAILABLE`. Text extraction does not need Poppler.
+
 ### Video thumbnails
 
 - `video.poster` accepts `atMs` or `atPercent`. `video.thumbnails` writes numbered WebP frames. `video.sprite` writes a contact sheet plus a WebVTT file and a JSON timeline.

@@ -14,7 +14,10 @@ import {
 import { publishImagePreset } from '../processors/image.js';
 import { publishNamedPreset } from '../presets/publish.js';
 import { findPreset } from '../presets/catalog.js';
-import { framePresetFromPayload } from '../presets/expand.js';
+import {
+  framePresetFromPayload,
+  pdfStillPresetFromPayload,
+} from '../presets/expand.js';
 import { applyAssetTransform } from '../transform/apply.js';
 import type { AssetTransformOperation } from '../transform/schema.js';
 import {
@@ -293,6 +296,7 @@ async function executeJob(
             : file.preset || 'web-optimized';
         const named =
           framePresetFromPayload(requested, data.payload.outputs) ??
+          pdfStillPresetFromPayload(requested, data.payload.outputs) ??
           findPreset(requested, config.presets);
         if (!named) {
           throw fail('TRANSFORM_REJECTED', {

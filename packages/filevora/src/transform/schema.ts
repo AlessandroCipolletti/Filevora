@@ -83,6 +83,17 @@ const pdfRemovePages = z
   })
   .strict();
 
+const pdfPages = z
+  .object({
+    op: z.literal('pdf.pages'),
+    pages: z.array(z.number().int().min(1)).min(1).max(50).optional(),
+    width: z.number().int().min(16).max(4096).optional(),
+    height: z.number().int().min(16).max(4096).optional(),
+    format: z.enum(['png', 'jpeg', 'webp']).optional(),
+    dpi: z.number().int().min(36).max(300).optional(),
+  })
+  .strict();
+
 export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   imageResize,
   imageCrop,
@@ -93,6 +104,7 @@ export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   videoThumbnails,
   videoSprite,
   pdfRemovePages,
+  pdfPages,
 ]);
 
 export const FRAME_OPERATIONS = [
@@ -103,6 +115,10 @@ export const FRAME_OPERATIONS = [
 
 export function isFrameOperation(op: string): boolean {
   return (FRAME_OPERATIONS as readonly string[]).includes(op);
+}
+
+export function isPdfPageOperation(op: string): boolean {
+  return op === 'pdf.pages';
 }
 
 /** One transform request. `replace` defaults to true. */
@@ -141,7 +157,7 @@ export function validOperations(mime: string | null | undefined): string[] {
       'video.thumbnails',
       'video.sprite',
     ];
-  if (family === 'pdf') return ['pdf.removePages'];
+  if (family === 'pdf') return ['pdf.removePages', 'pdf.pages'];
   return [];
 }
 
@@ -170,11 +186,23 @@ export function parseAssetTransform(input: unknown): AssetTransform {
           'video.thumbnails',
           'video.sprite',
           'pdf.removePages',
+          'pdf.pages',
         ],
       },
     });
   }
   const operations = parsed.data.operations;
+  const pageOps = operations.filter(
+    (operation) => operation.op === 'pdf.pages',
+  );
+  if (pageOps.length > 1) {
+    reject(
+      'operations',
+      'Send one pdf.pages operation. List every page in its pages array.',
+      'application/pdf',
+      validOperations('application/pdf'),
+    );
+  }
   operations.forEach((operation, index) =>
     assertFrameOptions(operation, `operations[${index}]`),
   );
@@ -321,6 +349,14 @@ export function assertTransformFits(
           allowed,
         );
       }
+    }
+    if (operation.op === 'pdf.pages') {
+      reject(
+        `${field}.op`,
+        'pdf.pages is stored as a version. Send it without pdf.removePages, or use preset pdf-pages or pdf-cover.',
+        mime,
+        allowed,
+      );
     }
     if (operation.op === 'pdf.removePages') {
       const count = bounds.pageCount ?? 0;

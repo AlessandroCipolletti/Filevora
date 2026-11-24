@@ -20,7 +20,7 @@ const versionName = z
 
 export const customPresetSchema = z
   .object({
-    family: z.enum(['image', 'video']),
+    family: z.enum(['image', 'video', 'pdf']),
     version: versionName.optional(),
     operations: z.array(assetTransformOperationSchema).min(1).max(8),
   })
@@ -29,7 +29,7 @@ export const customPresetSchema = z
 export const customPresetsSchema = z.record(presetName, customPresetSchema);
 
 export interface CustomPreset {
-  family: 'image' | 'video';
+  family: 'image' | 'video' | 'pdf';
   version: string;
   operations: AssetTransformOperation[];
 }
@@ -65,6 +65,17 @@ export function parseCustomPresets(
     if (frame && other) {
       throw fail('INVALID_CONFIG', {
         message: `Custom preset "${name}" mixes frame stills with a video edit. Use one or the other.`,
+      });
+    }
+    const pdfPages = preset.operations.some(
+      (operation) => operation.op === 'pdf.pages',
+    );
+    const pdfEdit = preset.operations.some(
+      (operation) => operation.op === 'pdf.removePages',
+    );
+    if (pdfPages && pdfEdit) {
+      throw fail('INVALID_CONFIG', {
+        message: `Custom preset "${name}" mixes page images with page removal. Use one or the other.`,
       });
     }
     preset.operations.forEach((operation, index) =>

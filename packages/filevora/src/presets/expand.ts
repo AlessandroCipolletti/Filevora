@@ -4,13 +4,19 @@ import {
   assetTransformOperationSchema,
   assertFrameOptions,
   isFrameOperation,
+  isPdfPageOperation,
   mediaFamily,
   parseAssetTransform,
   validOperations,
   type AssetTransformOperation,
 } from '../transform/schema.js';
 import type { CustomPresetMap } from './schema.js';
-import { findPreset, presetNamesFor, type NamedPreset } from './catalog.js';
+import {
+  findPreset,
+  presetNamesFor,
+  type NamedPreset,
+  type PresetFamily,
+} from './catalog.js';
 
 const requestSchema = z
   .object({
@@ -81,7 +87,7 @@ export function presetQueueAction(
     return /^(image|video|audio)\//.test(mime) ? 'queue' : 'skip';
   }
   const family = familyOf(mime);
-  if (preset.families.includes(family as 'image' | 'video' | 'audio')) {
+  if (preset.families.includes(family as PresetFamily)) {
     return 'queue';
   }
   const names = presetNamesFor(
@@ -113,7 +119,8 @@ export function expandTransform(
       : {};
   if (typeof record.preset !== 'string') {
     const parsed = parseAssetTransform(input);
-    const frames = framePreset(parsed.operations);
+    const frames =
+      framePreset(parsed.operations) ?? pdfStillPreset(parsed.operations);
     if (frames) return { mode: 'versions', preset: frames };
     return {
       mode: 'operations',
@@ -137,7 +144,7 @@ export function expandTransform(
   }
   const preset = assertKnownPreset(parsed.data.preset ?? '', custom);
   const family = familyOf(mime);
-  if (!preset.families.includes(family as 'image' | 'video' | 'audio')) {
+  if (!preset.families.includes(family as PresetFamily)) {
     const action = presetQueueAction(preset.name, mime, custom);
     if (action === 'skip') {
       throw fail('TRANSFORM_REJECTED', {
@@ -213,6 +220,60 @@ export function framePresetFromPayload(
     source: 'custom',
     delivery: 'versions',
     outputs: normalized,
+  };
+}
+
+export function pdfStillPresetFromPayload(
+  name: string,
+  outputs: unknown,
+): NamedPreset | undefined {
+  if (name !== 'pdf-stills' || !Array.isArray(outputs)) return undefined;
+  const parsed = z
+    .array(
+      z
+        .object({
+          version: z.string().min(1),
+          operations: z.array(assetTransformOperationSchema).min(1).max(1),
+        })
+        .strict(),
+    )
+    .max(1)
+    .safeParse(outputs);
+  if (!parsed.success) return undefined;
+  const output = parsed.data[0];
+  if (
+    !output ||
+    !output.operations.every((operation) => isPdfPageOperation(operation.op))
+  ) {
+    return undefined;
+  }
+  output.operations.forEach((operation, index) =>
+    assertFrameOptions(operation, `outputs.operations[${index}]`),
+  );
+  return {
+    name: 'pdf-stills',
+    families: ['pdf'],
+    source: 'custom',
+    delivery: 'versions',
+    outputs: [output],
+  };
+}
+
+function pdfStillPreset(
+  operations: AssetTransformOperation[],
+): NamedPreset | undefined {
+  if (
+    operations.length !== 1 ||
+    !operations.every((operation) => isPdfPageOperation(operation.op))
+  ) {
+    return undefined;
+  }
+  return {
+    name: 'pdf-stills',
+    families: ['pdf'],
+    source: 'custom',
+    delivery: 'versions',
+    outputs: [{ version: 'page', operations }],
   };
 }
 

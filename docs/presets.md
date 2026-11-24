@@ -23,6 +23,8 @@ Image versions are WebP. `contain` does not enlarge the source. `cover` crops to
 | `poster` | video | `poster` | One WebP frame from the start, at most 1280 wide. A custom preset can set `atMs` or `atPercent`. |
 | `thumbnails` | video | `thumb-1` … `thumb-4` | Four WebP frames spread across the duration, 160 wide. |
 | `sprites` | video | `sprite`, `sprite-vtt`, `sprite-json` | A 4×2 WebP contact sheet, a WebVTT cue file, and a JSON timeline. |
+| `pdf-pages` | pdf | `page-1` … | One PNG per page, 72 DPI, at most 640 wide. Needs `pdftoppm` from Poppler. |
+| `pdf-cover` | pdf | `page-1` | Page 1 as WebP, at most 800 wide. |
 
 `video-1080p` fails when `FILES_VIDEO_MAX_OUTPUT_HEIGHT` is below 1080.
 
@@ -88,7 +90,7 @@ createFiles({
 });
 ```
 
-Or `FILEVORA_PRESETS` as the same JSON object. Explicit `presets` in code wins over the environment variable. Names must be lowercase and must not reuse a built-in name. Each operation must match `family` (`image` or `video`) and the transform schema (`image.resize`, `image.crop`, `video.resize`, `video.crop`, `video.trim`, `video.poster`, `video.thumbnails`, `video.sprite`). `video.resize` may omit `width`; height is scaled and the width stays even. Poster, thumbnail, and sprite operations are stored as versions and cannot be mixed with a resize, crop, or trim in the same custom preset.
+Or `FILEVORA_PRESETS` as the same JSON object. Explicit `presets` in code wins over the environment variable. Names must be lowercase and must not reuse a built-in name. Each operation must match `family` (`image`, `video`, or `pdf`) and the transform schema (`image.resize`, `image.crop`, `video.resize`, `video.crop`, `video.trim`, `video.poster`, `video.thumbnails`, `video.sprite`, `pdf.removePages`, `pdf.pages`). `video.resize` may omit `width`; height is scaled and the width stays even. Poster, thumbnail, and sprite operations are stored as versions and cannot be mixed with a resize, crop, or trim in the same custom preset.
 
 `filevora doctor` reports the default preset and any custom names. `filevora init` writes `FILES_DEFAULT_PRESET=web-optimized` into the env template.
 

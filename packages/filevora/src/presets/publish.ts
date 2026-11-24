@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { PDFDocument } from 'pdf-lib';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fail } from '../errors/error.js';
@@ -10,6 +11,7 @@ import {
   thumbnailTimes,
 } from '../processors/frames.js';
 import { probeMedia, runFfmpeg } from '../processors/ffmpeg.js';
+import { renderPdfPage, selectPdfPages } from '../processors/pdf-preview.js';
 import { recordProcessingProgress } from '../queue/processing-queue.js';
 import type { ExifMode } from '../safety/exif.js';
 import { materialize } from '../storage/stage.js';
@@ -52,15 +54,17 @@ export async function publishNamedPreset(input: {
       if (!output) continue;
       const family = staged.preset.families[0];
       const written =
-        family === 'video' && hasPoster(output)
-          ? await publishPoster(staged, output)
-          : family === 'video' && hasThumbnails(output)
-            ? await publishThumbnails(staged, output)
-            : family === 'video' && hasSprite(output)
-              ? await publishSprite(staged, output)
-              : family === 'video'
-                ? await publishVideo(staged, output)
-                : await publishImage(staged, output);
+        family === 'pdf' && hasPdfPages(output)
+          ? await publishPdfPages(staged, output)
+          : family === 'video' && hasPoster(output)
+            ? await publishPoster(staged, output)
+            : family === 'video' && hasThumbnails(output)
+              ? await publishThumbnails(staged, output)
+              : family === 'video' && hasSprite(output)
+                ? await publishSprite(staged, output)
+                : family === 'video'
+                  ? await publishVideo(staged, output)
+                  : await publishImage(staged, output);
       names.push(...written);
       await recordProcessingProgress(
         staged.file.id,
@@ -453,6 +457,73 @@ async function stillWebp(
     .resize({ width, withoutEnlargement: true });
   if (input.exif === 'none') pipeline = pipeline.withMetadata();
   return pipeline.webp({ quality: 80 }).toBuffer();
+}
+
+async function publishPdfPages(
+  input: {
+    sql: Sql;
+    storage: StorageDriver;
+    source: string;
+    file: PresetFile;
+    preset: NamedPreset;
+    timeoutMs: number;
+  },
+  output: PresetOutput,
+): Promise<string[]> {
+  const spec = output.operations.find(
+    (operation) => operation.op === 'pdf.pages',
+  );
+  if (!spec || spec.op !== 'pdf.pages') return [];
+  const doc = await PDFDocument.load(readFileSync(input.source));
+  const pages = selectPdfPages(doc.getPageCount(), spec.pages);
+  const names = pages.map((page) => `page-${page}`);
+  const first = names[0];
+  if (!first || (await alreadyStored(input, first))) return names;
+  const format = spec.format ?? 'png';
+  const dpi = spec.dpi ?? 72;
+  const sharp = (await import('sharp')).default;
+  for (const page of pages) {
+    const png = await renderPdfPage({
+      pdfPath: input.source,
+      page,
+      dpi,
+      timeoutMs: Math.min(input.timeoutMs, 20_000),
+    });
+    let pipeline = sharp(png).rotate();
+    if (spec.width || spec.height) {
+      pipeline = pipeline.resize({
+        ...(spec.width ? { width: spec.width } : {}),
+        ...(spec.height ? { height: spec.height } : {}),
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+    }
+    const body =
+      format === 'jpeg'
+        ? await pipeline.jpeg({ quality: 80 }).toBuffer()
+        : format === 'webp'
+          ? await pipeline.webp({ quality: 80 }).toBuffer()
+          : await pipeline.png().toBuffer();
+    const info = await sharp(body).metadata();
+    await insertVariant(input, {
+      version: `page-${page}`,
+      body,
+      mime:
+        format === 'jpeg'
+          ? 'image/jpeg'
+          : format === 'webp'
+            ? 'image/webp'
+            : 'image/png',
+      extension: format === 'jpeg' ? 'jpg' : format,
+      width: info.width,
+      height: info.height,
+    });
+  }
+  return names;
+}
+
+function hasPdfPages(output: PresetOutput): boolean {
+  return output.operations.some((operation) => operation.op === 'pdf.pages');
 }
 
 function hasPoster(output: PresetOutput): boolean {

@@ -8,7 +8,7 @@ import {
   parseCustomPresets,
 } from './schema.js';
 
-export type PresetFamily = 'image' | 'video' | 'audio';
+export type PresetFamily = 'image' | 'video' | 'audio' | 'pdf';
 export type PresetDelivery = 'legacy' | 'versions' | 'transform';
 
 export interface PresetOutput {
@@ -180,6 +180,32 @@ export const BUILTIN_PRESETS: NamedPreset[] = [
       },
     ],
   },
+  {
+    name: 'pdf-pages',
+    families: ['pdf'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'page',
+        operations: [{ op: 'pdf.pages', format: 'png', dpi: 72, width: 640 }],
+      },
+    ],
+  },
+  {
+    name: 'pdf-cover',
+    families: ['pdf'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'page',
+        operations: [
+          { op: 'pdf.pages', pages: [1], format: 'webp', dpi: 72, width: 800 },
+        ],
+      },
+    ],
+  },
 ];
 
 const BUILTIN_NAMES = new Set(BUILTIN_PRESETS.map((preset) => preset.name));
@@ -217,8 +243,9 @@ export function presetNamesFor(
 }
 
 function customToNamed(name: string, preset: CustomPreset): NamedPreset {
-  const poster = preset.operations.some((operation) =>
-    isFrameOperation(operation.op),
+  const poster = preset.operations.some(
+    (operation) =>
+      isFrameOperation(operation.op) || operation.op === 'pdf.pages',
   );
   return {
     name,

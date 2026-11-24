@@ -44,7 +44,9 @@ Valid operations depend on the sniffed original, not the filename:
 
 - `image/*`: `image.resize`, `image.crop`
 - `video/*`: `video.resize`, `video.crop`, `video.trim`, `video.poster`, `video.thumbnails`, `video.sprite`
-- `application/pdf`: `pdf.removePages`
+- `application/pdf`: `pdf.removePages`, `pdf.pages`
+
+`pdf.pages` renders selected pages, or every page when `pages` is omitted, with Poppler's `pdftoppm`. `format` is `png`, `jpeg`, or `webp`. `dpi` is 36–300. `width` and `height` bound the image. Presets `pdf-pages` and `pdf-cover` do the same. A missing `pdftoppm` is `PROCESSOR_UNAVAILABLE`. Install Poppler (`poppler-utils` on Debian and Ubuntu, `brew install poppler` on macOS). Text extraction does not need it. More than 50 pages requires an explicit `pages` list.
 
 `video.poster`, `video.thumbnails`, and `video.sprite` publish versions on the same asset. They can be sent alone, or as the `poster`, `thumbnails`, and `sprites` presets. Mixing one of them with `video.resize`, `video.crop`, or `video.trim` is `TRANSFORM_REJECTED`. `video.poster` takes `atMs` or `atPercent`. `video.thumbnails` takes `count`, `intervalMs`, `atMs`, or `atPercent`. `video.sprite` takes `columns`, `rows`, and optional `cellWidth` and `intervalMs`, and also writes `{version}-vtt` (`text/vtt`) and `{version}-json`.
 

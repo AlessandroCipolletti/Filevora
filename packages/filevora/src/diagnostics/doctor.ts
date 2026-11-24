@@ -304,11 +304,11 @@ export async function runDoctor(
       message:
         pdftoppm.status === 0
           ? pdftoppmLine
-          : 'pdftoppm was not found. PDF text extraction still runs. Page images are skipped.',
+          : 'pdftoppm was not found. PDF text extraction still runs. Page images fail until Poppler is installed.',
       code: pdftoppm.status === 0 ? 'OK' : 'DOCTOR_PDFTOPPM_MISSING',
       explanation:
-        'pdftoppm renders the first PDF page. Text extraction does not need it.',
-      fix: 'Install poppler so pdftoppm is on PATH.',
+        'pdftoppm from Poppler renders PDF page thumbnails and the first-page preview. Text extraction does not need it.',
+      fix: 'Install Poppler so pdftoppm is on PATH. Debian and Ubuntu: poppler-utils. macOS: brew install poppler.',
     }),
   );
   checks.push(await scannerCheck(env));
