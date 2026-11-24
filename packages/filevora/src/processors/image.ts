@@ -31,6 +31,7 @@ export async function publishImagePreset(
   maxPixels: number,
   exif: ExifMode = 'gps',
   thumbnailWidth = 480,
+  afterVariant?: (name: string) => Promise<void>,
 ): Promise<string[]> {
   if (!file.original_object_key) throw fail('NOT_FOUND');
   const sharp = await loadSharp();
@@ -46,6 +47,7 @@ export async function publishImagePreset(
       sharp,
       input,
       thumbnailWidth,
+      afterVariant,
     );
   } finally {
     await local.cleanup();
@@ -61,6 +63,7 @@ async function publishImageFromPath(
   sharp: Awaited<ReturnType<typeof loadSharp>>,
   input: string,
   thumbnailWidth: number,
+  afterVariant?: (name: string) => Promise<void>,
 ): Promise<string[]> {
   let source: { width?: number; height?: number };
   try {
@@ -118,6 +121,7 @@ async function publishImageFromPath(
       ],
     );
     names.push(target.name);
+    if (target.name === 'optimized') await afterVariant?.('optimized');
   }
   await sql.run(
     `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,

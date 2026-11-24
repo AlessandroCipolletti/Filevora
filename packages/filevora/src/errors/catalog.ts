@@ -857,6 +857,42 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
+  DESCRIPTION_NOT_CONFIGURED: {
+    httpStatus: 422,
+    category: 'config',
+    retryable: false,
+    message:
+      'A description cannot be created without a Gemini API key. Set FILEVORA_GEMINI_API_KEY.',
+    resolution: resolution(
+      'docs/errors/DESCRIPTION_NOT_CONFIGURED.md',
+      'Filevora sends the asset to Google Gemini only when a key is configured. The asset itself is still stored.',
+      [
+        action(
+          'set_gemini_key',
+          'Set FILEVORA_GEMINI_API_KEY to a Google AI Studio key, then retry the description.',
+          'export FILEVORA_GEMINI_API_KEY=your-key',
+        ),
+      ],
+    ),
+  },
+  DESCRIPTION_REQUIRES_DATABASE: {
+    httpStatus: 422,
+    category: 'config',
+    retryable: false,
+    message:
+      'Descriptions are stored in the database. Lite mode cannot store them. Set FILEVORA_DATABASE_URL.',
+    resolution: resolution(
+      'docs/errors/DESCRIPTION_REQUIRES_DATABASE.md',
+      'Queries over tags stay on the host database. Asset cards and object storage never hold the description text.',
+      [
+        action(
+          'enable_stored_mode',
+          'Set FILEVORA_DATABASE_URL to postgres://, mysql://, or sqlite://./filevora.sqlite and run npx filevora migrate.',
+          'npx filevora migrate',
+        ),
+      ],
+    ),
+  },
   DELIVERY_NOT_FOUND: {
     httpStatus: 403,
     category: 'auth',

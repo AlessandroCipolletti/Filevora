@@ -194,6 +194,20 @@ export const filesOptionsSchema = z
         secret: z.string().min(1).optional(),
       })
       .optional(),
+    gemini: z
+      .object({
+        apiKey: z.string().min(1).optional(),
+        model: z.string().min(1).optional(),
+        describeAssets: z.boolean().optional(),
+        videoHeight: z.number().int().min(144).max(2160).optional(),
+        retryDelayMs: z.number().int().min(0).max(60_000).optional(),
+        fetchImpl: z
+          .custom<typeof fetch>(
+            (value) => value === undefined || typeof value === 'function',
+          )
+          .optional(),
+      })
+      .optional(),
     safety: z
       .object({
         exif: z.enum(['gps', 'all', 'none']).optional(),
@@ -321,6 +335,10 @@ const envShape = {
   FILEVORA_CLAMAV_HOST: z.string().optional(),
   FILEVORA_CLAMAV_PORT: byteString.optional(),
   FILEVORA_EXIF_STRIP: z.enum(['gps', 'all', 'none']).optional(),
+  FILEVORA_GEMINI_API_KEY: z.string().optional(),
+  FILEVORA_DESCRIBE_ASSETS: boolString.optional(),
+  FILEVORA_GEMINI_MODEL: z.string().optional(),
+  FILEVORA_DESCRIBE_VIDEO_HEIGHT: byteString.optional(),
   FILEVORA_TYPE_MAX_BYTES: z.string().optional(),
   REDIS_URL: z.string().min(1).optional(),
   FILES_REDIS_URL: z.string().min(1).optional(),

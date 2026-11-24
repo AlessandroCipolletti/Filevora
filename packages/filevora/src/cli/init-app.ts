@@ -258,6 +258,10 @@ function envTemplate(mode: 'lite' | 'stored', databaseUrl?: string): string {
     'REDIS_URL=redis://127.0.0.1:6379',
     'FILES_DEFAULT_PRESET=web-optimized',
     'FILES_THUMBNAIL_WIDTH=480',
+    '# Descriptions need FILEVORA_DATABASE_URL. Content is sent to Google only when enabled.',
+    '# FILEVORA_GEMINI_API_KEY=',
+    '# FILEVORA_DESCRIBE_ASSETS=false',
+    '# FILEVORA_GEMINI_MODEL=gemini-3.5-flash-lite',
     'FILEVORA_DEFAULT_VISIBILITY=private',
     'FILEVORA_SIGNING_SECRET=replace-with-a-long-random-string',
   ];

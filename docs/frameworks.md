@@ -38,9 +38,12 @@ import { uploadFormFile } from 'filevora/next';
 const files = createFiles();
 
 export async function uploadAction(form: FormData) {
-  return uploadFormFile(files, form, {
-    principal: { id: 'user-a', tenantId: 'tenant-a' },
-  });
+  return uploadFormFile(
+    files,
+    form,
+    { principal: { id: 'user-a', tenantId: 'tenant-a' } },
+    { describe: true },
+  );
 }
 ```
 

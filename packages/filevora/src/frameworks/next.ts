@@ -20,6 +20,7 @@ export async function uploadFormFile(
   files: Files,
   form: FormData,
   ctx: RequestContext,
+  options: { describe?: boolean } = {},
 ) {
   const entry = form.get('file');
   if (!(entry instanceof Blob)) {
@@ -32,6 +33,12 @@ export async function uploadFormFile(
       filename,
       mimeType: entry.type || 'application/octet-stream',
       bytes: bytes.byteLength,
+      ...(options.describe !== undefined ? { describe: options.describe } : {}),
+      ...(form.get('describe') === 'true'
+        ? { describe: true }
+        : form.get('describe') === 'false'
+          ? { describe: false }
+          : {}),
     },
     ctx,
   );

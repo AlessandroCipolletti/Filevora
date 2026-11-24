@@ -430,7 +430,11 @@ async function publishMedia(
     maxHeight: number;
     thumbnailWidth?: number;
   },
-  hooks: { jobId: string; signal?: AbortSignal },
+  hooks: {
+    jobId: string;
+    signal?: AbortSignal;
+    onVariant?: (name: string) => Promise<void>;
+  },
   kind: 'video' | 'audio',
 ): Promise<string[]> {
   if (!file.original_object_key) throw fail('NOT_FOUND');
@@ -473,6 +477,7 @@ async function publishMedia(
           durationMs: probed.durationMs,
         });
         names.push('optimized');
+        await hooks.onVariant?.('optimized');
       } else {
         const posterEncoder = selectPosterEncoder(
           probeFfmpegEncoders(paths.ffmpeg),
@@ -581,6 +586,7 @@ async function publishMedia(
           durationMs: optimizedProbe.durationMs,
         });
         names.push('optimized');
+        await hooks.onVariant?.('optimized');
         if ((probe.height ?? 0) > 720 && limits.maxHeight >= 1080) {
           const hd = path.join(work, 'hd.mp4');
           await runFfmpeg(

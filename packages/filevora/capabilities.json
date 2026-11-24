@@ -83,6 +83,7 @@
     "audioTools": "tested",
     "directUpload": "tested",
     "frameworkHelpers": "tested",
+    "assetDescriptions": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -102,6 +103,7 @@
     "Audio tools use ffmpeg. audio.transcode writes mp3, aac, ogg, or wav. audio.loudnorm uses loudnorm at EBU R128 (-23 LUFS). audio.waveform writes a PNG and JSON peaks. audio.describe writes probe metadata. Presets audio-mp3, audio-aac, audio-loudnorm, audio-waveform, and audio-describe.",
     "Direct S3 upload: POST /uploads/direct signs a single PUT or multipart part URLs. POST /uploads/direct/:sessionId/complete heads the object, checks size and sniffed type, applies the EXIF policy, runs the malware scanner, and queues the same preset pipeline. Filesystem storage cannot sign. Bucket CORS must expose ETag. See docs/direct-upload.md.",
     "Framework helpers are filevora/next, filevora/express, filevora/fastify, filevora/hono, and optional filevora/react. They do not render UI. useUpload and useAssetProgress return state. filevora/client does not import Node builtins.",
+    "Gemini descriptions are stored mode only. FILEVORA_GEMINI_API_KEY, FILEVORA_DESCRIBE_ASSETS (default false), and describe on create. POST /files/:id/describe retriggers. GET /files?tag= filters tags. Content is sent to Google only when a description runs. See docs/descriptions.md.",
     "Private assets are served with HMAC delivery URLs or S3 presigned URLs. Public assets use /public. FILEVORA_SIGNING_SECRET is a comma-separated key list. A missing asset card is private. See docs/access-control.md.",
     "The package is ESM. Node 22.13 and newer can require() the same entry points. filevora worker reads REDIS_URL or FILEVORA_CONFIG_PATH and does not start redis-memory-server."
   ],
@@ -268,7 +270,8 @@
             "preset": "string?",
             "metadata": "Record<string, string>?",
             "visibility": "private | public?",
-            "webhook": "{ url: string, secret?: string }?"
+            "webhook": "{ url: string, secret?: string }?",
+            "describe": "boolean?"
           }
         },
         "response": {
@@ -443,7 +446,8 @@
         "request": {
           "query": {
             "limit": "number?",
-            "cursor": "string?"
+            "cursor": "string?",
+            "tag": "string?"
           }
         },
         "response": {
@@ -580,6 +584,24 @@
         "response": {
           "status": 202,
           "body": "{ sourceAssetId, assetIds, jobId }"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/files/:fileId/describe",
+        "operation": "process.request",
+        "auth": "principal",
+        "modes": [
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          }
+        },
+        "response": {
+          "status": 202,
+          "body": "FileRecord with description"
         }
       },
       {
@@ -1181,6 +1203,36 @@
       {
         "key": "webhooks.secret",
         "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.apiKey",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.model",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.describeAssets",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.videoHeight",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.retryDelayMs",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.fetchImpl",
+        "type": "unknown",
         "appliesTo": "both"
       },
       {
@@ -1827,6 +1879,24 @@
         "appliesTo": "both"
       },
       {
+        "key": "FILEVORA_DESCRIBE_ASSETS",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_DESCRIBE_VIDEO_HEIGHT",
+        "type": "string",
+        "default": 720,
+        "appliesTo": "both"
+      },
+      {
         "key": "FILEVORA_EXIF_STRIP",
         "type": "string",
         "enum": [
@@ -1835,6 +1905,18 @@
           "none"
         ],
         "default": "gps",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_GEMINI_API_KEY",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_GEMINI_MODEL",
+        "type": "string",
+        "default": "gemini-3.5-flash-lite",
         "appliesTo": "both"
       },
       {
@@ -2340,6 +2422,22 @@
         "retryable": false,
         "cause": "The plain /public URL is only for visibility public. A missing asset card is private.",
         "fix": "Fetch a signed /content URL, or set visibility to public when that is intended."
+      },
+      {
+        "code": "DESCRIPTION_NOT_CONFIGURED",
+        "httpStatus": 422,
+        "category": "config",
+        "retryable": false,
+        "cause": "Filevora sends the asset to Google Gemini only when a key is configured. The asset itself is still stored.",
+        "fix": "Set FILEVORA_GEMINI_API_KEY to a Google AI Studio key, then retry the description."
+      },
+      {
+        "code": "DESCRIPTION_REQUIRES_DATABASE",
+        "httpStatus": 422,
+        "category": "config",
+        "retryable": false,
+        "cause": "Queries over tags stay on the host database. Asset cards and object storage never hold the description text.",
+        "fix": "Set FILEVORA_DATABASE_URL to postgres://, mysql://, or sqlite://./filevora.sqlite and run npx filevora migrate."
       },
       {
         "code": "DELIVERY_NOT_FOUND",

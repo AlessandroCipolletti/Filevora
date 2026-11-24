@@ -2,6 +2,8 @@ import type { Job } from 'bullmq';
 import type { ResolvedConfig } from '../config/load.js';
 import { resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
+import { enqueueAssetDescription } from '../descriptions/queue.js';
+import { runAssetDescription } from '../descriptions/run.js';
 import { fail, isFileSdkError } from '../errors/error.js';
 import { assetObjectKey, nowIso, sha256 } from '../ids.js';
 import { openBackend } from '../metadata/backend.js';
@@ -172,6 +174,10 @@ async function executeJob(
   const data = job.data;
   const storage = await openStorage(config.storage);
   try {
+    if (data.type === 'describe') {
+      await runAssetDescription(sql, storage, config, data.fileId);
+      return { described: true };
+    }
     if (data.type === 'retention') {
       const payload = data.payload as { dryRun?: boolean };
       const report = await runCleanup({
@@ -279,6 +285,9 @@ async function executeJob(
         `UPDATE files SET bytes = ?, checksum = ?, original_object_key = ?, upload_state = 'verified', processing_state = 'ready', updated_at = ? WHERE id = ?`,
         [merged.byteLength, sha256(merged), key, nowIso(), data.fileId],
       );
+      await enqueueAssetDescription(sql, storage, config, data.fileId).catch(
+        () => undefined,
+      );
       await notifyTerminal(sql, config, data, 'processing.completed');
       return { assetId: data.fileId, processingState: 'ready' };
     }
@@ -335,6 +344,12 @@ async function executeJob(
             data.tenantId,
           ],
         );
+        await enqueueAssetDescription(
+          sql,
+          storage,
+          config,
+          target.assetId,
+        ).catch(() => undefined);
       }
       await sql.run(
         `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
@@ -353,7 +368,16 @@ async function executeJob(
       maxHeight: config.processing.videoMaxOutputHeight,
       thumbnailWidth: config.defaults.thumbnailWidth,
     };
-    const hooks = { jobId: job.id ?? data.fileId, signal };
+    const hooks = {
+      jobId: job.id ?? data.fileId,
+      signal,
+      onVariant: async (name: string) => {
+        if (name !== 'optimized') return;
+        await enqueueAssetDescription(sql, storage, config, data.fileId).catch(
+          () => undefined,
+        );
+      },
+    };
     try {
       if (data.type === 'recipe') {
         const names = await publishRecipe(
@@ -439,6 +463,15 @@ async function executeJob(
             config.processing.imageMaxPixels,
             config.safety.exif,
             config.defaults.thumbnailWidth,
+            async (name) => {
+              if (name !== 'optimized') return;
+              await enqueueAssetDescription(
+                sql,
+                storage,
+                config,
+                data.fileId,
+              ).catch(() => undefined);
+            },
           );
           await notifyTerminal(sql, config, data, 'processing.completed');
           return { variants: names, processingState: 'ready' };

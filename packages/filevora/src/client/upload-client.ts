@@ -40,6 +40,7 @@ export interface UploadOptions {
     maxPersistedBytes?: number;
   };
   checksum?: string;
+  describe?: boolean;
   webhook?: { url: string; secret?: string };
   signal?: AbortSignal;
   onProgress?: (progress: UploadProgress) => void;
@@ -455,6 +456,7 @@ export function createUploadClient(options: UploadClientOptions) {
     importOptions: {
       webhook?: { url: string; secret?: string };
       preset?: string;
+      describe?: boolean;
     } = {},
   ): Promise<{ assetId: string; id: string }> {
     const created = (await request(doFetch, `${endpoint}/assets/from-url`, {
@@ -466,6 +468,9 @@ export function createUploadClient(options: UploadClientOptions) {
       body: JSON.stringify({
         url,
         ...(importOptions.preset ? { preset: importOptions.preset } : {}),
+        ...(importOptions.describe !== undefined
+          ? { describe: importOptions.describe }
+          : {}),
         ...(importOptions.webhook ? { webhook: importOptions.webhook } : {}),
       }),
     })) as { id?: string; asset?: { assetId?: string } };
@@ -491,6 +496,7 @@ export function createUploadClient(options: UploadClientOptions) {
       filename?: string;
       mimeType: string;
       mode?: 'single' | 'multipart';
+      describe?: boolean;
       onProgress?: (progress: UploadProgress) => void;
     },
   ) {
@@ -505,6 +511,7 @@ export function createUploadClient(options: UploadClientOptions) {
         mimeType: init.mimeType,
         bytes: file.size,
         ...(init.mode ? { mode: init.mode } : {}),
+        ...(init.describe !== undefined ? { describe: init.describe } : {}),
       }),
     })) as {
       mode: 'single' | 'multipart';
@@ -592,6 +599,17 @@ export function createUploadClient(options: UploadClientOptions) {
     );
   }
 
+  async function describe(fileId: string) {
+    return request(
+      doFetch,
+      `${endpoint}/files/${encodeURIComponent(fileId)}/describe`,
+      {
+        method: 'POST',
+        headers: await headers(options.headers),
+      },
+    );
+  }
+
   async function fetchSigned(url: string, init?: RequestInit) {
     const response = await doFetch(url, init);
     if (!response.ok) {
@@ -607,6 +625,7 @@ export function createUploadClient(options: UploadClientOptions) {
     upload,
     uploadDirect,
     fetchSigned,
+    describe,
     fromUrl,
     transform,
     waitForProcessing,
@@ -766,6 +785,9 @@ async function createSession(
       ...(uploadOptions.preset ? { preset: uploadOptions.preset } : {}),
       ...(uploadOptions.metadata ? { metadata: uploadOptions.metadata } : {}),
       ...(uploadOptions.checksum ? { checksum: uploadOptions.checksum } : {}),
+      ...(uploadOptions.describe !== undefined
+        ? { describe: uploadOptions.describe }
+        : {}),
       ...(uploadOptions.webhook ? { webhook: uploadOptions.webhook } : {}),
     }),
   })) as unknown as SessionResponse;

@@ -352,6 +352,24 @@ export async function runDoctor(
         fix: 'Set FILES_DEFAULT_PRESET or define presets in config. See docs/presets.md.',
       }),
     );
+    const describedReady =
+      config.metadata.mode === 'stored' && Boolean(config.gemini.apiKey);
+    checks.push(
+      described({
+        id: 'descriptions',
+        status: describedReady ? 'pass' : 'warn',
+        required: false,
+        message: describedReady
+          ? `Gemini descriptions use ${config.gemini.model}. Content is sent to Google only when a description runs.`
+          : config.metadata.mode === 'lite'
+            ? 'Descriptions need a database. Set FILEVORA_DATABASE_URL before FILEVORA_GEMINI_API_KEY.'
+            : 'Descriptions are off. Set FILEVORA_GEMINI_API_KEY to send assets to Google Gemini.',
+        code: describedReady ? 'OK' : 'DESCRIPTION_NOT_CONFIGURED',
+        explanation:
+          'Descriptions and tags are rows in the host database. Lite asset cards never store them. The bytes sent to Gemini are a smaller derivative when one exists.',
+        fix: 'Set FILEVORA_DATABASE_URL and FILEVORA_GEMINI_API_KEY. See docs/descriptions.md.',
+      }),
+    );
   }
   return {
     ok: checks.every((check) => !check.required || check.status === 'pass'),

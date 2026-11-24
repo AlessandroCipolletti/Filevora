@@ -33,6 +33,7 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
         metadata: 'Record<string, string>?',
         visibility: 'private | public?',
         webhook: '{ url: string, secret?: string }?',
+        describe: 'boolean?',
       },
     },
     response: { status: 201, body: 'UploadSession plus part URLs' },
@@ -137,7 +138,9 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
     operation: 'file.list',
     modes: ['stored'],
     auth: 'principal',
-    request: { query: { limit: 'number?', cursor: 'string?' } },
+    request: {
+      query: { limit: 'number?', cursor: 'string?', tag: 'string?' },
+    },
     response: { status: 200, body: 'Page<FileRecord>' },
   },
   {
@@ -220,6 +223,16 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
       body: '{ ranges: number[][] }',
     },
     response: { status: 202, body: '{ sourceAssetId, assetIds, jobId }' },
+  },
+  {
+    method: 'POST',
+    path: '/files/:fileId/describe',
+    name: 'describe',
+    operation: 'process.request',
+    modes: ['stored'],
+    auth: 'principal',
+    request: { params: { fileId: 'string' } },
+    response: { status: 202, body: 'FileRecord with description' },
   },
   {
     method: 'POST',

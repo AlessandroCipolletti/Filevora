@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { ResolvedConfig } from '../config/load.js';
+import { enqueueAssetDescription } from '../descriptions/queue.js';
+import { describeIntent } from '../descriptions/policy.js';
 import { fail, isFileSdkError } from '../errors/error.js';
 import {
   addSeconds,
@@ -99,6 +101,7 @@ export interface CreateSessionInput {
   preset?: string;
   visibility?: Visibility;
   webhook?: WebhookRequest;
+  describe?: boolean;
 }
 
 interface FileRow {
@@ -121,6 +124,13 @@ interface FileRow {
   updated_at: string;
   deleted_at: string | null;
   url_salt?: string | null;
+  description_long?: string | null;
+  description_short?: string | null;
+  description_status?: string | null;
+  description_error?: string | null;
+  described_at?: string | null;
+  description_model?: string | null;
+  describe_requested?: number | null;
 }
 
 interface SessionRow {
@@ -460,6 +470,7 @@ export class FileService {
       bytes: number;
       mode?: 'single' | 'multipart';
       preset?: string;
+      describe?: boolean;
     },
     ctx: RequestContext,
   ): Promise<{
@@ -495,6 +506,7 @@ export class FileService {
     if (!mimeAllowed(mimeType, this.config.defaults.allowedMimeTypes)) {
       throw fail('UNSUPPORTED_MIME', { context: { detectedType: mimeType } });
     }
+    const wanted = describeIntent(input.describe, this.config);
     const mode =
       input.mode ??
       (input.bytes >= this.config.storage.s3.multipartThresholdBytes
@@ -561,6 +573,7 @@ export class FileService {
         ],
       );
     });
+    if (wanted) await this.markDescribe(fileId);
     const storage = await this.s3();
     const grant = this.config.storage.s3.uploadGrantTtlSeconds;
     if (mode === 'single') {
@@ -637,10 +650,24 @@ export class FileService {
   /** Head the S3 object, verify it, and start the normal processing pipeline. */
   async completeDirectUpload(
     sessionId: string,
-    input: { parts?: Array<{ partNumber: number; etag: string }> },
+    input: {
+      parts?: Array<{ partNumber: number; etag: string }>;
+      describe?: boolean;
+    },
     ctx: RequestContext,
   ) {
     const session = await this.requireSession(sessionId, ctx.principal);
+    if (input.describe === false) {
+      await (
+        await this.db()
+      ).run(
+        `UPDATE files SET describe_requested = 0, description_status = NULL, updated_at = ? WHERE id = ?`,
+        [nowIso(), session.file_id],
+      );
+    } else if (input.describe === true) {
+      describeIntent(true, this.config);
+      await this.markDescribe(session.file_id);
+    }
     await this.assertSessionOpen(session);
     if (session.transport === 's3-multipart') {
       return this.completeS3(session, input, ctx);
@@ -727,6 +754,7 @@ export class FileService {
         await this.queueWebhook(session.file_id, ctx, 'upload.completed');
       }
     }
+    await this.finishDescribe(session.file_id);
     return this.get(session.file_id, ctx);
   }
 
@@ -734,6 +762,7 @@ export class FileService {
   async mergePdfs(
     assetIds: string[],
     ctx: RequestContext,
+    describe?: boolean,
   ): Promise<{ assetId: string; jobId: string; sourceAssetIds: string[] }> {
     if (assetIds.length < 2 || assetIds.length > 20) {
       throw fail('TRANSFORM_REJECTED', {
@@ -766,6 +795,7 @@ export class FileService {
         ? `inline_${assetId}`
         : createId('job');
     await this.insertQueuedPdf(assetId, 'merged.pdf', ctx);
+    if (describeIntent(describe, this.config)) await this.markDescribe(assetId);
     await this.dispatchJob({
       id: jobId,
       fileId: assetId,
@@ -782,6 +812,7 @@ export class FileService {
     assetId: string,
     ranges: number[][],
     ctx: RequestContext,
+    describe?: boolean,
   ): Promise<{
     sourceAssetId: string;
     assetIds: string[];
@@ -811,7 +842,11 @@ export class FileService {
       });
     }
     const assetIds = ranges.map(() => createId('file'));
-    for (const id of assetIds) await this.insertQueuedPdf(id, 'split.pdf', ctx);
+    const wanted = describeIntent(describe, this.config);
+    for (const id of assetIds) {
+      await this.insertQueuedPdf(id, 'split.pdf', ctx);
+      if (wanted) await this.markDescribe(id);
+    }
     const jobId =
       this.config.processing.mode === 'sync'
         ? `inline_${assetId}`
@@ -1377,6 +1412,7 @@ export class FileService {
     }
     const preset = input.preset ?? this.config.defaults.preset;
     assertKnownPreset(preset, this.config.presets);
+    const wanted = describeIntent(input.describe, this.config);
     const visibility = this.resolveVisibility(input.visibility);
     await this.assertQuota(ctx.principal.tenantId, input.bytes);
     if (input.idempotencyKey) {
@@ -1392,6 +1428,7 @@ export class FileService {
         ) {
           throw fail('IDEMPOTENCY_CONFLICT');
         }
+        if (wanted) await this.markDescribe(existing.file_id);
         return await this.mapSession(existing);
       }
     }
@@ -1486,6 +1523,7 @@ export class FileService {
       throw fail('STORAGE_UNAVAILABLE', {
         message: 'The upload session was not stored.',
       });
+    if (wanted) await this.markDescribe(fileId);
     return await this.mapSession(created);
   }
 
@@ -1499,12 +1537,14 @@ export class FileService {
       webhook?: WebhookRequest;
       preset?: string;
       visibility?: Visibility;
+      describe?: boolean;
     },
     ctx: RequestContext,
   ): Promise<FileRecord> {
     await checkRemoteUrl(input.url, this.config.remote, 'request');
     const preset = input.preset ?? this.config.defaults.preset;
     assertKnownPreset(preset, this.config.presets);
+    const wanted = describeIntent(input.describe, this.config);
     const visibility = this.resolveVisibility(input.visibility);
     const sql = await this.db();
     if (this.config.storage.driver === 's3') await this.s3();
@@ -1536,6 +1576,7 @@ export class FileService {
       this.freshSalt(),
       fileId,
     ]);
+    if (wanted) await this.markDescribe(fileId);
     const stop = new AbortController();
     const timer = setTimeout(() => stop.abort(), this.config.remote.timeoutMs);
     this.remoteStops.add(stop);
@@ -1603,6 +1644,7 @@ export class FileService {
         const queued = await this.enqueuePreset(fileId, remote.mime, ctx);
         if (!queued) await this.queueWebhook(fileId, ctx, 'upload.completed');
       }
+      await this.finishDescribe(fileId);
     } catch (error) {
       if (key) await this.storage?.deleteObject(key).catch(() => undefined);
       const code = isFileSdkError(error) ? error.code : 'REMOTE_URL_BLOCKED';
@@ -1780,6 +1822,7 @@ export class FileService {
       if (!queued)
         await this.queueWebhook(session.file_id, ctx, 'upload.completed');
     }
+    await this.finishDescribe(session.file_id);
     return this.get(session.file_id, ctx);
   }
 
@@ -1973,6 +2016,7 @@ export class FileService {
       if (!queued)
         await this.queueWebhook(session.file_id, ctx, 'upload.completed');
     }
+    await this.finishDescribe(session.file_id);
     return this.get(session.file_id, ctx);
   }
 
@@ -2023,6 +2067,7 @@ export class FileService {
     if (!row || row.upload_state === 'aborted') throw fail('ASSET_NOT_FOUND');
     const record = mapFile(row);
     record.variants = await loadVariants(await this.db(), row.id);
+    await attachTags(await this.db(), record);
     record.asset = toAssetInfo(record, { detailed: opts?.detailed ?? true });
     return record;
   }
@@ -2046,6 +2091,7 @@ export class FileService {
       kind?: string;
       status?: string;
       createdAfter?: string;
+      tag?: string;
     },
     ctx: RequestContext,
   ): Promise<Page<FileRecord>> {
@@ -2068,6 +2114,11 @@ export class FileService {
       where += ' AND created_at >= ?';
       params.push(query.createdAfter);
     }
+    if (query.tag) {
+      where +=
+        ' AND id IN (SELECT asset_id FROM filevora_asset_tags WHERE tag = ?)';
+      params.push(query.tag.toLowerCase());
+    }
     if (cursor) {
       where += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
       params.push(cursor.createdAt, cursor.createdAt, cursor.id);
@@ -2083,6 +2134,7 @@ export class FileService {
     for (const row of rows.slice(0, limit)) {
       const record = mapFile(row);
       record.variants = await loadVariants(await this.db(), row.id);
+      await attachTags(await this.db(), record);
       record.asset = toAssetInfo(record, { detailed: true });
       page.push(record);
     }
@@ -2594,6 +2646,40 @@ export class FileService {
     );
   }
 
+  /** Queue or refresh a Gemini description. Stored mode and a key are required. */
+  async describeAsset(
+    fileId: string,
+    ctx: RequestContext,
+  ): Promise<FileRecord> {
+    await this.get(fileId, ctx);
+    describeIntent(true, this.config);
+    await this.markDescribe(fileId);
+    await this.finishDescribe(fileId);
+    return this.get(fileId, ctx);
+  }
+
+  private async markDescribe(fileId: string): Promise<void> {
+    await (
+      await this.db()
+    ).run(
+      `UPDATE files SET describe_requested = 1, description_status = 'pending', description_error = NULL, updated_at = ? WHERE id = ?`,
+      [nowIso(), fileId],
+    );
+  }
+
+  private async finishDescribe(fileId: string): Promise<void> {
+    try {
+      await enqueueAssetDescription(
+        await this.db(),
+        await this.driver(),
+        this.config,
+        fileId,
+      );
+    } catch {
+      // The asset stays available when a description cannot be queued.
+    }
+  }
+
   private async enqueuePreset(
     fileId: string,
     mime: string,
@@ -2822,6 +2908,17 @@ async function loadVariants(sql: Sql, fileId: string): Promise<FileVariant[]> {
   }));
 }
 
+async function attachTags(sql: Sql, record: FileRecord): Promise<void> {
+  if (!record.description) return;
+  const tags = await sql
+    .all<{ tag: string; category: string }>(
+      'SELECT tag, category FROM filevora_asset_tags WHERE asset_id = ? ORDER BY category, tag',
+      [record.id],
+    )
+    .catch(() => []);
+  record.description.tags = tags;
+}
+
 function mapFile(row: FileRow): FileRecord {
   return {
     id: row.id,
@@ -2841,6 +2938,24 @@ function mapFile(row: FileRow): FileRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
+    ...(row.describe_requested || row.description_status
+      ? {
+          description: {
+            long: row.description_long ?? null,
+            short: row.description_short ?? null,
+            status:
+              row.description_status === 'pending' ||
+              row.description_status === 'done' ||
+              row.description_status === 'failed'
+                ? row.description_status
+                : null,
+            error: row.description_error ?? null,
+            describedAt: row.described_at ?? null,
+            model: row.description_model ?? null,
+            tags: [],
+          },
+        }
+      : {}),
     variants: [],
   };
 }

@@ -1,5 +1,10 @@
 import os from 'node:os';
 import type { ZodError } from 'zod';
+import {
+  DESCRIPTION_DATABASE_MESSAGE,
+  DESCRIPTION_KEY_MESSAGE,
+} from '../descriptions/messages.js';
+import { DEFAULT_GEMINI_MODEL } from '../descriptions/gemini.js';
 import { fail } from '../errors/error.js';
 import { assertConfiguredPreset } from '../presets/expand.js';
 import { customPresetMap } from '../presets/catalog.js';
@@ -84,6 +89,14 @@ export interface ResolvedConfig {
     allowPublicFiles: boolean;
   };
   presets: CustomPresetMap;
+  gemini: {
+    apiKey: string;
+    model: string;
+    describeAssets: boolean;
+    videoHeight: number;
+    retryDelayMs: number;
+    fetchImpl?: typeof fetch;
+  };
   upload: {
     chunkBytes: number;
     partConcurrency: number;
@@ -443,6 +456,27 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
         ? { projectId: e.FILES_CLOUD_PROJECT_ID }
         : {}),
     },
+    ...(e.FILEVORA_GEMINI_API_KEY ||
+    e.FILEVORA_DESCRIBE_ASSETS !== undefined ||
+    e.FILEVORA_GEMINI_MODEL ||
+    e.FILEVORA_DESCRIBE_VIDEO_HEIGHT !== undefined
+      ? {
+          gemini: {
+            ...(e.FILEVORA_GEMINI_API_KEY
+              ? { apiKey: e.FILEVORA_GEMINI_API_KEY }
+              : {}),
+            ...(e.FILEVORA_DESCRIBE_ASSETS !== undefined
+              ? { describeAssets: e.FILEVORA_DESCRIBE_ASSETS }
+              : {}),
+            ...(e.FILEVORA_GEMINI_MODEL
+              ? { model: e.FILEVORA_GEMINI_MODEL }
+              : {}),
+            ...(e.FILEVORA_DESCRIBE_VIDEO_HEIGHT !== undefined
+              ? { videoHeight: e.FILEVORA_DESCRIBE_VIDEO_HEIGHT }
+              : {}),
+          },
+        }
+      : {}),
     webhooks: {
       ...(e.FILES_WEBHOOKS_ALLOW_LOOPBACK !== undefined
         ? { allowLoopback: e.FILES_WEBHOOKS_ALLOW_LOOPBACK }
@@ -771,6 +805,14 @@ export function resolveConfig(
       allowPublicFiles: allowPublic,
     },
     presets,
+    gemini: {
+      apiKey: input.gemini?.apiKey ?? '',
+      model: input.gemini?.model || DEFAULT_GEMINI_MODEL,
+      describeAssets: input.gemini?.describeAssets ?? false,
+      videoHeight: input.gemini?.videoHeight ?? 720,
+      retryDelayMs: input.gemini?.retryDelayMs ?? 200,
+      ...(input.gemini?.fetchImpl ? { fetchImpl: input.gemini.fetchImpl } : {}),
+    },
     upload: {
       chunkBytes,
       partConcurrency: input.upload?.partConcurrency ?? 4,
@@ -848,6 +890,17 @@ export function resolveConfig(
     },
   };
 
+  if (resolved.metadata.mode !== 'stored') {
+    if (resolved.gemini.apiKey || resolved.gemini.describeAssets) {
+      throw fail('DESCRIPTION_REQUIRES_DATABASE', {
+        message: DESCRIPTION_DATABASE_MESSAGE,
+      });
+    }
+  } else if (resolved.gemini.describeAssets && !resolved.gemini.apiKey) {
+    throw fail('DESCRIPTION_NOT_CONFIGURED', {
+      message: DESCRIPTION_KEY_MESSAGE,
+    });
+  }
   if (
     resolved.diagnostics.aiEnabled &&
     resolved.diagnostics.aiMaxCostUsd <= 0

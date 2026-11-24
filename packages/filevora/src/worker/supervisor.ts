@@ -83,6 +83,13 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
       preset: config.defaults.preset,
       thumbnailWidth: config.defaults.thumbnailWidth,
     },
+    gemini: {
+      ...(config.gemini.apiKey ? { apiKey: config.gemini.apiKey } : {}),
+      model: config.gemini.model,
+      describeAssets: config.gemini.describeAssets,
+      videoHeight: config.gemini.videoHeight,
+      retryDelayMs: config.gemini.retryDelayMs,
+    },
     ...(Object.keys(config.presets).length > 0
       ? { presets: config.presets }
       : {}),

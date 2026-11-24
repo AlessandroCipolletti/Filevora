@@ -48,7 +48,21 @@ CREATE TABLE IF NOT EXISTS filevora_assets (
   session_checksum ${blob},
   session_metadata_json ${blob},
   session_created_at ${blob},
-  parts_json ${blob}
+  parts_json ${blob},
+  description_long ${blob},
+  description_short ${blob},
+  description_status ${blob},
+  description_error ${blob},
+  described_at ${blob},
+  description_model ${blob},
+  describe_requested ${int} NOT NULL DEFAULT 0
+)`.trim();
+  const tags = `
+CREATE TABLE IF NOT EXISTS filevora_asset_tags (
+  asset_id ${id} NOT NULL,
+  tag ${label} NOT NULL,
+  category ${label} NOT NULL,
+  PRIMARY KEY (asset_id, category, tag)
 )`.trim();
   const versions = `
 CREATE TABLE IF NOT EXISTS filevora_asset_versions (
@@ -78,6 +92,7 @@ CREATE TABLE IF NOT EXISTS filevora_asset_versions (
   return [
     table(assets),
     table(versions),
+    table(tags),
     index(
       dialect === 'mysql'
         ? 'CREATE INDEX filevora_assets_tenant_created ON filevora_assets (tenant_id, created_at(64), id)'
@@ -91,6 +106,9 @@ CREATE TABLE IF NOT EXISTS filevora_asset_versions (
     ),
     index(
       'CREATE UNIQUE INDEX IF NOT EXISTS filevora_asset_versions_recipe ON filevora_asset_versions (file_id, name, recipe_id, recipe_version)',
+    ),
+    index(
+      'CREATE INDEX IF NOT EXISTS filevora_asset_tags_tag ON filevora_asset_tags (tag)',
     ),
   ];
 }

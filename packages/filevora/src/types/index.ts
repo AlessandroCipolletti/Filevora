@@ -142,6 +142,15 @@ export interface FileRecord {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  description?: {
+    long: string | null;
+    short: string | null;
+    status: 'pending' | 'done' | 'failed' | null;
+    error: string | null;
+    describedAt: string | null;
+    model: string | null;
+    tags: Array<{ tag: string; category: string }>;
+  };
   variants: FileVariant[];
   /** Same asset in the shared agent shape. */
   asset?: AssetInfo;

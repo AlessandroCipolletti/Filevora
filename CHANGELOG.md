@@ -2,6 +2,13 @@
 
 ## 0.1.0
 
+### Gemini asset descriptions
+
+- `FILEVORA_GEMINI_API_KEY` and `describe` on upload, URL import, direct S3 registration, PDF merge, and PDF split queue a Gemini description. `FILEVORA_DESCRIBE_ASSETS` defaults to false. `describe: false` overrides a true default.
+- Stored mode only. Lite mode returns `DESCRIPTION_REQUIRES_DATABASE`. A request with `describe: true` and no key returns `DESCRIPTION_NOT_CONFIGURED`.
+- The asset row stores `description_long` (3000), `description_short` (300), status, error, model, and time. Tags live in `filevora_asset_tags`. A failed description does not fail the asset. `GET /files?tag=` filters stored assets. `POST /files/:id/describe` runs it again.
+- Images use the 1280px derivative, video the optimized H.264 proxy (`FILEVORA_DESCRIBE_VIDEO_HEIGHT`, default 720), audio a mono AAC copy, and PDFs the original. The default model is `gemini-3.5-flash-lite`. Content is sent to Google only when a description runs.
+
 ### Thumbnail width
 
 - `FILES_THUMBNAIL_WIDTH` and `defaults.thumbnailWidth` set the web-optimized image thumbnail, the built-in `thumbnail` preset, and the legacy video poster. Allowed values are 320 and 480. The default changed from 320 to 480. Optimized 1280, HD 1920, and video 720/1080 are unchanged. Any other value is `INVALID_CONFIG`.

@@ -51,6 +51,7 @@
     "audioTools": "tested",
     "directUpload": "tested",
     "frameworkHelpers": "tested",
+    "assetDescriptions": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -70,6 +71,7 @@
     "Audio tools use ffmpeg. audio.transcode writes mp3, aac, ogg, or wav. audio.loudnorm uses loudnorm at EBU R128 (-23 LUFS). audio.waveform writes a PNG and JSON peaks. audio.describe writes probe metadata. Presets audio-mp3, audio-aac, audio-loudnorm, audio-waveform, and audio-describe.",
     "Direct S3 upload: POST /uploads/direct signs a single PUT or multipart part URLs. POST /uploads/direct/:sessionId/complete heads the object, checks size and sniffed type, applies the EXIF policy, runs the malware scanner, and queues the same preset pipeline. Filesystem storage cannot sign. Bucket CORS must expose ETag. See docs/direct-upload.md.",
     "Framework helpers are filevora/next, filevora/express, filevora/fastify, filevora/hono, and optional filevora/react. They do not render UI. useUpload and useAssetProgress return state. filevora/client does not import Node builtins.",
+    "Gemini descriptions are stored mode only. FILEVORA_GEMINI_API_KEY, FILEVORA_DESCRIBE_ASSETS (default false), and describe on create. POST /files/:id/describe retriggers. GET /files?tag= filters tags. Content is sent to Google only when a description runs. See docs/descriptions.md.",
     "Private assets are served with HMAC delivery URLs or S3 presigned URLs. Public assets use /public. FILEVORA_SIGNING_SECRET is a comma-separated key list. A missing asset card is private. See docs/access-control.md.",
     "The package is ESM. Node 22.13 and newer can require() the same entry points. filevora worker reads REDIS_URL or FILEVORA_CONFIG_PATH and does not start redis-memory-server."
   ]

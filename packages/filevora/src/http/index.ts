@@ -186,6 +186,9 @@ async function dispatch(
           bytes,
           ...(mode ? { mode } : {}),
           ...(preset ? { preset } : {}),
+          ...(booleanField(body, 'describe') !== undefined
+            ? { describe: booleanField(body, 'describe') }
+            : {}),
         },
         ctx,
       ),
@@ -211,7 +214,12 @@ async function dispatch(
     return json(
       await options.files.completeDirectUpload(
         route.sessionId,
-        { ...(parts ? { parts } : {}) },
+        {
+          ...(parts ? { parts } : {}),
+          ...(booleanField(body, 'describe') !== undefined
+            ? { describe: booleanField(body, 'describe') }
+            : {}),
+        },
         ctx,
       ),
       200,
@@ -223,7 +231,15 @@ async function dispatch(
     const assetIds = Array.isArray(body.assetIds)
       ? body.assetIds.filter((item): item is string => typeof item === 'string')
       : [];
-    return json(await options.files.mergePdfs(assetIds, ctx), 202, requestId);
+    return json(
+      await options.files.mergePdfs(
+        assetIds,
+        ctx,
+        booleanField(body, 'describe'),
+      ),
+      202,
+      requestId,
+    );
   }
   if (route.name === 'pdf-split' && route.fileId) {
     const body = asRecord(await readJson(request));
@@ -235,7 +251,19 @@ async function dispatch(
         )
       : [];
     return json(
-      await options.files.splitPdf(route.fileId, ranges, ctx),
+      await options.files.splitPdf(
+        route.fileId,
+        ranges,
+        ctx,
+        booleanField(body, 'describe'),
+      ),
+      202,
+      requestId,
+    );
+  }
+  if (route.name === 'describe' && route.fileId) {
+    return json(
+      await options.files.describeAsset(route.fileId, ctx),
       202,
       requestId,
     );
@@ -271,6 +299,9 @@ async function dispatch(
           ...(webhook ? { webhook } : {}),
           ...(preset ? { preset } : {}),
           ...(visibility ? { visibility } : {}),
+          ...(booleanField(record, 'describe') !== undefined
+            ? { describe: booleanField(record, 'describe') }
+            : {}),
         },
         ctx,
       ),
@@ -312,6 +343,9 @@ async function dispatch(
           ? { idempotencyKey: record.idempotencyKey }
           : {}),
         ...(typeof record.preset === 'string' ? { preset: record.preset } : {}),
+        ...(booleanField(record, 'describe') !== undefined
+          ? { describe: booleanField(record, 'describe') }
+          : {}),
         ...(record.metadata && typeof record.metadata === 'object'
           ? { metadata: record.metadata as Record<string, string> }
           : {}),
@@ -400,6 +434,7 @@ async function dispatch(
     const kind = url.searchParams.get('kind') ?? undefined;
     const status = url.searchParams.get('status') ?? undefined;
     const createdAfter = url.searchParams.get('createdAfter') ?? undefined;
+    const tag = url.searchParams.get('tag') ?? undefined;
     const page = await options.files.list(
       {
         ...(limit ? { limit: Number(limit) } : {}),
@@ -407,6 +442,7 @@ async function dispatch(
         ...(kind ? { kind } : {}),
         ...(status ? { status } : {}),
         ...(createdAfter ? { createdAfter } : {}),
+        ...(tag ? { tag } : {}),
       },
       ctx,
     );
@@ -715,6 +751,14 @@ function webhookFrom(
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function booleanField(
+  record: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  if (record[key] === true || record[key] === false) return record[key];
+  return undefined;
 }
 
 function stringField(

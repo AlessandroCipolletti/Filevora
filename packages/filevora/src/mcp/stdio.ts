@@ -39,6 +39,15 @@ const tools = [
     description: 'Run filevora doctor and return the check report.',
     inputSchema: { type: 'object', properties: { env: { type: 'object' } } },
   },
+  {
+    name: 'describe_asset',
+    description:
+      'Say whether Gemini asset descriptions can run for this env, and the POST /files/:assetId/describe contract. Does not call Gemini or upload a file.',
+    inputSchema: {
+      type: 'object',
+      properties: { env: { type: 'object' } },
+    },
+  },
 ];
 
 export async function handleMcpMessage(
@@ -112,6 +121,25 @@ async function runTool(
   }
   if (name === 'doctor') {
     return JSON.stringify(await runDoctor({}, env));
+  }
+  if (name === 'describe_asset') {
+    try {
+      const config = resolveConfig({}, env);
+      return JSON.stringify({
+        ready:
+          Boolean(config.gemini.apiKey) && config.metadata.mode === 'stored',
+        model: config.gemini.model,
+        describeAssets: config.gemini.describeAssets,
+        endpoint: 'POST /files/:assetId/describe',
+        privacy:
+          'When a description runs, a smaller copy of the asset is sent to Google Gemini.',
+      });
+    } catch (error) {
+      const text = isFileSdkError(error)
+        ? `${error.code}: ${error.message}`
+        : 'DESCRIPTION_NOT_CONFIGURED';
+      return JSON.stringify({ ready: false, error: text });
+    }
   }
   throw new Error(`Unknown tool ${name}.`);
 }

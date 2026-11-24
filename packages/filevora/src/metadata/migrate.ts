@@ -10,6 +10,13 @@ export async function migrate(
     ...hostStatements(dialect),
     'ALTER TABLE filevora_assets ADD COLUMN last_accessed_at TEXT',
     'ALTER TABLE filevora_assets ADD COLUMN url_salt TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN description_long TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN description_short TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN description_status TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN description_error TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN described_at TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN description_model TEXT',
+    'ALTER TABLE filevora_assets ADD COLUMN describe_requested INTEGER DEFAULT 0',
   ]) {
     try {
       await db.exec(statement);
