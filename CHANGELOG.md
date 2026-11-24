@@ -175,7 +175,7 @@
 ### Package entry points
 
 - `filevora` runs the CLI. `filevora worker` polls BullMQ using `REDIS_URL` or `FILEVORA_CONFIG_PATH`. A missing Redis URL fails with `INVALID_CONFIG` instead of importing `redis-memory-server`.
-- `exports` include `require` so Node 22.13+ can load the ESM entry points from CommonJS. The `node:sqlite` experimental warning is suppressed.
+- `exports` include `require` so Node 22.13+ can load the ESM entry points from CommonJS. The `node:sqlite` experimental warning is suppressed. The filter is a called function so the library build keeps it.
 
 ### S3 asset IO
 

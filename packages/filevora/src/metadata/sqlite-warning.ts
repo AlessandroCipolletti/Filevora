@@ -1,3 +1,7 @@
+export function silenceSqliteWarning(): boolean {
+  return true;
+}
+
 const emit = process.emit.bind(process);
 
 /** Node 22 prints ExperimentalWarning for node:sqlite on every import. The API is the one this package requires. */

@@ -1,7 +1,9 @@
-import './sqlite-warning.js';
 import { mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { silenceSqliteWarning } from './sqlite-warning.js';
+
+const require = createRequire(import.meta.url);
 
 /** Async metadata session. SQLite, Postgres, and lite cards share this shape. */
 export interface Sql {
@@ -28,6 +30,9 @@ function row<T extends Record<string, unknown>>(value: unknown): T | undefined {
 
 /** Open a SQLite file with WAL and a busy timeout. Creates the parent directory. */
 export function openSqlite(filename: string): Sql {
+  silenceSqliteWarning();
+  const { DatabaseSync } =
+    require('node:sqlite') as typeof import('node:sqlite');
   const resolved = path.resolve(filename);
   mkdirSync(path.dirname(resolved), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(resolved);

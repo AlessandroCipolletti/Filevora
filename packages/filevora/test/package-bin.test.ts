@@ -50,10 +50,14 @@ test('the bin runs the CLI and CommonJS can load the entries', () => {
       [
         '--input-type=commonjs',
         '-e',
-        `const client = require('filevora/client');
+        `const path = require('node:path');
+         const client = require('filevora/client');
          const server = require('filevora/server');
+         const sqlite = require(path.join(process.cwd(), 'node_modules/filevora/dist/metadata/sqlite.js'));
          if (typeof client.createUploadClient !== 'function') process.exit(2);
-         if (typeof server.createFiles !== 'function') process.exit(3);`,
+         if (typeof server.createFiles !== 'function') process.exit(3);
+         const db = sqlite.openSqlite(path.join(process.cwd(), 'meta.sqlite'));
+         db.close();`,
       ],
       { cwd: dir, encoding: 'utf8' },
     );
