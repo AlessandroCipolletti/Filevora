@@ -154,6 +154,11 @@
 - Upload and URL import store the preset's versions next to `_original`. `POST /files/:assetId/transform` accepts `preset`. Single-output presets can be followed by `operations`. Unknown or incompatible names return `TRANSFORM_REJECTED` with `validPresets`.
 - Custom presets are `presets` in config or `FILEVORA_PRESETS` JSON, validated like transform operations. See `docs/presets.md`.
 
+### Package entry points
+
+- `filevora` runs the CLI. `filevora worker` polls BullMQ using `REDIS_URL` or `FILEVORA_CONFIG_PATH`. A missing Redis URL fails with `INVALID_CONFIG` instead of importing `redis-memory-server`.
+- `exports` include `require` so Node 22.13+ can load the ESM entry points from CommonJS. The `node:sqlite` experimental warning is suppressed.
+
 ### S3 asset IO
 
 - Presets, transforms, uploads, delivery, and retention read and write through the storage driver. Sharp and FFmpeg use a temporary file, then the bytes go back to S3.

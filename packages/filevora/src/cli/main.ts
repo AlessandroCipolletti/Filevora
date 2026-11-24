@@ -247,10 +247,15 @@ export async function runCli(
       out.stdout(`${JSON.stringify(report, null, json ? 2 : 0)}\n`);
       return report.ok ? 0 : 1;
     }
-    if (command === 'worker' && (sub === '--help' || args.includes('--help'))) {
-      out.stdout(
-        'filevora worker\nPoll the durable queue in this process. Does not spawn another worker.\n',
-      );
+    if (command === 'worker') {
+      if (sub === '--help' || args.includes('--help')) {
+        out.stdout(
+          'filevora worker\nPoll the durable queue in this process. Does not spawn another worker.\n',
+        );
+        return 0;
+      }
+      const { runWorker } = await import('../worker/run.js');
+      await runWorker({});
       return 0;
     }
     out.stderr(`Unknown command. Run filevora --help.\n`);

@@ -71,6 +71,8 @@ const uploaded = await client.upload(file).complete();
 REDIS_URL=redis://127.0.0.1:6379 npx filevora worker
 ```
 
+The package is ESM (`"type": "module"`). Node 22.13 and newer can also `require('filevora/server')` and the other entry points. `filevora --version` and `filevora worker` run the CLI.
+
 To scaffold the handler, a client snippet, and an env file without prompts:
 
 ```bash

@@ -10,10 +10,7 @@ import {
 } from '../dist/client/index.js';
 import type { ProcessingUpdate } from '../dist/client/progress-stream.js';
 import { openSqlite } from '../dist/metadata/sqlite.js';
-import {
-  recordProcessingProgress,
-  redisUrlFor,
-} from '../dist/queue/processing-queue.js';
+import { recordProcessingProgress } from '../dist/queue/processing-queue.js';
 import { estimateRemainingMs } from '../dist/progress/estimate.js';
 import { createFilesHandler } from '../dist/http/index.js';
 import { createFiles } from '../dist/server/index.js';
@@ -176,6 +173,7 @@ test('host env vars select resume storage and the progress channel', () => {
 test('image progress is one quiet event and video progress includes eta', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'filevora-rt-'));
   const { files, fetchImpl, options } = await harness(dir);
+  const stopRedis = await ensureRedis();
   try {
     const quietClient = client(fetchImpl);
     const imageFile = await quietClient
@@ -199,7 +197,6 @@ test('image progress is one quiet event and video progress includes eta', async 
       `UPDATE filevora_assets SET detected_mime = 'video/mp4', processing_state = 'processing' WHERE id = ?`,
       [videoFile.id],
     );
-    await redisUrlFor({ env: 'test' });
     await recordProcessingProgress(videoFile.id, 0.4, Date.now() - 10_000);
     await sql.close();
     const live: ProcessingUpdate[] = [];
@@ -224,7 +221,27 @@ test('image progress is one quiet event and video progress includes eta', async 
     assert.ok((tick?.etaMs ?? 0) > 10_000);
     assert.equal(live.at(-1)?.terminal, true);
   } finally {
+    await stopRedis();
     await files.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+async function ensureRedis(): Promise<() => Promise<void>> {
+  if (process.env.REDIS_URL || process.env.FILES_REDIS_URL) {
+    return async () => undefined;
+  }
+  const { RedisMemoryServer } = await import('redis-memory-server');
+  const server = new RedisMemoryServer();
+  const host = await server.getHost();
+  const port = await server.getPort();
+  process.env.REDIS_URL = `redis://${host}:${port}`;
+  const info = server.getInstanceInfo();
+  if (info) {
+    info.childProcess?.unref();
+    info.instance.killerProcess?.unref();
+  }
+  return async () => {
+    await server.stop();
+  };
+}

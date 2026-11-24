@@ -439,10 +439,7 @@ function parseMeta(raw: string | undefined): Record<string, string> {
 
 async function readChildOptions(): Promise<FilesOptions> {
   const configPath = process.env.FILEVORA_CONFIG_PATH;
-  if (!configPath)
-    throw fail('INVALID_CONFIG', {
-      message: 'The worker requires FILEVORA_CONFIG_PATH or explicit options.',
-    });
+  if (!configPath) return {};
   const { readFileSync } = await import('node:fs');
   return JSON.parse(readFileSync(configPath, 'utf8')) as FilesOptions;
 }

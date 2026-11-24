@@ -1,4 +1,3 @@
-import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { Queue, Worker, type Job } from 'bullmq';
@@ -28,19 +27,6 @@ export function processingQueueName(env: string, scope?: string): string {
   return `fv-${key}`;
 }
 
-function unrefStream(stream: { unref?: () => void } | null | undefined): void {
-  stream?.unref?.();
-}
-
-function unrefProcess(child: ChildProcess | null | undefined): void {
-  child?.unref();
-  unrefStream(child?.stdout as { unref?: () => void } | null);
-  unrefStream(child?.stderr as { unref?: () => void } | null);
-  unrefStream(child?.stdin as { unref?: () => void } | null);
-}
-
-let memoryRedis: Promise<string> | undefined;
-
 /** Redis is the processing queue. Asset ids are not stored here as a registry. */
 export async function redisUrlFor(input: {
   env: string;
@@ -55,29 +41,12 @@ export async function redisUrlFor(input: {
     process.env.REDIS_URL = configured;
     return configured;
   }
-  if (input.env !== 'test') {
-    throw fail('INVALID_CONFIG', {
-      message:
-        'Processing jobs use BullMQ. Set REDIS_URL to a Redis server. Asset ids stay in the metadata database, not in Redis.',
-    });
-  }
-  if (!memoryRedis) {
-    memoryRedis = (async () => {
-      const { RedisMemoryServer } = await import('redis-memory-server');
-      const server = new RedisMemoryServer();
-      const host = await server.getHost();
-      const port = await server.getPort();
-      const info = server.getInstanceInfo();
-      if (info) {
-        unrefProcess(info.childProcess);
-        unrefProcess(info.instance.killerProcess);
-      }
-      const url = `redis://${host}:${port}`;
-      process.env.REDIS_URL = url;
-      return url;
-    })();
-  }
-  return memoryRedis;
+  throw fail('INVALID_CONFIG', {
+    message:
+      input.env === 'test'
+        ? 'Set REDIS_URL to run queue tests. processing.mode "sync" and filevora/testing do not need Redis. This package does not start redis-memory-server.'
+        : 'Processing jobs use BullMQ. Set REDIS_URL to a Redis server. Asset ids stay in the metadata database, not in Redis.',
+  });
 }
 
 function connection(url: string) {

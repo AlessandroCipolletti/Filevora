@@ -1,6 +1,6 @@
 # Install
 
-The package name is `filevora`. It is not published to npm yet. From a checkout:
+The package name is `filevora`. It is not published to npm yet. It is ESM, and Node 22.13+ can `require()` the same entry points. `bin/filevora.js` calls `runCli`. From a checkout:
 
 ```bash
 pnpm install
