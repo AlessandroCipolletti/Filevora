@@ -33,6 +33,9 @@ interface ProbeStream {
   width?: number;
   height?: number;
   duration?: string;
+  sample_rate?: string;
+  channels?: number;
+  bit_rate?: string;
 }
 
 export interface ProbeInfo {
@@ -41,6 +44,9 @@ export interface ProbeInfo {
   height?: number;
   videoCodec?: string;
   audioCodec?: string;
+  sampleRate?: number;
+  channels?: number;
+  bitRate?: number;
 }
 
 export interface MediaTransform {
@@ -137,7 +143,7 @@ export async function probeMedia(
     timeoutMs,
   );
   const parsed = JSON.parse(stdout) as {
-    format?: { duration?: string };
+    format?: { duration?: string; bit_rate?: string };
     streams?: ProbeStream[];
   };
   const streams = parsed.streams ?? [];
@@ -154,6 +160,13 @@ export async function probeMedia(
     ...(video?.height ? { height: video.height } : {}),
     ...(video?.codec_name ? { videoCodec: video.codec_name } : {}),
     ...(audio?.codec_name ? { audioCodec: audio.codec_name } : {}),
+    ...(Number(audio?.sample_rate) > 0
+      ? { sampleRate: Number(audio?.sample_rate) }
+      : {}),
+    ...(audio?.channels ? { channels: audio.channels } : {}),
+    ...(Number(audio?.bit_rate ?? parsed.format?.bit_rate) > 0
+      ? { bitRate: Number(audio?.bit_rate ?? parsed.format?.bit_rate) }
+      : {}),
   };
 }
 

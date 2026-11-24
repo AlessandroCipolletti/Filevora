@@ -219,6 +219,72 @@ export const BUILTIN_PRESETS: NamedPreset[] = [
     ],
   },
   {
+    name: 'audio-mp3',
+    families: ['audio'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'mp3',
+        operations: [
+          { op: 'audio.transcode', format: 'mp3', bitrateKbps: 128 },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'audio-aac',
+    families: ['audio'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'aac',
+        operations: [
+          { op: 'audio.transcode', format: 'aac', bitrateKbps: 128 },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'audio-loudnorm',
+    families: ['audio'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'normalized',
+        operations: [{ op: 'audio.loudnorm', format: 'aac', bitrateKbps: 128 }],
+      },
+    ],
+  },
+  {
+    name: 'audio-waveform',
+    families: ['audio'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'waveform',
+        operations: [
+          { op: 'audio.waveform', width: 640, height: 120, peaks: 100 },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'audio-describe',
+    families: ['audio'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'describe',
+        operations: [{ op: 'audio.describe' }],
+      },
+    ],
+  },
+  {
     name: 'office-pdf',
     families: ['office'],
     source: 'builtin',
@@ -272,7 +338,11 @@ function customToNamed(name: string, preset: CustomPreset): NamedPreset {
       isFrameOperation(operation.op) ||
       operation.op === 'pdf.pages' ||
       operation.op === 'pdf.text' ||
-      operation.op === 'office.toPdf',
+      operation.op === 'office.toPdf' ||
+      operation.op === 'audio.transcode' ||
+      operation.op === 'audio.loudnorm' ||
+      operation.op === 'audio.waveform' ||
+      operation.op === 'audio.describe',
   );
   return {
     name,

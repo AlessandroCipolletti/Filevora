@@ -13,6 +13,13 @@ import {
 import { probeMedia, runFfmpeg } from '../processors/ffmpeg.js';
 import { renderPdfPage, selectPdfPages } from '../processors/pdf-preview.js';
 import { convertOfficeToPdf, describePdf } from '../processors/pdf-tools.js';
+import {
+  describeAudioFile,
+  readPcmPeaks,
+  renderWaveformImage,
+  renderWaveformPcm,
+  transcodeAudio,
+} from '../processors/audio-tools.js';
 import { recordProcessingProgress } from '../queue/processing-queue.js';
 import type { ExifMode } from '../safety/exif.js';
 import { materialize } from '../storage/stage.js';
@@ -55,21 +62,23 @@ export async function publishNamedPreset(input: {
       if (!output) continue;
       const family = staged.preset.families[0];
       const written =
-        family === 'office'
-          ? await publishOfficePdf(staged, output)
-          : family === 'pdf' && hasPdfText(output)
-            ? await publishPdfText(staged, output)
-            : family === 'pdf' && hasPdfPages(output)
-              ? await publishPdfPages(staged, output)
-              : family === 'video' && hasPoster(output)
-                ? await publishPoster(staged, output)
-                : family === 'video' && hasThumbnails(output)
-                  ? await publishThumbnails(staged, output)
-                  : family === 'video' && hasSprite(output)
-                    ? await publishSprite(staged, output)
-                    : family === 'video'
-                      ? await publishVideo(staged, output)
-                      : await publishImage(staged, output);
+        family === 'audio'
+          ? await publishAudioTool(staged, output)
+          : family === 'office'
+            ? await publishOfficePdf(staged, output)
+            : family === 'pdf' && hasPdfText(output)
+              ? await publishPdfText(staged, output)
+              : family === 'pdf' && hasPdfPages(output)
+                ? await publishPdfPages(staged, output)
+                : family === 'video' && hasPoster(output)
+                  ? await publishPoster(staged, output)
+                  : family === 'video' && hasThumbnails(output)
+                    ? await publishThumbnails(staged, output)
+                    : family === 'video' && hasSprite(output)
+                      ? await publishSprite(staged, output)
+                      : family === 'video'
+                        ? await publishVideo(staged, output)
+                        : await publishImage(staged, output);
       names.push(...written);
       await recordProcessingProgress(
         staged.file.id,
@@ -525,6 +534,129 @@ async function publishPdfPages(
     });
   }
   return names;
+}
+
+async function publishAudioTool(
+  input: {
+    sql: Sql;
+    storage: StorageDriver;
+    source: string;
+    file: PresetFile;
+    preset: NamedPreset;
+    ffmpeg: string;
+    ffprobe: string;
+    timeoutMs: number;
+    signal?: AbortSignal;
+  },
+  output: PresetOutput,
+): Promise<string[]> {
+  const operation = output.operations[0];
+  if (!operation) return [];
+  if (operation.op === 'audio.describe') {
+    if (await alreadyStored(input, output.version)) return [output.version];
+    const described = await describeAudioFile(
+      input.ffprobe,
+      input.source,
+      input.timeoutMs,
+    );
+    await insertVariant(input, {
+      version: output.version,
+      body: Buffer.from(JSON.stringify(described)),
+      mime: 'application/json',
+      extension: 'json',
+    });
+    return [output.version];
+  }
+  if (operation.op === 'audio.waveform') {
+    const names = [output.version, `${output.version}-json`];
+    if (await alreadyStored(input, output.version)) return names;
+    const work = mkdtempSync(path.join(tmpdir(), 'filevora-wave-'));
+    try {
+      const image = path.join(work, 'wave.png');
+      const pcm = path.join(work, 'wave.raw');
+      const width = operation.width ?? 640;
+      const height = operation.height ?? 120;
+      await renderWaveformImage({
+        ffmpeg: input.ffmpeg,
+        source: input.source,
+        output: image,
+        width,
+        height,
+        timeoutMs: input.timeoutMs,
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      await renderWaveformPcm({
+        ffmpeg: input.ffmpeg,
+        source: input.source,
+        output: pcm,
+        timeoutMs: input.timeoutMs,
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      const png = readFileSync(image);
+      const peaks = readPcmPeaks(pcm, operation.peaks ?? 100);
+      await insertVariant(input, {
+        version: output.version,
+        body: png,
+        mime: 'image/png',
+        extension: 'png',
+        width,
+        height,
+      });
+      await insertVariant(input, {
+        version: `${output.version}-json`,
+        body: Buffer.from(JSON.stringify({ width, height, peaks })),
+        mime: 'application/json',
+        extension: 'json',
+      });
+      return names;
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }
+  if (operation.op !== 'audio.transcode' && operation.op !== 'audio.loudnorm') {
+    return [];
+  }
+  if (await alreadyStored(input, output.version)) return [output.version];
+  const format = operation.format ?? 'aac';
+  const extension = format === 'aac' ? 'm4a' : format;
+  const mime =
+    format === 'mp3'
+      ? 'audio/mpeg'
+      : format === 'aac'
+        ? 'audio/mp4'
+        : format === 'ogg'
+          ? 'audio/ogg'
+          : 'audio/wav';
+  const work = mkdtempSync(path.join(tmpdir(), 'filevora-audio-'));
+  try {
+    const target = path.join(work, `out.${extension}`);
+    await transcodeAudio({
+      ffmpeg: input.ffmpeg,
+      source: input.source,
+      output: target,
+      format,
+      ...(operation.bitrateKbps ? { bitrateKbps: operation.bitrateKbps } : {}),
+      timeoutMs: input.timeoutMs,
+      loudnorm: operation.op === 'audio.loudnorm',
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
+    const body = readFileSync(target);
+    const described = await describeAudioFile(
+      input.ffprobe,
+      target,
+      input.timeoutMs,
+    );
+    await insertVariant(input, {
+      version: output.version,
+      body,
+      mime,
+      extension,
+      durationMs: described.durationMs,
+    });
+    return [output.version];
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 }
 
 async function publishPdfText(

@@ -396,6 +396,7 @@ test('capabilities manifest matches the schema and does not mark untested featur
     'videoThumbnails',
     'pdfPageThumbnails',
     'pdfTools',
+    'audioTools',
   ]);
   for (const [id, status] of Object.entries(manifest.features)) {
     if (status === 'tested')

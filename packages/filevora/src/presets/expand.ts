@@ -4,6 +4,7 @@ import {
   assetTransformOperationSchema,
   assertFrameOptions,
   isFrameOperation,
+  isAudioToolOperation,
   isOfficeMimeFamily,
   isPdfStillOperation,
   mediaFamily,
@@ -121,7 +122,9 @@ export function expandTransform(
   if (typeof record.preset !== 'string') {
     const parsed = parseAssetTransform(input);
     const frames =
-      framePreset(parsed.operations) ?? pdfStillPreset(parsed.operations);
+      framePreset(parsed.operations) ??
+      pdfStillPreset(parsed.operations) ??
+      audioToolPreset(parsed.operations);
     if (frames) return { mode: 'versions', preset: frames };
     return {
       mode: 'operations',
@@ -257,6 +260,70 @@ export function pdfStillPresetFromPayload(
     source: 'custom',
     delivery: 'versions',
     outputs: [output],
+  };
+}
+
+export function audioToolPresetFromPayload(
+  name: string,
+  outputs: unknown,
+): NamedPreset | undefined {
+  if (name !== 'audio-tools' || !Array.isArray(outputs)) return undefined;
+  const parsed = z
+    .array(
+      z
+        .object({
+          version: z.string().min(1),
+          operations: z.array(assetTransformOperationSchema).min(1).max(1),
+        })
+        .strict(),
+    )
+    .max(8)
+    .safeParse(outputs);
+  if (!parsed.success) return undefined;
+  if (
+    parsed.data.some((output) =>
+      output.operations.some(
+        (operation) => !isAudioToolOperation(operation.op),
+      ),
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    name: 'audio-tools',
+    families: ['audio'],
+    source: 'custom',
+    delivery: 'versions',
+    outputs: parsed.data,
+  };
+}
+
+function audioToolPreset(
+  operations: AssetTransformOperation[],
+): NamedPreset | undefined {
+  if (
+    operations.length === 0 ||
+    operations.some((operation) => !isAudioToolOperation(operation.op))
+  ) {
+    return undefined;
+  }
+  const outputs = operations.map((operation) => ({
+    version:
+      operation.op === 'audio.transcode'
+        ? operation.format
+        : operation.op === 'audio.loudnorm'
+          ? 'normalized'
+          : operation.op === 'audio.waveform'
+            ? 'waveform'
+            : 'describe',
+    operations: [operation],
+  }));
+  return {
+    name: 'audio-tools',
+    families: ['audio'],
+    source: 'custom',
+    delivery: 'versions',
+    outputs,
   };
 }
 

@@ -20,7 +20,7 @@ const versionName = z
 
 export const customPresetSchema = z
   .object({
-    family: z.enum(['image', 'video', 'pdf']),
+    family: z.enum(['image', 'video', 'pdf', 'audio']),
     version: versionName.optional(),
     operations: z.array(assetTransformOperationSchema).min(1).max(8),
   })
@@ -29,7 +29,7 @@ export const customPresetSchema = z
 export const customPresetsSchema = z.record(presetName, customPresetSchema);
 
 export interface CustomPreset {
-  family: 'image' | 'video' | 'pdf';
+  family: 'image' | 'video' | 'pdf' | 'audio';
   version: string;
   operations: AssetTransformOperation[];
 }

@@ -18,6 +18,7 @@ import { findPreset } from '../presets/catalog.js';
 import {
   framePresetFromPayload,
   pdfStillPresetFromPayload,
+  audioToolPresetFromPayload,
 } from '../presets/expand.js';
 import { applyAssetTransform } from '../transform/apply.js';
 import type { AssetTransformOperation } from '../transform/schema.js';
@@ -400,6 +401,7 @@ async function executeJob(
         const named =
           framePresetFromPayload(requested, data.payload.outputs) ??
           pdfStillPresetFromPayload(requested, data.payload.outputs) ??
+          audioToolPresetFromPayload(requested, data.payload.outputs) ??
           findPreset(requested, config.presets);
         if (!named) {
           throw fail('TRANSFORM_REJECTED', {

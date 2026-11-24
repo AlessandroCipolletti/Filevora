@@ -106,6 +106,37 @@ const officeToPdf = z
   })
   .strict();
 
+const audioTranscode = z
+  .object({
+    op: z.literal('audio.transcode'),
+    format: z.enum(['mp3', 'aac', 'ogg', 'wav']),
+    bitrateKbps: z.number().int().min(32).max(320).optional(),
+  })
+  .strict();
+
+const audioLoudnorm = z
+  .object({
+    op: z.literal('audio.loudnorm'),
+    format: z.enum(['mp3', 'aac']).optional(),
+    bitrateKbps: z.number().int().min(32).max(320).optional(),
+  })
+  .strict();
+
+const audioWaveform = z
+  .object({
+    op: z.literal('audio.waveform'),
+    width: z.number().int().min(64).max(1920).optional(),
+    height: z.number().int().min(32).max(512).optional(),
+    peaks: z.number().int().min(16).max(2000).optional(),
+  })
+  .strict();
+
+const audioDescribe = z
+  .object({
+    op: z.literal('audio.describe'),
+  })
+  .strict();
+
 export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   imageResize,
   imageCrop,
@@ -119,6 +150,10 @@ export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   pdfPages,
   pdfText,
   officeToPdf,
+  audioTranscode,
+  audioLoudnorm,
+  audioWaveform,
+  audioDescribe,
 ]);
 
 export const FRAME_OPERATIONS = [
@@ -137,6 +172,15 @@ export function isPdfPageOperation(op: string): boolean {
 
 export function isPdfStillOperation(op: string): boolean {
   return op === 'pdf.pages' || op === 'pdf.text';
+}
+
+export function isAudioToolOperation(op: string): boolean {
+  return (
+    op === 'audio.transcode' ||
+    op === 'audio.loudnorm' ||
+    op === 'audio.waveform' ||
+    op === 'audio.describe'
+  );
 }
 
 /** One transform request. `replace` defaults to true. */
@@ -187,6 +231,13 @@ export function validOperations(mime: string | null | undefined): string[] {
       'video.thumbnails',
       'video.sprite',
     ];
+  if (mime?.startsWith('audio/'))
+    return [
+      'audio.transcode',
+      'audio.loudnorm',
+      'audio.waveform',
+      'audio.describe',
+    ];
   if (family === 'pdf') return ['pdf.removePages', 'pdf.pages', 'pdf.text'];
   if (isOfficeMimeFamily(mime)) return ['office.toPdf'];
   return [];
@@ -220,6 +271,10 @@ export function parseAssetTransform(input: unknown): AssetTransform {
           'pdf.pages',
           'pdf.text',
           'office.toPdf',
+          'audio.transcode',
+          'audio.loudnorm',
+          'audio.waveform',
+          'audio.describe',
         ],
       },
     });
@@ -387,6 +442,14 @@ export function assertTransformFits(
       reject(
         `${field}.op`,
         `${operation.op} is stored as a version. Send it without pdf.removePages, or use preset pdf-text, pdf-pages, or pdf-cover.`,
+        mime,
+        allowed,
+      );
+    }
+    if (isAudioToolOperation(operation.op)) {
+      reject(
+        `${field}.op`,
+        `${operation.op} is stored as a version. Send it alone, or use an audio preset.`,
         mime,
         allowed,
       );

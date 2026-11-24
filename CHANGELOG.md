@@ -2,6 +2,12 @@
 
 ## 0.1.0
 
+### Audio tools
+
+- `audio.transcode` writes MP3, AAC, Opus, or WAV at a chosen bitrate. `audio.loudnorm` applies EBU R128 via ffmpeg `loudnorm` (`I=-23`, `TP=-1.5`, `LRA=11`).
+- `audio.waveform` stores a PNG and a JSON peak map. `audio.describe` stores duration, codec, sample rate, channels, and bitrate.
+- Presets: `audio-mp3`, `audio-aac`, `audio-loudnorm`, `audio-waveform`, and `audio-describe`. The same operations can be sent without a preset.
+
 ### PDF tools
 
 - `pdf.text` and the `pdf-text` preset store a JSON description: document metadata and the text of each page.

@@ -27,6 +27,11 @@ Image versions are WebP. `contain` does not enlarge the source. `cover` crops to
 | `pdf-cover` | pdf | `page-1` | Page 1 as WebP, at most 800 wide. |
 | `pdf-text` | pdf | `text` | JSON with document metadata and the text of each page. |
 | `office-pdf` | office | `pdf` | LibreOffice conversion of a Word, PowerPoint, or Excel file. Optional. |
+| `audio-mp3` | audio | `mp3` | MP3 at 128 kbps. |
+| `audio-aac` | audio | `aac` | AAC in an M4A file at 128 kbps. |
+| `audio-loudnorm` | audio | `normalized` | EBU R128 loudness normalization to AAC. |
+| `audio-waveform` | audio | `waveform`, `waveform-json` | A PNG waveform and a JSON peak map. |
+| `audio-describe` | audio | `describe` | JSON duration, codec, sample rate, channels, and bitrate. |
 
 `video-1080p` fails when `FILES_VIDEO_MAX_OUTPUT_HEIGHT` is below 1080.
 

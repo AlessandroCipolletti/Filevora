@@ -644,7 +644,8 @@ export class FileService {
           schemaVersion: 1,
           preset: expanded.preset.name,
           ...(expanded.preset.name === 'frames' ||
-          expanded.preset.name === 'pdf-stills'
+          expanded.preset.name === 'pdf-stills' ||
+          expanded.preset.name === 'audio-tools'
             ? { outputs: expanded.preset.outputs }
             : {}),
         },

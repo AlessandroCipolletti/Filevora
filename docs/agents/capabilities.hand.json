@@ -48,6 +48,7 @@
     "videoThumbnails": "tested",
     "pdfPageThumbnails": "tested",
     "pdfTools": "tested",
+    "audioTools": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -64,6 +65,7 @@
     "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest.",
     "Named presets expand to transform operations. The default web-optimized preset still publishes thumbnail, optimized, and hd. Custom presets are a presets object or FILEVORA_PRESETS JSON. See docs/presets.md.",
     "video.poster, video.thumbnails, and video.sprite publish WebP versions through the storage driver. video.sprite also writes a WebVTT file and a JSON timeline. Presets poster, thumbnails, and sprites cover the same operations.",
+    "Audio tools use ffmpeg. audio.transcode writes mp3, aac, ogg, or wav. audio.loudnorm uses loudnorm at EBU R128 (-23 LUFS). audio.waveform writes a PNG and JSON peaks. audio.describe writes probe metadata. Presets audio-mp3, audio-aac, audio-loudnorm, audio-waveform, and audio-describe.",
     "Private assets are served with HMAC delivery URLs or S3 presigned URLs. Public assets use /public. FILEVORA_SIGNING_SECRET is a comma-separated key list. A missing asset card is private. See docs/access-control.md.",
     "The package is ESM. Node 22.13 and newer can require() the same entry points. filevora worker reads REDIS_URL or FILEVORA_CONFIG_PATH and does not start redis-memory-server."
   ]

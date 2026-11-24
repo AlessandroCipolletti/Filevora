@@ -130,7 +130,7 @@ jobs:
       - name: Install FFmpeg and Poppler
         run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils
       - run: pnpm build
-      - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/external-services.test.ts test/s3-matrix.test.ts test/video-thumbnails.test.ts test/pdf-pages.test.ts test/pdf-tools.test.ts
+      - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/external-services.test.ts test/s3-matrix.test.ts test/video-thumbnails.test.ts test/pdf-pages.test.ts test/pdf-tools.test.ts test/audio-tools.test.ts
 
   test-postgres:
     name: test-postgres
