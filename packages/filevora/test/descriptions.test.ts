@@ -273,6 +273,26 @@ test('describe overrides the default and stores tags', async () => {
   }
 });
 
+test('a text file is described from its original bytes', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'filevora-describe-csv-'));
+  const calls: string[] = [];
+  const files = stored(dir, mockFetch(calls), false);
+  try {
+    const csv = new TextEncoder().encode('name,city\nAda,Rome\n');
+    const file = await upload(files, csv, 'people.csv', 'text/csv', true);
+    assert.equal(file.description?.status, 'done');
+    assert.equal(calls.includes('text/csv'), true);
+    assert.ok(file.description?.tags.some((tag) => tag.category === 'subject'));
+    assert.equal(
+      file.description?.tags.some((tag) => tag.category === 'kind'),
+      false,
+    );
+  } finally {
+    await files.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a Gemini failure does not fail the asset', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'filevora-describe-fail-'));
   const fetchImpl: typeof fetch = async () =>
