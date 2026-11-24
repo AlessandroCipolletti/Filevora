@@ -117,6 +117,51 @@ export async function runCli(
       );
       return 0;
     }
+    if (command === 'init' && !readOption(args, '--profile')) {
+      const { applyInit, planInit } = await import('./init-app.js');
+      const dir = path.resolve(readOption(args, '--dir') ?? '.');
+      const requested = readOption(args, '--framework');
+      const framework =
+        requested === 'express' ||
+        requested === 'fastify' ||
+        requested === 'hono' ||
+        requested === 'next' ||
+        requested === 'node'
+          ? requested
+          : undefined;
+      const plan = planInit({
+        dir,
+        mode: readOption(args, '--mode') === 'stored' ? 'stored' : 'lite',
+        ...(framework ? { framework } : {}),
+        ...(readOption(args, '--database-url')
+          ? { databaseUrl: readOption(args, '--database-url') }
+          : {}),
+      });
+      if (args.includes('--dry-run')) {
+        out.stdout(
+          `${JSON.stringify({ ok: true, dryRun: true, ...plan }, null, json ? 2 : 0)}\n`,
+        );
+        return 0;
+      }
+      try {
+        const applied = applyInit(plan, args.includes('--force'));
+        out.stdout(
+          `${JSON.stringify({ ok: true, dryRun: false, ...plan, written: applied.written }, null, json ? 2 : 0)}\n`,
+        );
+        return 0;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'INIT_EXISTS') {
+          out.stderr(`${error.message}\n`);
+          if (json) {
+            out.stdout(
+              `${JSON.stringify({ ok: false, code: 'INIT_EXISTS', message: error.message })}\n`,
+            );
+          }
+          return 1;
+        }
+        throw error;
+      }
+    }
     if (command === 'init') {
       const profile = readOption(args, '--profile');
       const directory = readOption(args, '--dir') ?? '.';

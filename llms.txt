@@ -9,6 +9,8 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Verification](docs/agents/verification.md)
 - [Capabilities](docs/agents/capabilities.json) — versioned manifest of exports, HTTP routes, env vars, error codes, and the progress event. `filevora manifest --json` and `import { readManifest } from 'filevora/manifest'`. `filevora mcp` exposes it over stdio with no extra dependency.
 - [Manifest](docs/agents/manifest.md)
+- [Init](docs/agents/init.md) — `filevora init --json --dry-run` detects Express, Fastify, Hono, Next.js, or Node and writes handler, client, and env files. It does not overwrite without `--force`.
+- [Doctor](docs/agents/doctor.md) — `filevora doctor --json` checks config, mode, storage, Redis, the database, ffmpeg, the scanner, and webhooks. `health: true` on the HTTP handler serves the same report.
 - [Configuration](docs/configuration.md) — no `FILEVORA_DATABASE_URL` is lite mode; a URL selects stored mode. Schemes: `postgres://`, `postgresql://`, `mysql://`, `mariadb://`, `sqlite://` or a file path. Migrate creates only `filevora_assets` and `filevora_asset_versions`. `POST /assets/from-url` imports an http(s) URL. The SDK sniffs the bytes and blocks private and metadata addresses.
 - Upload safety: optional `FILEVORA_MALWARE_SCAN=clamav` after the original is stored and before encoding. `FILEVORA_EXIF_STRIP=gps` (default) drops location metadata from image versions. `FILEVORA_TYPE_MAX_BYTES` limits size by sniffed type.
 - [Testing](docs/agents/testing.md) — `filevora/testing` runs filesystem lite mode with synchronous processing. No Redis or S3.

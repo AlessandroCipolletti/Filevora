@@ -29,6 +29,11 @@ export interface FilesHandlerOptions {
   }) => Promise<UploadPolicy>;
   /** Path prefix stripped before routing, for example `/api/files`. */
   basePath?: string;
+  /**
+   * When set, GET of this path returns doctor JSON without authentication.
+   * `true` uses `/health`.
+   */
+  health?: boolean | { path?: string };
 }
 
 /**
@@ -62,6 +67,20 @@ export function createFilesHandler(
     try {
       const url = new URL(request.url);
       const pathname = stripBase(url.pathname, basePath);
+      const healthPath =
+        options.health === true
+          ? '/health'
+          : options.health
+            ? (options.health.path ?? '/health')
+            : '';
+      if (healthPath && request.method === 'GET' && pathname === healthPath) {
+        const { runDoctor } = await import('../diagnostics/doctor.js');
+        const { workerConfigOptions } = await import('../worker/supervisor.js');
+        const report = await runDoctor(
+          workerConfigOptions(options.files.config),
+        );
+        return json(report, report.ok ? 200 : 503, requestId);
+      }
       const content = HTTP_ROUTES.find((route) => route.name === 'content');
       if (
         content &&

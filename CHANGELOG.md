@@ -116,6 +116,11 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Init and doctor
+
+- `filevora init` is flag-driven. It detects the framework and package manager, writes handler, client, and env files, and prints the migrate step. `--dry-run` writes nothing. Existing files need `--force`.
+- `filevora doctor` checks mode, a storage round trip, Redis and BullMQ, stored-mode database migration, ffmpeg and ffprobe, the malware scanner, and webhook settings. Failed checks include a stable code and a fix. `health: true` exposes the report on `GET /health`.
+
 ### Capability manifest
 
 - `docs/agents/capabilities.json` now includes a generated catalog of exports, HTTP routes, config and env settings, error codes, and the progress event. `pnpm manifest:check` fails when the committed file is stale.

@@ -7,6 +7,7 @@ export const CLI_COMMANDS = [
   'mcp',
   'migrate',
   'cleanup [--dry-run] [--json]',
+  'init [--framework express|fastify|hono|next|node] [--mode lite|stored] [--dry-run] [--json]',
   'init --profile local-s3',
   'worker',
   '--help',
