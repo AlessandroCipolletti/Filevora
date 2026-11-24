@@ -111,6 +111,16 @@ export interface ResolvedConfig {
   webhooks: {
     allowLoopback: boolean;
   };
+  remote: {
+    maxBytes: number;
+    connectTimeoutMs: number;
+    timeoutMs: number;
+    maxRedirects: number;
+    allowedPorts: number[];
+    allowPrivate: boolean;
+    allowHosts: string[];
+    denyHosts: string[];
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -136,6 +146,13 @@ function emptyToUndefined(value: string | undefined): string | undefined {
 }
 
 /** Map `FILES_*` environment variables into the typed options object. */
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
@@ -174,6 +191,47 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
       : {}),
     ...(e.FILES_SIGNING_SECRET
       ? { signingSecret: e.FILES_SIGNING_SECRET }
+      : {}),
+    ...(e.FILEVORA_REMOTE_MAX_BYTES !== undefined ||
+    e.FILEVORA_REMOTE_CONNECT_TIMEOUT_MS !== undefined ||
+    e.FILEVORA_REMOTE_TIMEOUT_MS !== undefined ||
+    e.FILEVORA_REMOTE_MAX_REDIRECTS !== undefined ||
+    e.FILEVORA_REMOTE_ALLOWED_PORTS !== undefined ||
+    e.FILEVORA_REMOTE_ALLOW_PRIVATE !== undefined ||
+    e.FILEVORA_REMOTE_HOST_ALLOW !== undefined ||
+    e.FILEVORA_REMOTE_HOST_DENY !== undefined
+      ? {
+          remote: {
+            ...(e.FILEVORA_REMOTE_MAX_BYTES !== undefined
+              ? { maxBytes: e.FILEVORA_REMOTE_MAX_BYTES }
+              : {}),
+            ...(e.FILEVORA_REMOTE_CONNECT_TIMEOUT_MS !== undefined
+              ? { connectTimeoutMs: e.FILEVORA_REMOTE_CONNECT_TIMEOUT_MS }
+              : {}),
+            ...(e.FILEVORA_REMOTE_TIMEOUT_MS !== undefined
+              ? { timeoutMs: e.FILEVORA_REMOTE_TIMEOUT_MS }
+              : {}),
+            ...(e.FILEVORA_REMOTE_MAX_REDIRECTS !== undefined
+              ? { maxRedirects: e.FILEVORA_REMOTE_MAX_REDIRECTS }
+              : {}),
+            ...(e.FILEVORA_REMOTE_ALLOWED_PORTS
+              ? {
+                  allowedPorts: e.FILEVORA_REMOTE_ALLOWED_PORTS.split(',')
+                    .map((item) => Number(item.trim()))
+                    .filter((item) => Number.isInteger(item)),
+                }
+              : {}),
+            ...(e.FILEVORA_REMOTE_ALLOW_PRIVATE !== undefined
+              ? { allowPrivate: e.FILEVORA_REMOTE_ALLOW_PRIVATE }
+              : {}),
+            ...(e.FILEVORA_REMOTE_HOST_ALLOW
+              ? { allowHosts: splitList(e.FILEVORA_REMOTE_HOST_ALLOW) }
+              : {}),
+            ...(e.FILEVORA_REMOTE_HOST_DENY
+              ? { denyHosts: splitList(e.FILEVORA_REMOTE_HOST_DENY) }
+              : {}),
+          },
+        }
       : {}),
     storage: {
       ...(e.FILES_STORAGE_DRIVER ? { driver: e.FILES_STORAGE_DRIVER } : {}),
@@ -682,6 +740,21 @@ export function resolveConfig(
     },
     webhooks: {
       allowLoopback: input.webhooks?.allowLoopback ?? sdkEnv !== 'production',
+    },
+    remote: {
+      maxBytes: Math.min(
+        input.remote?.maxBytes ??
+          input.defaults?.maxFileBytes ??
+          100 * 1024 * 1024,
+        input.defaults?.maxFileBytes ?? 100 * 1024 * 1024,
+      ),
+      connectTimeoutMs: input.remote?.connectTimeoutMs ?? 10_000,
+      timeoutMs: input.remote?.timeoutMs ?? 120_000,
+      maxRedirects: input.remote?.maxRedirects ?? 3,
+      allowedPorts: input.remote?.allowedPorts ?? [80, 443],
+      allowPrivate: input.remote?.allowPrivate ?? false,
+      allowHosts: input.remote?.allowHosts ?? [],
+      denyHosts: input.remote?.denyHosts ?? [],
     },
   };
 

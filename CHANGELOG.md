@@ -116,6 +116,12 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Import from a URL
+
+- `POST /assets/from-url` and `createUploadClient().fromUrl(url)` return `assetId` before the download finishes.
+- The SDK streams the response, sniffs the bytes, stores `{assetId}_original.{ext}`, and queues the same encoding jobs in lite and stored mode.
+- Progress uses `state: "downloading"` and then the processing states. Rejected URLs use `REMOTE_URL_SCHEME`, `REMOTE_URL_CREDENTIALS`, `REMOTE_URL_PORT`, `REMOTE_URL_HOST`, `REMOTE_URL_BLOCKED`, `REMOTE_URL_REDIRECT`, and `REMOTE_URL_TIMEOUT`.
+
 ### BullMQ processing queue
 
 - Encoding jobs go to Redis through BullMQ. `REDIS_URL` is the queue. Asset ids and version metadata stay in SQLite (`FILES_SQLITE_PATH`).

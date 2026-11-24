@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { ResolvedConfig } from '../config/load.js';
-import { fail } from '../errors/error.js';
+import { fail, isFileSdkError } from '../errors/error.js';
 import {
   addSeconds,
   assetObjectKey,
@@ -36,6 +36,8 @@ import {
   readProcessingProgress,
   removeProcessingJob,
 } from '../queue/processing-queue.js';
+import { downloadRemote } from '../remote/download.js';
+import { checkRemoteUrl } from '../remote/policy.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
 import { assertUnexpired, readToken, signToken } from '../security/token.js';
 import {
@@ -150,6 +152,11 @@ export class FileService {
   private storageReady = false;
   private secret: string | undefined;
   private worker: ChildProcess | undefined;
+  private remoteProgress = new Map<
+    string,
+    { received: number; total: number | null }
+  >();
+  private remoteStops = new Set<AbortController>();
 
   constructor(readonly config: ResolvedConfig) {}
 
@@ -227,6 +234,7 @@ export class FileService {
   }
 
   async close(): Promise<void> {
+    for (const stop of this.remoteStops) stop.abort();
     if (this.worker && !this.worker.killed) this.worker.kill('SIGTERM');
     await this.sql?.close();
     this.sql = undefined;
@@ -533,6 +541,30 @@ export class FileService {
 
   async processingSnapshot(fileId: string, ctx: RequestContext) {
     const record = await this.get(fileId, ctx);
+    if (
+      record.metadata.filevoraSource === 'remote-url' &&
+      record.uploadState !== 'verified'
+    ) {
+      const progress = this.remoteProgress.get(fileId);
+      const failed = record.processingState === 'failed';
+      const total = progress?.total ?? null;
+      const received = progress?.received ?? 0;
+      return {
+        fileId,
+        state: failed ? 'failed' : 'downloading',
+        phase: 'download' as const,
+        percentage:
+          total && total > 0
+            ? Math.min(100, Math.round((received / total) * 100))
+            : null,
+        etaMs: null,
+        quiet: false,
+        terminal: failed,
+        ...(record.metadata.filevoraImportError
+          ? { errorCode: record.metadata.filevoraImportError }
+          : {}),
+      };
+    }
     const progress = await readProcessingProgress(fileId);
     const quiet = !streamsDetailedProgress(record.detectedMime);
     const fileDone =
@@ -549,6 +581,10 @@ export class FileService {
       etaMs: quiet ? null : progress.etaMs,
       quiet,
       terminal: fileDone,
+      phase: 'processing' as const,
+      ...(record.metadata.filevoraImportError
+        ? { errorCode: record.metadata.filevoraImportError }
+        : {}),
     };
   }
 
@@ -737,6 +773,115 @@ export class FileService {
         message: 'The upload session was not stored.',
       });
     return await this.mapSession(created);
+  }
+
+  /**
+   * Create an asset from a remote URL and return its id immediately.
+   * The download and the normal encoding queue continue after this returns.
+   */
+  async createFromUrl(
+    input: { url: string },
+    ctx: RequestContext,
+  ): Promise<FileRecord> {
+    await checkRemoteUrl(input.url, this.config.remote, 'request');
+    const sql = await this.db();
+    if (this.config.storage.driver === 's3') await this.s3();
+    const now = nowIso();
+    const fileId = createId('file');
+    const filename = sanitizeFilename(remoteFilename(input.url));
+    await sql.run(
+      `INSERT INTO files (
+        id, tenant_id, owner_id, original_name, declared_mime, detected_mime, bytes, checksum,
+        original_object_key, visibility, upload_state, processing_state, preset, metadata_json,
+        pinned, created_at, updated_at, deleted_at
+      ) VALUES (?, ?, ?, ?, 'application/octet-stream', NULL, 0, NULL, NULL, 'private', 'uploading', 'none', ?, ?, 0, ?, ?, NULL)`,
+      [
+        fileId,
+        ctx.principal.tenantId,
+        ctx.principal.id,
+        filename,
+        this.config.defaults.preset,
+        JSON.stringify({ filevoraSource: 'remote-url' }),
+        now,
+        now,
+      ],
+    );
+    const stop = new AbortController();
+    const timer = setTimeout(() => stop.abort(), this.config.remote.timeoutMs);
+    this.remoteStops.add(stop);
+    this.remoteProgress.set(fileId, { received: 0, total: null });
+    void this.finishRemote(fileId, input.url, ctx, stop.signal).finally(() => {
+      clearTimeout(timer);
+      this.remoteStops.delete(stop);
+      this.remoteProgress.delete(fileId);
+    });
+    return this.get(fileId, ctx);
+  }
+
+  private async finishRemote(
+    fileId: string,
+    url: string,
+    ctx: RequestContext,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let key: string | undefined;
+    try {
+      const remote = await downloadRemote({
+        url,
+        policy: this.config.remote,
+        signal,
+        onProgress: (received, total) => {
+          this.remoteProgress.set(fileId, { received, total });
+        },
+      });
+      if (!mimeAllowed(remote.mime, this.config.defaults.allowedMimeTypes)) {
+        throw fail('UNSUPPORTED_MIME', {
+          message: 'The remote file type is not allowed.',
+          context: { detected: remote.mime },
+        });
+      }
+      key = assetObjectKey(
+        ctx.principal.tenantId,
+        fileId,
+        'original',
+        extensionForMime(remote.mime),
+      );
+      const storage =
+        this.storage ??
+        (this.config.storage.driver === 's3' ? await this.s3() : undefined);
+      if (!storage) throw fail('STORAGE_UNAVAILABLE');
+      const stored = await storage.putObject({
+        key,
+        body: remote.bytes,
+        contentType: remote.mime,
+      });
+      const now = nowIso();
+      await (
+        await this.db()
+      ).run(
+        `UPDATE files SET detected_mime = ?, bytes = ?, checksum = ?, original_object_key = ?,
+         upload_state = 'verified', updated_at = ? WHERE id = ?`,
+        [remote.mime, stored.bytes, stored.checksum, key, now, fileId],
+      );
+      await this.enqueuePreset(fileId, remote.mime, ctx);
+    } catch (error) {
+      if (key) await this.storage?.deleteObject(key).catch(() => undefined);
+      const code = isFileSdkError(error) ? error.code : 'REMOTE_URL_BLOCKED';
+      const now = nowIso();
+      await (
+        await this.db()
+      ).run(
+        `UPDATE files SET upload_state = 'expired', processing_state = 'failed', metadata_json = ?, updated_at = ? WHERE id = ?`,
+        [
+          JSON.stringify({
+            filevoraSource: 'remote-url',
+            filevoraImportError: code,
+          }),
+          now,
+          fileId,
+        ],
+      );
+    }
   }
 
   private async s3(): Promise<NonNullable<FileService['storage']>> {
@@ -1540,6 +1685,15 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } {
   if (splitAt <= 0)
     throw fail('INVALID_CONFIG', { message: 'The list cursor is invalid.' });
   return { createdAt: raw.slice(0, splitAt), id: raw.slice(splitAt + 1) };
+}
+
+function remoteFilename(raw: string): string {
+  try {
+    const name = new URL(raw).pathname.split('/').pop() ?? '';
+    return name.length > 0 ? name : 'remote';
+  } catch {
+    return 'remote';
+  }
 }
 
 function isMostlyText(bytes: Uint8Array): boolean {

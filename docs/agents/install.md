@@ -23,7 +23,7 @@ No Filevora account, API key, or signup is involved. `examples/fixture-app` is t
 
 `createFilesHandler` accepts chunked uploads. `examples/node-minimal` is a Node HTTP host. The handler shape is a Web `Request` to a Web `Response`.
 
-Store `assetId` from `POST /sessions`. Object keys are `{tenantHash}/{assetId}_{version}.{ext}`. Redis (`REDIS_URL`) is only the BullMQ processing queue. After the upload is verified, `GET /files/:assetId/versions` returns `versions._original` plus any encoded version that is ready (`thumbnail`, `optimized`, `hd`). A failed or unfinished encode does not remove `_original`. Run one or more workers with `REDIS_URL=redis://127.0.0.1:6379 npx filevora worker`.
+Store `assetId` from `POST /sessions` or from `POST /assets/from-url`. A URL import returns the id before the download finishes. `GET /files/:assetId/progress` then reports `downloading` and, after the bytes are stored, the normal processing states. The SDK sniffs the file and does not trust the URL extension or `Content-Type`. Private and metadata targets are rejected unless `FILEVORA_REMOTE_ALLOW_PRIVATE=true`, and that flag does not apply to redirects. Object keys are `{tenantHash}/{assetId}_{version}.{ext}`. Redis (`REDIS_URL`) is only the BullMQ processing queue. After the upload is verified, `GET /files/:assetId/versions` returns `versions._original` plus any encoded version that is ready (`thumbnail`, `optimized`, `hd`). A failed or unfinished encode does not remove `_original`. Run one or more workers with `REDIS_URL=redis://127.0.0.1:6379 npx filevora worker`.
 
 ## Lite mode
 

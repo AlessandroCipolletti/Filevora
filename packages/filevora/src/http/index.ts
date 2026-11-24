@@ -116,6 +116,7 @@ interface Route {
     | 'abort'
     | 'list'
     | 'assets'
+    | 'from-url'
     | 'batch'
     | 'get'
     | 'delete'
@@ -164,6 +165,8 @@ function matchRoute(method: string, pathname: string): Route | null {
   }
   if (method === 'GET' && pathname === '/assets')
     return { operation: 'file.list', name: 'assets' };
+  if (method === 'POST' && pathname === '/assets/from-url')
+    return { operation: 'file.import', name: 'from-url' };
   if (method === 'POST' && pathname === '/files/batch')
     return { operation: 'file.read', name: 'batch' };
   if (method === 'GET' && pathname === '/files')
@@ -218,6 +221,22 @@ async function dispatch(
   requestId: string,
 ): Promise<Response> {
   const ctx = { principal };
+  if (route.name === 'from-url') {
+    const body = await readJson(request);
+    const record = asRecord(body);
+    const url = stringField(record, 'url');
+    if (!url) {
+      throw fail('INVALID_CONFIG', {
+        message: 'url is required.',
+        requestId,
+      });
+    }
+    return json(
+      await options.files.createFromUrl({ url }, ctx),
+      202,
+      requestId,
+    );
+  }
   if (route.name === 'create-session') {
     const body = await readJson(request);
     const record = asRecord(body);

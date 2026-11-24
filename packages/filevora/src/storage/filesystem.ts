@@ -90,9 +90,12 @@ export function createFilesystemStorage(root: string): StorageDriver {
           }
         }
         await handle.sync();
-      } finally {
+      } catch (error) {
         await handle.close();
+        await rm(temp, { force: true });
+        throw error;
       }
+      await handle.close();
       await rename(temp, target);
       const checksum = hash.digest('hex');
       return { key: input.key, bytes, etag: checksum, checksum };

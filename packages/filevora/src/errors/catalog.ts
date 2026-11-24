@@ -602,6 +602,111 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
+  REMOTE_URL_SCHEME: {
+    httpStatus: 400,
+    category: 'upload',
+    retryable: false,
+    message: 'The remote URL must be http or https.',
+    resolution: resolution(
+      'docs/errors/REMOTE_URL_SCHEME.md',
+      'Only http and https are accepted. file, ftp, and other schemes are rejected.',
+      [action('use_http', 'Pass an http or https URL with no other scheme.')],
+    ),
+  },
+  REMOTE_URL_CREDENTIALS: {
+    httpStatus: 400,
+    category: 'upload',
+    retryable: false,
+    message: 'The remote URL must not include credentials.',
+    resolution: resolution(
+      'docs/errors/REMOTE_URL_CREDENTIALS.md',
+      'A username or password in the URL is rejected so it is not sent or logged.',
+      [
+        action(
+          'strip_userinfo',
+          'Remove the username and password from the URL.',
+        ),
+      ],
+    ),
+  },
+  REMOTE_URL_PORT: {
+    httpStatus: 400,
+    category: 'upload',
+    retryable: false,
+    message: 'The remote URL port is not allowed.',
+    resolution: resolution(
+      'docs/errors/REMOTE_URL_PORT.md',
+      'The default allowed ports are 80 and 443. Add the port to FILEVORA_REMOTE_ALLOWED_PORTS when a local server uses another port.',
+      [
+        action(
+          'allow_port',
+          'Set FILEVORA_REMOTE_ALLOWED_PORTS to include this port.',
+          'FILEVORA_REMOTE_ALLOWED_PORTS=80,443',
+        ),
+      ],
+    ),
+  },
+  REMOTE_URL_HOST: {
+    httpStatus: 400,
+    category: 'upload',
+    retryable: false,
+    message: 'The remote host is not allowed.',
+    resolution: resolution(
+      'docs/errors/REMOTE_URL_HOST.md',
+      'FILEVORA_REMOTE_HOST_DENY always rejects a host. FILEVORA_REMOTE_HOST_ALLOW, when set, rejects every host that is not listed.',
+      [action('adjust_hosts', 'Change the host allowlist or denylist.')],
+    ),
+  },
+  REMOTE_URL_BLOCKED: {
+    httpStatus: 400,
+    category: 'upload',
+    retryable: false,
+    message: 'The remote address is blocked.',
+    resolution: resolution(
+      'docs/errors/REMOTE_URL_BLOCKED.md',
+      'Loopback, private, link-local, multicast, and cloud metadata addresses are blocked. DNS answers are checked, and the connection uses a checked address. FILEVORA_REMOTE_ALLOW_PRIVATE=true allows private addresses on the URL you pass, not on a redirect.',
+      [
+        action(
+          'public_host',
+          'Use a public http or https URL. For a local server, set FILEVORA_REMOTE_ALLOW_PRIVATE=true.',
+          'FILEVORA_REMOTE_ALLOW_PRIVATE=true',
+        ),
+      ],
+    ),
+  },
+  REMOTE_URL_REDIRECT: {
+    httpStatus: 400,
+    category: 'upload',
+    retryable: false,
+    message: 'The remote redirect was rejected.',
+    resolution: resolution(
+      'docs/errors/REMOTE_URL_REDIRECT.md',
+      'Each redirect is checked with the same rules. A redirect to a private address is rejected even when private addresses are allowed on the original URL. The hop limit is FILEVORA_REMOTE_MAX_REDIRECTS.',
+      [
+        action(
+          'direct_url',
+          'Pass the final public URL, or raise FILEVORA_REMOTE_MAX_REDIRECTS.',
+        ),
+      ],
+    ),
+  },
+  REMOTE_URL_TIMEOUT: {
+    httpStatus: 504,
+    category: 'upload',
+    retryable: true,
+    message: 'The remote download timed out.',
+    resolution: resolution(
+      'docs/errors/REMOTE_URL_TIMEOUT.md',
+      'The connect timeout is FILEVORA_REMOTE_CONNECT_TIMEOUT_MS. The whole download, including redirects, stops at FILEVORA_REMOTE_TIMEOUT_MS.',
+      [
+        action(
+          'raise_timeout',
+          'Raise the timeout or retry when the host is slow.',
+          'FILEVORA_REMOTE_TIMEOUT_MS=120000',
+        ),
+      ],
+    ),
+  },
   WEBHOOK_REJECTED: {
     httpStatus: 400,
     category: 'config',

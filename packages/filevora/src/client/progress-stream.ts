@@ -1,10 +1,12 @@
 export interface ProcessingUpdate {
   fileId: string;
   state: string;
+  phase?: 'download' | 'processing';
   percentage: number | null;
   etaMs: number | null;
   quiet: boolean;
   terminal: boolean;
+  errorCode?: string;
 }
 
 /** Parse an SSE body. Resolves when a terminal update arrives or the body ends. */

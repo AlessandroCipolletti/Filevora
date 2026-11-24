@@ -55,6 +55,7 @@ export type FileOperation =
   | 'file.touch'
   | 'delivery.sign'
   | 'process.request'
+  | 'file.import'
   | 'job.read'
   | 'job.cancel'
   | 'webhook.register'

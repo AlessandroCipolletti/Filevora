@@ -388,6 +388,26 @@ export function createUploadClient(options: UploadClientOptions) {
     };
   }
 
+  async function fromUrl(
+    url: string,
+  ): Promise<{ assetId: string; id: string }> {
+    const created = (await request(doFetch, `${endpoint}/assets/from-url`, {
+      method: 'POST',
+      headers: {
+        ...(await headers(options.headers)),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+    })) as { id?: string; asset?: { assetId?: string } };
+    const assetId = created.asset?.assetId ?? created.id;
+    if (!assetId) {
+      throw fail('INVALID_CONFIG', {
+        message: 'The remote import did not return an asset id.',
+      });
+    }
+    return { assetId, id: created.id ?? assetId };
+  }
+
   async function pending(): Promise<ResumeRecord[]> {
     const current = options.resumeStore ?? store;
     if (!current?.list) return [];
@@ -398,6 +418,7 @@ export function createUploadClient(options: UploadClientOptions) {
   return {
     endpoint,
     upload,
+    fromUrl,
     waitForProcessing,
     watchProcessing,
     history,

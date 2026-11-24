@@ -181,6 +181,18 @@ export const filesOptionsSchema = z
         allowLoopback: z.boolean().optional(),
       })
       .optional(),
+    remote: z
+      .object({
+        maxBytes: z.number().int().positive().optional(),
+        connectTimeoutMs: z.number().int().min(100).max(120_000).optional(),
+        timeoutMs: z.number().int().min(100).max(3_600_000).optional(),
+        maxRedirects: z.number().int().min(0).max(10).optional(),
+        allowedPorts: z.array(z.number().int().min(1).max(65535)).optional(),
+        allowPrivate: z.boolean().optional(),
+        allowHosts: z.array(z.string().min(1)).optional(),
+        denyHosts: z.array(z.string().min(1)).optional(),
+      })
+      .optional(),
   })
   .strict();
 
@@ -264,6 +276,14 @@ const envShape = {
   FILES_CLOUD_ENDPOINT: z.string().optional(),
   FILES_CLOUD_PROJECT_ID: z.string().optional(),
   FILES_WEBHOOKS_ALLOW_LOOPBACK: boolString.optional(),
+  FILEVORA_REMOTE_MAX_BYTES: byteString.optional(),
+  FILEVORA_REMOTE_CONNECT_TIMEOUT_MS: byteString.optional(),
+  FILEVORA_REMOTE_TIMEOUT_MS: byteString.optional(),
+  FILEVORA_REMOTE_MAX_REDIRECTS: byteString.optional(),
+  FILEVORA_REMOTE_ALLOWED_PORTS: z.string().optional(),
+  FILEVORA_REMOTE_ALLOW_PRIVATE: boolString.optional(),
+  FILEVORA_REMOTE_HOST_ALLOW: z.string().optional(),
+  FILEVORA_REMOTE_HOST_DENY: z.string().optional(),
   REDIS_URL: z.string().min(1).optional(),
   FILES_REDIS_URL: z.string().min(1).optional(),
   FILES_UPLOAD_CHUNK_BYTES: byteString.optional(),
