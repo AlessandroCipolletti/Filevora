@@ -49,6 +49,7 @@ test('GitHub Actions runs each check as its own job', () => {
     'test-s3',
     'test-postgres',
     'test-mysql',
+    'test-pack',
   ]) {
     assert.match(workflow, new RegExp(`^  ${name}:`, 'm'));
   }

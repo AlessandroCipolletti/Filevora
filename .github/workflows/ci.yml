@@ -198,3 +198,48 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm build
       - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec --test-timeout=120000 --test-force-exit test/stored-sql.test.ts
+
+  test-pack:
+    name: test-pack
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z
+        env:
+          MINIO_ROOT_USER: local
+          MINIO_ROOT_PASSWORD: localpassword
+        ports:
+          - 9000:9000
+        command: server /data
+    env:
+      FILEVORA_S3_ENDPOINT: http://127.0.0.1:9000
+      FILEVORA_S3_BUCKET: filevora-pack
+      FILEVORA_S3_ACCESS_KEY_ID: local
+      FILEVORA_S3_SECRET_ACCESS_KEY: localpassword
+      FILEVORA_S3_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Wait for object storage
+        run: |
+          node --input-type=module -e "
+          const deadline = Date.now() + 60000;
+          while (Date.now() < deadline) {
+            try {
+              const response = await fetch('http://127.0.0.1:9000/minio/health/live');
+              if (response.ok) process.exit(0);
+            } catch {}
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          process.exit(1);
+          "
+      - run: pnpm build
+      - name: Install the packed tarball and smoke it
+        run: |
+          pnpm --filter filevora pack --pack-destination "$RUNNER_TEMP/pack"
+          mkdir -p "$RUNNER_TEMP/scratch"
+          cd "$RUNNER_TEMP/scratch"
+          npm init -y
+          npm install "$RUNNER_TEMP/pack"/filevora-*.tgz
+          cp "$GITHUB_WORKSPACE/scripts/pack-smoke.mjs" .
+          node pack-smoke.mjs
