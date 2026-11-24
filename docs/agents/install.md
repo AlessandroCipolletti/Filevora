@@ -1,6 +1,6 @@
 # Install
 
-The package name is `filevora`. It is not published to npm yet. It is ESM, and Node 22.13+ can `require()` the same entry points. `bin/filevora.js` calls `runCli`. From a checkout:
+The package name is `filevora`. It is not published to npm yet. It is ESM, and Node 22.13+ can `require()` the same entry points. Node 22 may print its own ExperimentalWarning for that `require()` of an ES module. The SQLite ExperimentalWarning is filtered. `bin/filevora.js` calls `runCli`. From a checkout:
 
 ```bash
 pnpm install

@@ -57,7 +57,10 @@ test('the bin runs the CLI and CommonJS can load the entries', () => {
       ],
       { cwd: dir, encoding: 'utf8' },
     );
-    assert.equal(loaded.stderr.includes('ExperimentalWarning'), false);
+    assert.equal(
+      /SQLite is an experimental feature/.test(loaded.stderr),
+      false,
+    );
     assert.equal(loaded.status, 0, loaded.stderr || loaded.stdout);
   } finally {
     rmSync(dir, { recursive: true, force: true });
