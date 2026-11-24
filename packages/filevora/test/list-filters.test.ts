@@ -372,14 +372,14 @@ test('stored list SQL stays a LIKE query on every dialect', () => {
     },
   );
   const compiled = storedListSql(parsed, 'tenant-a');
-  assert.match(compiled.sql, /ESCAPE '\\'/);
+  assert.match(compiled.sql, /ESCAPE '!'/);
   assert.match(compiled.sql, /filevora_asset_tags/);
   assert.match(compiled.sql, /description_long/);
   assert.match(compiled.sql, /ORDER BY bytes ASC, id ASC/);
   assert.equal(compiled.sql.includes('to_tsvector'), false);
   assert.equal(compiled.sql.includes('embedding'), false);
-  assert.ok(compiled.params.includes('%100\\%%'));
-  assert.ok(compiled.params.includes('%\\_joy%'));
+  assert.ok(compiled.params.includes('%100!%%'));
+  assert.ok(compiled.params.includes('%!_joy%'));
   for (const dialect of ['sqlite', 'postgres', 'mysql'] as const) {
     const statements = hostStatements(dialect).join('\n');
     assert.match(statements, /filevora_assets_tenant_updated/);

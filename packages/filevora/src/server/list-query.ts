@@ -388,7 +388,7 @@ export function storedListSql(
   for (const word of query.words) {
     const pattern = likeContains(word);
     where.push(
-      `(LOWER(COALESCE(description_short, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(description_long, '')) LIKE ? ESCAPE '\\')`,
+      `(LOWER(COALESCE(description_short, '')) LIKE ? ESCAPE '!' OR LOWER(COALESCE(description_long, '')) LIKE ? ESCAPE '!')`,
     );
     params.push(pattern, pattern);
   }
@@ -402,7 +402,7 @@ export function storedListSql(
     }
   }
   if (query.filename) {
-    where.push(`LOWER(original_name) LIKE ? ESCAPE '\\'`);
+    where.push(`LOWER(original_name) LIKE ? ESCAPE '!'`);
     params.push(likeContains(query.filename.toLowerCase()));
   }
   if (query.sizeMin !== undefined) {
@@ -741,7 +741,7 @@ function decodeCursor(cursor: string): { value: string; id: string } {
 }
 
 function likeContains(value: string): string {
-  return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+  return `%${value.replace(/!/g, '!!').replace(/%/g, '!%').replace(/_/g, '!_')}%`;
 }
 
 function pushRange(
