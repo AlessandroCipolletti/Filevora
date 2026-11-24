@@ -1,4 +1,7 @@
-import type { AssetTransformOperation } from '../transform/schema.js';
+import {
+  isFrameOperation,
+  type AssetTransformOperation,
+} from '../transform/schema.js';
 import {
   type CustomPreset,
   type CustomPresetMap,
@@ -151,6 +154,32 @@ export const BUILTIN_PRESETS: NamedPreset[] = [
       },
     ],
   },
+  {
+    name: 'thumbnails',
+    families: ['video'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'thumb',
+        operations: [{ op: 'video.thumbnails', count: 4, width: 160 }],
+      },
+    ],
+  },
+  {
+    name: 'sprites',
+    families: ['video'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'sprite',
+        operations: [
+          { op: 'video.sprite', columns: 4, rows: 2, cellWidth: 80 },
+        ],
+      },
+    ],
+  },
 ];
 
 const BUILTIN_NAMES = new Set(BUILTIN_PRESETS.map((preset) => preset.name));
@@ -188,8 +217,8 @@ export function presetNamesFor(
 }
 
 function customToNamed(name: string, preset: CustomPreset): NamedPreset {
-  const poster = preset.operations.some(
-    (operation) => operation.op === 'video.poster',
+  const poster = preset.operations.some((operation) =>
+    isFrameOperation(operation.op),
   );
   return {
     name,

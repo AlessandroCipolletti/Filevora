@@ -2,6 +2,11 @@
 
 ## 0.1.0
 
+### Video thumbnails
+
+- `video.poster` accepts `atMs` or `atPercent`. `video.thumbnails` writes numbered WebP frames. `video.sprite` writes a contact sheet plus a WebVTT file and a JSON timeline.
+- Presets `poster`, `thumbnails`, and `sprites` publish those versions in lite and stored mode. The same operations can be sent without a preset. They use the storage driver, so filesystem and S3 behave the same way.
+
 ### Example server
 
 - `examples/node-minimal` runs the preset in process when `REDIS_URL` is unset. A complete upload does not fail closed waiting for a queue.

@@ -4,6 +4,11 @@ import path from 'node:path';
 import { fail } from '../errors/error.js';
 import { assetObjectKey, createId, nowIso, sha256 } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
+import {
+  frameOffsetMs,
+  spriteTimeline,
+  thumbnailTimes,
+} from '../processors/frames.js';
 import { probeMedia, runFfmpeg } from '../processors/ffmpeg.js';
 import { recordProcessingProgress } from '../queue/processing-queue.js';
 import type { ExifMode } from '../safety/exif.js';
@@ -46,14 +51,17 @@ export async function publishNamedPreset(input: {
       const output = staged.preset.outputs[index];
       if (!output) continue;
       const family = staged.preset.families[0];
-      if (family === 'video' && hasPoster(output)) {
-        await publishPoster(staged, output);
-      } else if (family === 'video') {
-        await publishVideo(staged, output);
-      } else {
-        await publishImage(staged, output);
-      }
-      names.push(output.version);
+      const written =
+        family === 'video' && hasPoster(output)
+          ? await publishPoster(staged, output)
+          : family === 'video' && hasThumbnails(output)
+            ? await publishThumbnails(staged, output)
+            : family === 'video' && hasSprite(output)
+              ? await publishSprite(staged, output)
+              : family === 'video'
+                ? await publishVideo(staged, output)
+                : await publishImage(staged, output);
+      names.push(...written);
       await recordProcessingProgress(
         staged.file.id,
         (index + 1) / total,
@@ -81,8 +89,8 @@ async function publishImage(
     maxPixels: number;
   },
   output: PresetOutput,
-): Promise<void> {
-  if (await alreadyStored(input, output.version)) return;
+): Promise<string[]> {
+  if (await alreadyStored(input, output.version)) return [output.version];
   const source = input.source;
   const sharp = (await import('sharp')).default;
   let pipeline = sharp(source, { limitInputPixels: input.maxPixels }).rotate();
@@ -115,6 +123,7 @@ async function publishImage(
     width: info.width,
     height: info.height,
   });
+  return [output.version];
 }
 
 async function publishVideo(
@@ -132,8 +141,8 @@ async function publishVideo(
     signal?: AbortSignal;
   },
   output: PresetOutput,
-): Promise<void> {
-  if (await alreadyStored(input, output.version)) return;
+): Promise<string[]> {
+  if (await alreadyStored(input, output.version)) return [output.version];
   const resize = output.operations.find(
     (operation) => operation.op === 'video.resize',
   );
@@ -209,64 +218,255 @@ async function publishVideo(
       height: probed.height,
       durationMs: probed.durationMs,
     });
+    return [output.version];
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
 }
 
 async function publishPoster(
-  input: {
-    sql: Sql;
-    storage: StorageDriver;
-    source: string;
-    file: PresetFile;
-    preset: NamedPreset;
-    exif: ExifMode;
-    ffmpeg: string;
-    timeoutMs: number;
-    jobId: string;
-    signal?: AbortSignal;
-  },
+  input: FrameInput,
   output: PresetOutput,
-): Promise<void> {
-  if (await alreadyStored(input, output.version)) return;
+): Promise<string[]> {
+  if (await alreadyStored(input, output.version)) return [output.version];
   const poster = output.operations.find(
     (operation) => operation.op === 'video.poster',
   );
-  const atMs = poster && poster.op === 'video.poster' ? (poster.atMs ?? 0) : 0;
   const width =
     poster && poster.op === 'video.poster' ? (poster.width ?? 1280) : 1280;
-  const source = input.source;
-  const work = mkdtempSync(path.join(tmpdir(), 'filevora-poster-'));
-  try {
-    const sharp = (await import('sharp')).default;
-    const file = path.join(work, 'poster.png');
-    await runFfmpeg(
-      input.ffmpeg,
-      ['-y', '-ss', String(atMs / 1000), '-i', source, '-frames:v', '1', file],
-      { timeoutMs: input.timeoutMs, signal: input.signal },
-    );
-    let pipeline = sharp(file)
-      .rotate()
-      .resize({ width, withoutEnlargement: true });
-    if (input.exif === 'none') pipeline = pipeline.withMetadata();
-    const body = await pipeline.webp({ quality: 80 }).toBuffer();
-    const info = await sharp(body).metadata();
+  const probe = await probeMedia(input.ffprobe, input.source, input.timeoutMs);
+  const atMs = frameOffsetMs({
+    durationMs: probe.durationMs,
+    ...(poster && poster.op === 'video.poster' && poster.atMs !== undefined
+      ? { atMs: poster.atMs }
+      : {}),
+    ...(poster && poster.op === 'video.poster' && poster.atPercent !== undefined
+      ? { atPercent: poster.atPercent }
+      : {}),
+  });
+  const body = await stillWebp(input, atMs, width);
+  const info = await (await import('sharp')).default(body).metadata();
+  await insertVariant(input, {
+    version: output.version,
+    body,
+    mime: 'image/webp',
+    extension: 'webp',
+    width: info.width,
+    height: info.height,
+  });
+  return [output.version];
+}
+
+async function publishThumbnails(
+  input: FrameInput,
+  output: PresetOutput,
+): Promise<string[]> {
+  const spec = output.operations.find(
+    (operation) => operation.op === 'video.thumbnails',
+  );
+  const width =
+    spec && spec.op === 'video.thumbnails' ? (spec.width ?? 320) : 320;
+  const probe = await probeMedia(input.ffprobe, input.source, input.timeoutMs);
+  const times = thumbnailTimes({
+    durationMs: probe.durationMs,
+    ...(spec && spec.op === 'video.thumbnails' && spec.count !== undefined
+      ? { count: spec.count }
+      : {}),
+    ...(spec && spec.op === 'video.thumbnails' && spec.intervalMs !== undefined
+      ? { intervalMs: spec.intervalMs }
+      : {}),
+    ...(spec && spec.op === 'video.thumbnails' && spec.atMs
+      ? { atMs: spec.atMs }
+      : {}),
+    ...(spec && spec.op === 'video.thumbnails' && spec.atPercent
+      ? { atPercent: spec.atPercent }
+      : {}),
+  });
+  const names = times.map((_, index) => `${output.version}-${index + 1}`);
+  const first = names[0];
+  if (!first || (await alreadyStored(input, first))) return names;
+  for (let index = 0; index < times.length; index += 1) {
+    const atMs = times[index] ?? 0;
+    const version = names[index];
+    if (!version) continue;
+    const body = await stillWebp(input, atMs, width);
+    const info = await (await import('sharp')).default(body).metadata();
     await insertVariant(input, {
-      version: output.version,
+      version,
       body,
       mime: 'image/webp',
       extension: 'webp',
       width: info.width,
       height: info.height,
     });
+  }
+  return names;
+}
+
+async function publishSprite(
+  input: FrameInput,
+  output: PresetOutput,
+): Promise<string[]> {
+  const spec = output.operations.find(
+    (operation) => operation.op === 'video.sprite',
+  );
+  const columns = spec && spec.op === 'video.sprite' ? spec.columns : 1;
+  const rows = spec && spec.op === 'video.sprite' ? spec.rows : 1;
+  const cellWidth =
+    spec && spec.op === 'video.sprite' ? (spec.cellWidth ?? 160) : 160;
+  const names = [
+    output.version,
+    `${output.version}-vtt`,
+    `${output.version}-json`,
+  ];
+  if (await alreadyStored(input, output.version)) return names;
+  const probe = await probeMedia(input.ffprobe, input.source, input.timeoutMs);
+  const times = thumbnailTimes({
+    durationMs: probe.durationMs,
+    count: columns * rows,
+    ...(spec && spec.op === 'video.sprite' && spec.intervalMs !== undefined
+      ? { intervalMs: spec.intervalMs }
+      : {}),
+  });
+  const pngs: Buffer[] = [];
+  for (const atMs of times) pngs.push(await stillPng(input, atMs));
+  const sharp = (await import('sharp')).default;
+  const fitted: Buffer[] = [];
+  let cellHeight = cellWidth;
+  for (const png of pngs) {
+    const resized = await sharp(png)
+      .resize({
+        width: cellWidth,
+        ...(fitted.length > 0
+          ? { height: cellHeight, fit: 'fill' as const }
+          : {}),
+        withoutEnlargement: false,
+      })
+      .png()
+      .toBuffer();
+    if (fitted.length === 0) {
+      cellHeight = (await sharp(resized).metadata()).height ?? cellWidth;
+    }
+    fitted.push(resized);
+  }
+  const sheet = await sharp({
+    create: {
+      width: cellWidth * columns,
+      height: cellHeight * Math.max(1, Math.ceil(fitted.length / columns)),
+      channels: 3,
+      background: { r: 0, g: 0, b: 0 },
+    },
+  })
+    .composite(
+      fitted.map((inputFrame, index) => ({
+        input: inputFrame,
+        left: (index % columns) * cellWidth,
+        top: Math.floor(index / columns) * cellHeight,
+      })),
+    )
+    .webp({ quality: 80 })
+    .toBuffer();
+  const imageName = `${output.version}.webp`;
+  const map = spriteTimeline({
+    timesMs: times,
+    columns,
+    cellWidth,
+    cellHeight,
+    image: imageName,
+  });
+  const info = await sharp(sheet).metadata();
+  await insertVariant(input, {
+    version: output.version,
+    body: sheet,
+    mime: 'image/webp',
+    extension: 'webp',
+    width: info.width,
+    height: info.height,
+  });
+  await insertVariant(input, {
+    version: `${output.version}-vtt`,
+    body: Buffer.from(map.vtt),
+    mime: 'text/vtt',
+    extension: 'vtt',
+  });
+  await insertVariant(input, {
+    version: `${output.version}-json`,
+    body: Buffer.from(map.json),
+    mime: 'application/json',
+    extension: 'json',
+  });
+  return names;
+}
+
+interface FrameInput {
+  sql: Sql;
+  storage: StorageDriver;
+  source: string;
+  file: PresetFile;
+  preset: NamedPreset;
+  exif: ExifMode;
+  ffmpeg: string;
+  ffprobe: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+}
+
+async function stillPng(input: FrameInput, atMs: number): Promise<Buffer> {
+  const work = mkdtempSync(path.join(tmpdir(), 'filevora-still-'));
+  try {
+    const file = path.join(work, 'frame.png');
+    const args = (offsetMs: number) => [
+      '-y',
+      '-ss',
+      String(offsetMs / 1000),
+      '-i',
+      input.source,
+      '-frames:v',
+      '1',
+      file,
+    ];
+    const options = {
+      timeoutMs: input.timeoutMs,
+      ...(input.signal ? { signal: input.signal } : {}),
+    };
+    try {
+      await runFfmpeg(input.ffmpeg, args(atMs), options);
+    } catch (error) {
+      if (atMs === 0) throw error;
+      await runFfmpeg(input.ffmpeg, args(0), options);
+    }
+    return readFileSync(file);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
 }
 
+async function stillWebp(
+  input: FrameInput,
+  atMs: number,
+  width: number,
+): Promise<Buffer> {
+  const png = await stillPng(input, atMs);
+  const sharp = (await import('sharp')).default;
+  let pipeline = sharp(png)
+    .rotate()
+    .resize({ width, withoutEnlargement: true });
+  if (input.exif === 'none') pipeline = pipeline.withMetadata();
+  return pipeline.webp({ quality: 80 }).toBuffer();
+}
+
 function hasPoster(output: PresetOutput): boolean {
   return output.operations.some((operation) => operation.op === 'video.poster');
+}
+
+function hasThumbnails(output: PresetOutput): boolean {
+  return output.operations.some(
+    (operation) => operation.op === 'video.thumbnails',
+  );
+}
+
+function hasSprite(output: PresetOutput): boolean {
+  return output.operations.some((operation) => operation.op === 'video.sprite');
 }
 
 async function alreadyStored(

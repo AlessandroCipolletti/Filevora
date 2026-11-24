@@ -43,8 +43,10 @@ The config is one object. `operations` is a list of discriminated steps. Unknown
 Valid operations depend on the sniffed original, not the filename:
 
 - `image/*`: `image.resize`, `image.crop`
-- `video/*`: `video.resize`, `video.crop`, `video.trim`
+- `video/*`: `video.resize`, `video.crop`, `video.trim`, `video.poster`, `video.thumbnails`, `video.sprite`
 - `application/pdf`: `pdf.removePages`
+
+`video.poster`, `video.thumbnails`, and `video.sprite` publish versions on the same asset. They can be sent alone, or as the `poster`, `thumbnails`, and `sprites` presets. Mixing one of them with `video.resize`, `video.crop`, or `video.trim` is `TRANSFORM_REJECTED`. `video.poster` takes `atMs` or `atPercent`. `video.thumbnails` takes `count`, `intervalMs`, `atMs`, or `atPercent`. `video.sprite` takes `columns`, `rows`, and optional `cellWidth` and `intervalMs`, and also writes `{version}-vtt` (`text/vtt`) and `{version}-json`.
 
 Lite mode looks for `{tenantHash}/{assetId}_original.*` in object storage. A missing object is `ASSET_NOT_FOUND`. Stored mode reads the metadata database.
 

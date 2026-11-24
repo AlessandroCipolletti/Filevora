@@ -32,7 +32,29 @@ const videoPoster = z
   .object({
     op: z.literal('video.poster'),
     atMs: z.number().int().min(0).optional(),
+    atPercent: z.number().min(0).max(100).optional(),
     width: z.number().int().min(2).max(1920).optional(),
+  })
+  .strict();
+
+const videoThumbnails = z
+  .object({
+    op: z.literal('video.thumbnails'),
+    count: z.number().int().min(1).max(48).optional(),
+    width: z.number().int().min(2).max(1920).optional(),
+    intervalMs: z.number().int().min(1).optional(),
+    atMs: z.array(z.number().int().min(0)).min(1).max(48).optional(),
+    atPercent: z.array(z.number().min(0).max(100)).min(1).max(48).optional(),
+  })
+  .strict();
+
+const videoSprite = z
+  .object({
+    op: z.literal('video.sprite'),
+    columns: z.number().int().min(1).max(10),
+    rows: z.number().int().min(1).max(10),
+    cellWidth: z.number().int().min(2).max(640).optional(),
+    intervalMs: z.number().int().min(1).optional(),
   })
   .strict();
 
@@ -68,8 +90,20 @@ export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   videoCrop,
   videoTrim,
   videoPoster,
+  videoThumbnails,
+  videoSprite,
   pdfRemovePages,
 ]);
+
+export const FRAME_OPERATIONS = [
+  'video.poster',
+  'video.thumbnails',
+  'video.sprite',
+] as const;
+
+export function isFrameOperation(op: string): boolean {
+  return (FRAME_OPERATIONS as readonly string[]).includes(op);
+}
 
 /** One transform request. `replace` defaults to true. */
 export const assetTransformSchema = z
@@ -99,7 +133,14 @@ export function validOperations(mime: string | null | undefined): string[] {
   const family = mediaFamily(mime);
   if (family === 'image') return ['image.resize', 'image.crop'];
   if (family === 'video')
-    return ['video.resize', 'video.crop', 'video.trim', 'video.poster'];
+    return [
+      'video.resize',
+      'video.crop',
+      'video.trim',
+      'video.poster',
+      'video.thumbnails',
+      'video.sprite',
+    ];
   if (family === 'pdf') return ['pdf.removePages'];
   return [];
 }
@@ -125,15 +166,72 @@ export function parseAssetTransform(input: unknown): AssetTransform {
           'video.resize',
           'video.crop',
           'video.trim',
+          'video.poster',
+          'video.thumbnails',
+          'video.sprite',
           'pdf.removePages',
         ],
       },
     });
   }
+  const operations = parsed.data.operations;
+  operations.forEach((operation, index) =>
+    assertFrameOptions(operation, `operations[${index}]`),
+  );
   return {
     replace: parsed.data.replace !== false,
-    operations: parsed.data.operations,
+    operations,
   };
+}
+
+export function assertFrameOptions(
+  operation: AssetTransformOperation,
+  field: string,
+): void {
+  if (operation.op === 'video.poster') {
+    if (operation.atMs !== undefined && operation.atPercent !== undefined) {
+      reject(
+        `${field}.atPercent`,
+        'Use atMs or atPercent, not both.',
+        'video',
+        validOperations('video/mp4'),
+      );
+    }
+  }
+  if (operation.op === 'video.thumbnails') {
+    const chosen = [
+      operation.atMs,
+      operation.atPercent,
+      operation.intervalMs,
+    ].filter((item) => item !== undefined);
+    if (chosen.length > 1) {
+      reject(
+        `${field}.atMs`,
+        'Use one of atMs, atPercent, or intervalMs.',
+        'video',
+        validOperations('video/mp4'),
+      );
+    }
+    if (chosen.length === 0 && operation.count === undefined) {
+      reject(
+        `${field}.count`,
+        'Set count, intervalMs, atMs, or atPercent.',
+        'video',
+        validOperations('video/mp4'),
+      );
+    }
+  }
+  if (
+    operation.op === 'video.sprite' &&
+    operation.columns * operation.rows > 48
+  ) {
+    reject(
+      `${field}.rows`,
+      'A sprite sheet can hold at most 48 frames.',
+      'video',
+      validOperations('video/mp4'),
+    );
+  }
 }
 
 export interface MediaBounds {
@@ -180,10 +278,10 @@ export function assertTransformFits(
         );
       }
     }
-    if (operation.op === 'video.poster') {
+    if (isFrameOperation(operation.op)) {
       reject(
         `${field}.op`,
-        'video.poster is stored as a version. Use preset "poster".',
+        `${operation.op} is stored as a version. Send it without video.resize, video.crop, or video.trim, or use a poster, thumbnails, or sprites preset.`,
         mime,
         allowed,
       );

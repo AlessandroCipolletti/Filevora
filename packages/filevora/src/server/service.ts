@@ -508,7 +508,13 @@ export class FileService {
         fileId: assetId,
         tenantId: ctx.principal.tenantId,
         type: 'preset',
-        payload: { schemaVersion: 1, preset: expanded.preset.name },
+        payload: {
+          schemaVersion: 1,
+          preset: expanded.preset.name,
+          ...(expanded.preset.name === 'frames'
+            ? { outputs: expanded.preset.outputs }
+            : {}),
+        },
         maxAttempts: this.config.queue.maxAttempts,
       });
       return {

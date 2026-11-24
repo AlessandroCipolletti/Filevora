@@ -72,6 +72,7 @@
     "metadataModes": "tested",
     "namedPresets": "tested",
     "signedDelivery": "tested",
+    "videoThumbnails": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -87,6 +88,7 @@
     "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs.",
     "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest.",
     "Named presets expand to transform operations. The default web-optimized preset still publishes thumbnail, optimized, and hd. Custom presets are a presets object or FILEVORA_PRESETS JSON. See docs/presets.md.",
+    "video.poster, video.thumbnails, and video.sprite publish WebP versions through the storage driver. video.sprite also writes a WebVTT file and a JSON timeline. Presets poster, thumbnails, and sprites cover the same operations.",
     "Private assets are served with HMAC delivery URLs or S3 presigned URLs. Public assets use /public. FILEVORA_SIGNING_SECRET is a comma-separated key list. A missing asset card is private. See docs/access-control.md.",
     "The package is ESM. Node 22.13 and newer can require() the same entry points. filevora worker reads REDIS_URL or FILEVORA_CONFIG_PATH and does not start redis-memory-server."
   ],

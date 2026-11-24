@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { fail } from '../errors/error.js';
 import {
   assetTransformOperationSchema,
+  assertFrameOptions,
+  isFrameOperation,
   mediaFamily,
   parseAssetTransform,
   validOperations,
@@ -111,6 +113,8 @@ export function expandTransform(
       : {};
   if (typeof record.preset !== 'string') {
     const parsed = parseAssetTransform(input);
+    const frames = framePreset(parsed.operations);
+    if (frames) return { mode: 'versions', preset: frames };
     return {
       mode: 'operations',
       operations: parsed.operations,
@@ -169,6 +173,81 @@ export function expandTransform(
     mode: 'operations',
     operations: [...base, ...extra],
     replace: parsed.data.replace !== false,
+  };
+}
+
+/** A transform that is only stills is stored on the job, not in the preset catalog. */
+export function framePresetFromPayload(
+  name: string,
+  outputs: unknown,
+): NamedPreset | undefined {
+  if (name !== 'frames' || !Array.isArray(outputs)) return undefined;
+  const parsed = z
+    .array(
+      z
+        .object({
+          version: z.string().min(1),
+          operations: z.array(assetTransformOperationSchema).min(1).max(4),
+        })
+        .strict(),
+    )
+    .max(8)
+    .safeParse(outputs);
+  if (!parsed.success) return undefined;
+  const normalized = parsed.data.map((output) => {
+    output.operations.forEach((operation, index) =>
+      assertFrameOptions(operation, `outputs.operations[${index}]`),
+    );
+    return output;
+  });
+  if (
+    normalized.some((output) =>
+      output.operations.some((operation) => !isFrameOperation(operation.op)),
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    name: 'frames',
+    families: ['video'],
+    source: 'custom',
+    delivery: 'versions',
+    outputs: normalized,
+  };
+}
+
+function framePreset(
+  operations: AssetTransformOperation[],
+): NamedPreset | undefined {
+  if (
+    operations.length === 0 ||
+    operations.some((operation) => !isFrameOperation(operation.op))
+  ) {
+    return undefined;
+  }
+  const used = new Set<string>();
+  const outputs = operations.map((operation) => {
+    const base =
+      operation.op === 'video.poster'
+        ? 'poster'
+        : operation.op === 'video.sprite'
+          ? 'sprite'
+          : 'thumb';
+    let version = base;
+    let suffix = 2;
+    while (used.has(version)) {
+      version = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    used.add(version);
+    return { version, operations: [operation] };
+  });
+  return {
+    name: 'frames',
+    families: ['video'],
+    source: 'custom',
+    delivery: 'versions',
+    outputs,
   };
 }
 

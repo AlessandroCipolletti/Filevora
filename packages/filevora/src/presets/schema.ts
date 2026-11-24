@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { fail } from '../errors/error.js';
 import {
+  assertFrameOptions,
   assetTransformOperationSchema,
+  isFrameOperation,
   type AssetTransformOperation,
 } from '../transform/schema.js';
 
@@ -54,6 +56,20 @@ export function parseCustomPresets(
         message: `Custom preset "${name}" uses a built-in name.`,
       });
     }
+    const frame = preset.operations.some((operation) =>
+      isFrameOperation(operation.op),
+    );
+    const other = preset.operations.some(
+      (operation) => !isFrameOperation(operation.op),
+    );
+    if (frame && other) {
+      throw fail('INVALID_CONFIG', {
+        message: `Custom preset "${name}" mixes frame stills with a video edit. Use one or the other.`,
+      });
+    }
+    preset.operations.forEach((operation, index) =>
+      assertFrameOptions(operation, `${name}.operations[${index}]`),
+    );
     for (const operation of preset.operations) {
       const kind = operation.op.split('.')[0];
       if (kind !== preset.family) {
