@@ -56,6 +56,16 @@ test('init detects the framework and does not overwrite without --force', async 
   );
   assert.match(env, /FILEVORA_DATABASE_URL=/);
   assert.doesNotMatch(env, /FILEVORA_MALWARE_SCAN/);
+  const handler = (await import('node:fs')).readFileSync(
+    path.join(dir, 'filevora', 'handler.ts'),
+    'utf8',
+  );
+  const snippet = (await import('node:fs')).readFileSync(
+    path.join(dir, 'filevora', 'upload-snippet.ts'),
+    'utf8',
+  );
+  assert.match(handler, /basePath: '\/api\/files'/);
+  assert.match(snippet, /endpoint: '\/api\/files'/);
 
   const again: string[] = [];
   const blocked = await runCli(

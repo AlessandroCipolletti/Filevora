@@ -21,6 +21,7 @@ const files = createFiles();
 const handler = createFilesHandler({
   files,
   health: true,
+  basePath: '/api/files',
   async authenticate(request) {
     const id = request.headers.get('x-user');
     const tenantId = request.headers.get('x-tenant');
@@ -40,13 +41,15 @@ filevoraRouter.use((req, res) => {
   void handleNodeRequest(handler, req, res);
 });
 `,
-  fastify: `import { createFiles } from 'filevora/server';
+  fastify: `import type { FastifyInstance } from 'fastify';
+import { createFiles } from 'filevora/server';
 import { createFilesHandler, handleNodeRequest } from 'filevora/http';
 
 const files = createFiles();
 const handler = createFilesHandler({
   files,
   health: true,
+  basePath: '/api/files',
   async authenticate(request) {
     const id = request.headers.get('x-user');
     const tenantId = request.headers.get('x-tenant');
@@ -61,9 +64,10 @@ const handler = createFilesHandler({
   },
 });
 
-export async function filevoraPlugin(app) {
-  app.all('/*', (request, reply) => {
-    void handleNodeRequest(handler, request.raw, reply.raw);
+export async function filevoraPlugin(app: FastifyInstance) {
+  app.all('/*', async (request, reply) => {
+    reply.hijack();
+    await handleNodeRequest(handler, request.raw, reply.raw);
   });
 }
 `,
@@ -75,6 +79,7 @@ const files = createFiles();
 const handler = createFilesHandler({
   files,
   health: true,
+  basePath: '/api/files',
   async authenticate(request) {
     const id = request.headers.get('x-user');
     const tenantId = request.headers.get('x-tenant');
@@ -99,6 +104,7 @@ const files = createFiles();
 const handler = createFilesHandler({
   files,
   health: true,
+  basePath: '/api/files',
   async authenticate(request) {
     const id = request.headers.get('x-user');
     const tenantId = request.headers.get('x-tenant');
@@ -126,6 +132,7 @@ const files = createFiles();
 const handler = createFilesHandler({
   files,
   health: true,
+  basePath: '/api/files',
   async authenticate(request) {
     const id = request.headers.get('x-user');
     const tenantId = request.headers.get('x-tenant');
