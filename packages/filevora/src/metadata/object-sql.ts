@@ -62,22 +62,22 @@ export function openObjectSql(root: string): Sql {
     return [];
   };
   return {
-    exec() {
+    async exec() {
       // Lite mode has no schema migrations.
     },
-    get<T>(sql: string, params?: unknown[]) {
+    async get<T>(sql: string, params?: unknown[]) {
       return execute(sql, params)[0] as T | undefined;
     },
-    all<T>(sql: string, params?: unknown[]) {
+    async all<T>(sql: string, params?: unknown[]) {
       return execute(sql, params) as T[];
     },
-    run(sql: string, params?: unknown[]) {
+    async run(sql: string, params?: unknown[]) {
       execute(sql, params);
     },
-    transaction<T>(fn: () => T) {
+    async transaction<T>(fn: () => Promise<T>) {
       return fn();
     },
-    close() {
+    async close() {
       // Objects are flushed on each write.
     },
   };

@@ -147,34 +147,33 @@ function readJobFailure(reason: string | undefined): {
 export class FileService {
   private sql: Sql | undefined;
   private storage: StorageDriver | undefined;
+  private storageReady = false;
   private secret: string | undefined;
   private worker: ChildProcess | undefined;
 
   constructor(readonly config: ResolvedConfig) {}
 
-  private db(): Sql {
+  private async db(): Promise<Sql> {
     if (this.sql) return this.sql;
-    if (this.config.metadata.driver !== 'sqlite') {
-      throw fail('FEATURE_NOT_AVAILABLE', {
-        message: 'Only SQLite metadata is implemented.',
-        context: { driver: this.config.metadata.driver },
-      });
-    }
+    this.ensureStorage();
+    this.sql = await openBackend(this.config);
+    this.secret = this.secretFor();
+    return this.sql;
+  }
+
+  private ensureStorage(): void {
+    if (this.storage || this.storageReady) return;
     if (this.config.storage.driver === 'filesystem') {
       const root = path.resolve(this.config.storage.root);
       mkdirSync(root, { recursive: true, mode: 0o700 });
       this.storage = createFilesystemStorage(root);
-    } else if (this.config.storage.driver === 's3') {
-      // The S3 client is loaded on the first S3 call so filesystem installs do not require the AWS SDK.
-    } else {
+    } else if (this.config.storage.driver !== 's3') {
       throw fail('FEATURE_NOT_AVAILABLE', {
         message: 'That storage driver is not available.',
         context: { driver: this.config.storage.driver },
       });
     }
-    this.sql = openBackend(this.config);
-    this.secret = this.secretFor();
-    return this.sql;
+    this.storageReady = true;
   }
 
   private secretFor(): string {
@@ -223,13 +222,13 @@ export class FileService {
   }
 
   private root(): string {
-    this.db();
+    this.ensureStorage();
     return path.resolve(this.config.storage.root);
   }
 
   async close(): Promise<void> {
     if (this.worker && !this.worker.killed) this.worker.kill('SIGTERM');
-    this.sql?.close();
+    await this.sql?.close();
     this.sql = undefined;
     await closeProcessingQueue({
       env: this.config.env,
@@ -278,7 +277,9 @@ export class FileService {
       backoffMs: this.config.queue.backoffBaseMs,
       scope: this.config.storage.root,
     });
-    this.db().run(
+    await (
+      await this.db()
+    ).run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ?`,
       [now, fileId],
     );
@@ -304,15 +305,20 @@ export class FileService {
   async touch(fileId: string, ctx: RequestContext): Promise<void> {
     await this.get(fileId, ctx);
     const now = nowIso();
-    this.db().run(
-      'UPDATE files SET last_touch_at = ?, updated_at = ? WHERE id = ?',
-      [now, now, fileId],
-    );
+    await (
+      await this.db()
+    ).run('UPDATE files SET last_touch_at = ?, updated_at = ? WHERE id = ?', [
+      now,
+      now,
+      fileId,
+    ]);
   }
 
   async retentionSweep(opts: { dryRun?: boolean } = {}, ctx: RequestContext) {
     this.requireStored('Retention');
-    const rows = this.db().all<RetentionRow>(
+    const rows = await (
+      await this.db()
+    ).all<RetentionRow>(
       `SELECT id, bytes, pinned, created_at, deleted_at, grace_until, last_touch_at, original_object_key
        FROM files WHERE tenant_id = ?`,
       [ctx.principal.tenantId],
@@ -341,9 +347,11 @@ export class FileService {
         const grace = new Date(
           Date.now() + this.config.retention.gracePeriodDays * 86_400_000,
         ).toISOString();
-        this.db().run(
-          `UPDATE files SET deleted_at = COALESCE(deleted_at, ?), grace_until = ?, original_object_key = CASE WHEN ? THEN NULL ELSE original_object_key END,
-           processing_state = CASE WHEN ? THEN 'deleted' ELSE processing_state END, updated_at = ? WHERE id = ?`,
+        await (
+          await this.db()
+        ).run(
+          `UPDATE files SET deleted_at = COALESCE(deleted_at, ?), grace_until = ?, original_object_key = CASE WHEN ? = 1 THEN NULL ELSE original_object_key END,
+           processing_state = CASE WHEN ? = 1 THEN 'deleted' ELSE processing_state END, updated_at = ? WHERE id = ?`,
           [
             now,
             immediate ? now : grace,
@@ -353,8 +361,8 @@ export class FileService {
             row.id,
           ],
         );
-        this.audit(
-          this.db(),
+        await this.audit(
+          await this.db(),
           ctx.principal,
           row.id,
           immediate ? 'retention.delete' : 'retention.soft',
@@ -388,10 +396,12 @@ export class FileService {
     ctx: RequestContext,
   ) {
     const record = await this.get(fileId, ctx);
-    const row = this.db().get<FileRow>(
-      'SELECT * FROM files WHERE id = ? AND tenant_id = ?',
-      [fileId, ctx.principal.tenantId],
-    );
+    const row = await (
+      await this.db()
+    ).get<FileRow>('SELECT * FROM files WHERE id = ? AND tenant_id = ?', [
+      fileId,
+      ctx.principal.tenantId,
+    ]);
     if (!row?.original_object_key) throw fail('NOT_FOUND');
     if (this.config.storage.driver !== 'filesystem') {
       throw fail('FEATURE_NOT_AVAILABLE', {
@@ -418,7 +428,9 @@ export class FileService {
           'png',
         );
         await writeBytes(this.root(), previewKey, preview.png);
-        this.db().run(
+        await (
+          await this.db()
+        ).run(
           `INSERT INTO variants (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, width, height, status, created_at)
            VALUES (?, ?, 'page-1', 'pdf-preview', 1, ?, 'image/png', ?, ?, ?, ?, 'ready', ?)`,
           [
@@ -476,7 +488,9 @@ export class FileService {
       'json',
     );
     await writeBytes(this.root(), key, payload);
-    this.db().run(
+    await (
+      await this.db()
+    ).run(
       `INSERT INTO variants (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, status, created_at)
        VALUES (?, ?, 'normalized', 'normalize', 1, ?, 'application/json', ?, ?, 'ready', ?)`,
       [id, fileId, key, payload.byteLength, sha256(payload), nowIso()],
@@ -503,7 +517,9 @@ export class FileService {
       id: jobId,
       scope: this.config.storage.root,
     });
-    this.db().run(
+    await (
+      await this.db()
+    ).run(
       `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
       [nowIso(), job.fileId],
     );
@@ -584,7 +600,7 @@ export class FileService {
     input: CreateSessionInput,
     ctx: RequestContext,
   ): Promise<UploadSession> {
-    const sql = this.db();
+    const sql = await this.db();
     const filename = sanitizeFilename(input.filename);
     const mimeType = input.mimeType.toLowerCase();
     if (
@@ -611,9 +627,9 @@ export class FileService {
     }
     const preset = input.preset ?? this.config.defaults.preset;
     const visibility = this.resolveVisibility(input.visibility);
-    this.assertQuota(ctx.principal.tenantId, input.bytes);
+    await this.assertQuota(ctx.principal.tenantId, input.bytes);
     if (input.idempotencyKey) {
-      const existing = sql.get<SessionRow>(
+      const existing = await sql.get<SessionRow>(
         'SELECT * FROM upload_sessions WHERE tenant_id = ? AND idempotency_key = ?',
         [ctx.principal.tenantId, input.idempotencyKey],
       );
@@ -625,7 +641,7 @@ export class FileService {
         ) {
           throw fail('IDEMPOTENCY_CONFLICT');
         }
-        return this.mapSession(existing);
+        return await this.mapSession(existing);
       }
     }
     const now = nowIso();
@@ -635,8 +651,8 @@ export class FileService {
     const partCount = Math.ceil(input.bytes / partSize);
     if (partCount > 10_000) throw fail('FILE_TOO_LARGE');
     const expiresAt = addSeconds(now, this.config.upload.sessionTtlSeconds);
-    sql.transaction(() => {
-      sql.run(
+    await sql.transaction(async () => {
+      await sql.run(
         `INSERT INTO files (
           id, tenant_id, owner_id, original_name, declared_mime, detected_mime, bytes, checksum,
           original_object_key, visibility, upload_state, processing_state, preset, metadata_json,
@@ -658,7 +674,7 @@ export class FileService {
           now,
         ],
       );
-      sql.run(
+      await sql.run(
         `INSERT INTO upload_sessions (
           id, file_id, tenant_id, owner_id, status, transport, part_size, declared_bytes, part_count,
           expires_at, idempotency_key, declared_mime, filename, preset, metadata_json, checksum, created_at
@@ -682,7 +698,9 @@ export class FileService {
           now,
         ],
       );
-      this.audit(sql, ctx.principal, fileId, 'session.create', { sessionId });
+      await this.audit(sql, ctx.principal, fileId, 'session.create', {
+        sessionId,
+      });
     });
     if (this.config.storage.driver === 's3') {
       const key = assetObjectKey(
@@ -700,12 +718,12 @@ export class FileService {
         throw fail('STORAGE_UNAVAILABLE', {
           message: 'S3 did not open a multipart upload.',
         });
-      sql.run(
+      await sql.run(
         'UPDATE upload_sessions SET storage_upload_id = ?, object_key = ? WHERE id = ?',
         [upload.uploadId, key, sessionId],
       );
     }
-    const created = sql.get<SessionRow>(
+    const created = await sql.get<SessionRow>(
       'SELECT * FROM upload_sessions WHERE id = ?',
       [sessionId],
     );
@@ -713,7 +731,7 @@ export class FileService {
       throw fail('STORAGE_UNAVAILABLE', {
         message: 'The upload session was not stored.',
       });
-    return this.mapSession(created);
+    return await this.mapSession(created);
   }
 
   private async s3(): Promise<NonNullable<FileService['storage']>> {
@@ -727,7 +745,7 @@ export class FileService {
     sessionId: string,
     ctx: RequestContext,
   ): Promise<Record<string, string>> {
-    const session = this.requireSession(sessionId, ctx.principal);
+    const session = await this.requireSession(sessionId, ctx.principal);
     if (
       session.transport !== 's3-multipart' ||
       !session.storage_upload_id ||
@@ -814,8 +832,12 @@ export class FileService {
     if (input.checksum && input.checksum.toLowerCase() !== checksum)
       throw fail('CHECKSUM_MISMATCH');
     const now = nowIso();
-    this.db().transaction(() => {
-      this.db().run(
+    await (
+      await this.db()
+    ).transaction(async () => {
+      await (
+        await this.db()
+      ).run(
         `UPDATE files SET detected_mime = ?, bytes = ?, checksum = ?, original_object_key = ?, upload_state = 'verified', updated_at = ? WHERE id = ?`,
         [
           detected,
@@ -826,14 +848,22 @@ export class FileService {
           session.file_id,
         ],
       );
-      this.db().run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
+      await (
+        await this.db()
+      ).run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
         'verified',
         session.id,
       ]);
-      this.audit(this.db(), ctx.principal, session.file_id, 'upload.complete', {
-        checksum,
-        transport: 's3-multipart',
-      });
+      await this.audit(
+        await this.db(),
+        ctx.principal,
+        session.file_id,
+        'upload.complete',
+        {
+          checksum,
+          transport: 's3-multipart',
+        },
+      );
     });
     await this.enqueuePreset(session.file_id, detected, ctx);
     return this.get(session.file_id, ctx);
@@ -843,7 +873,7 @@ export class FileService {
     id: string,
     ctx: RequestContext,
   ): Promise<UploadSession> {
-    return this.mapSession(this.requireSession(id, ctx.principal));
+    return await this.mapSession(await this.requireSession(id, ctx.principal));
   }
 
   async writePart(
@@ -852,9 +882,9 @@ export class FileService {
     body: Uint8Array,
     ctx: RequestContext,
   ): Promise<{ partNumber: number; etag: string; bytes: number }> {
-    const sql = this.db();
-    const session = this.requireSession(sessionId, ctx.principal);
-    this.assertSessionOpen(session);
+    const sql = await this.db();
+    const session = await this.requireSession(sessionId, ctx.principal);
+    await this.assertSessionOpen(session);
     if (
       !Number.isInteger(partNumber) ||
       partNumber < 1 ||
@@ -878,21 +908,21 @@ export class FileService {
     await writeBytes(this.root(), key, body);
     const etag = sha256(body);
     const now = nowIso();
-    sql.transaction(() => {
-      sql.run(
+    await sql.transaction(async () => {
+      await sql.run(
         'DELETE FROM upload_parts WHERE upload_session_id = ? AND part_number = ?',
         [session.id, partNumber],
       );
-      sql.run(
+      await sql.run(
         `INSERT INTO upload_parts (upload_session_id, part_number, etag, checksum, bytes, object_key, completed_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [session.id, partNumber, etag, etag, body.byteLength, key, now],
       );
-      sql.run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
+      await sql.run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
         'uploading',
         session.id,
       ]);
-      sql.run(
+      await sql.run(
         'UPDATE files SET upload_state = ?, updated_at = ? WHERE id = ?',
         ['uploading', now, session.file_id],
       );
@@ -908,13 +938,13 @@ export class FileService {
     },
     ctx: RequestContext,
   ): Promise<FileRecord> {
-    const sql = this.db();
-    const session = this.requireSession(sessionId, ctx.principal);
+    const sql = await this.db();
+    const session = await this.requireSession(sessionId, ctx.principal);
     if (session.status === 'verified') return this.get(session.file_id, ctx);
-    this.assertSessionOpen(session);
+    await this.assertSessionOpen(session);
     if (session.transport === 's3-multipart')
       return this.completeS3(session, input, ctx);
-    const parts = sql.all<PartRow>(
+    const parts = await sql.all<PartRow>(
       'SELECT * FROM upload_parts WHERE upload_session_id = ? ORDER BY part_number ASC',
       [session.id],
     );
@@ -980,8 +1010,8 @@ export class FileService {
       throw fail('CHECKSUM_MISMATCH');
     }
     const now = nowIso();
-    sql.transaction(() => {
-      sql.run(
+    await sql.transaction(async () => {
+      await sql.run(
         `UPDATE files SET detected_mime = ?, bytes = ?, checksum = ?, original_object_key = ?,
          upload_state = 'verified', updated_at = ? WHERE id = ?`,
         [
@@ -993,11 +1023,11 @@ export class FileService {
           session.file_id,
         ],
       );
-      sql.run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
+      await sql.run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
         'verified',
         session.id,
       ]);
-      this.audit(sql, ctx.principal, session.file_id, 'upload.complete', {
+      await this.audit(sql, ctx.principal, session.file_id, 'upload.complete', {
         checksum: assembled.checksum,
       });
     });
@@ -1009,28 +1039,34 @@ export class FileService {
   }
 
   async abortUpload(sessionId: string, ctx: RequestContext): Promise<void> {
-    const sql = this.db();
-    const session = this.requireSession(sessionId, ctx.principal);
+    const sql = await this.db();
+    const session = await this.requireSession(sessionId, ctx.principal);
     if (session.status === 'verified')
       throw fail('INVALID_CONFIG', {
         message: 'A verified upload cannot be aborted.',
       });
-    const parts = sql.all<PartRow>(
+    const parts = await sql.all<PartRow>(
       'SELECT * FROM upload_parts WHERE upload_session_id = ?',
       [session.id],
     );
     for (const part of parts) await this.storage?.deleteObject(part.object_key);
     const now = nowIso();
-    sql.transaction(() => {
-      sql.run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
+    await sql.transaction(async () => {
+      await sql.run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
         'aborted',
         session.id,
       ]);
-      sql.run(
+      await sql.run(
         `UPDATE files SET upload_state = 'aborted', deleted_at = ?, updated_at = ? WHERE id = ?`,
         [now, now, session.file_id],
       );
-      this.audit(sql, ctx.principal, session.file_id, 'session.abort', {});
+      await this.audit(
+        sql,
+        ctx.principal,
+        session.file_id,
+        'session.abort',
+        {},
+      );
     });
   }
 
@@ -1039,13 +1075,15 @@ export class FileService {
     ctx: RequestContext,
     opts?: { detailed?: boolean },
   ): Promise<FileRecord> {
-    const row = this.db().get<FileRow>(
+    const row = await (
+      await this.db()
+    ).get<FileRow>(
       'SELECT * FROM files WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
       [fileId, ctx.principal.tenantId],
     );
     if (!row || row.upload_state === 'aborted') throw fail('ASSET_NOT_FOUND');
     const record = mapFile(row);
-    record.variants = loadVariants(this.db(), row.id);
+    record.variants = await loadVariants(await this.db(), row.id);
     record.asset = toAssetInfo(record, { detailed: opts?.detailed ?? true });
     return record;
   }
@@ -1096,16 +1134,19 @@ export class FileService {
       params.push(cursor.createdAt, cursor.createdAt, cursor.id);
     }
     params.push(limit + 1);
-    const rows = this.db().all<FileRow>(
+    const rows = await (
+      await this.db()
+    ).all<FileRow>(
       `SELECT * FROM files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
       params,
     );
-    const page = rows.slice(0, limit).map((row) => {
+    const page: FileRecord[] = [];
+    for (const row of rows.slice(0, limit)) {
       const record = mapFile(row);
-      record.variants = loadVariants(this.db(), row.id);
+      record.variants = await loadVariants(await this.db(), row.id);
       record.asset = toAssetInfo(record, { detailed: true });
-      return record;
-    });
+      page.push(record);
+    }
     const last = page[page.length - 1];
     const next =
       rows.length > limit && last
@@ -1115,8 +1156,8 @@ export class FileService {
   }
 
   async delete(fileId: string, ctx: RequestContext): Promise<void> {
-    const sql = this.db();
-    const row = sql.get<FileRow>(
+    const sql = await this.db();
+    const row = await sql.get<FileRow>(
       'SELECT * FROM files WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
       [fileId, ctx.principal.tenantId],
     );
@@ -1127,12 +1168,12 @@ export class FileService {
       row.original_object_key,
     );
     const now = nowIso();
-    sql.transaction(() => {
-      sql.run(
+    await sql.transaction(async () => {
+      await sql.run(
         `UPDATE files SET deleted_at = ?, processing_state = 'deleted', updated_at = ? WHERE id = ?`,
         [now, now, row.id],
       );
-      this.audit(sql, ctx.principal, row.id, 'file.delete', {});
+      await this.audit(sql, ctx.principal, row.id, 'file.delete', {});
     });
   }
 
@@ -1158,10 +1199,9 @@ export class FileService {
     const base = input.baseUrl.replace(/\/$/, '');
     let originalUrl = `${base}/content/${token}`;
     if (this.config.storage.driver === 's3') {
-      const stored = this.db().get<FileRow>(
-        'SELECT * FROM files WHERE id = ?',
-        [record.id],
-      );
+      const stored = await (
+        await this.db()
+      ).get<FileRow>('SELECT * FROM files WHERE id = ?', [record.id]);
       const storage = await this.s3();
       if (stored?.original_object_key && storage.signDownload) {
         const signed = await storage.signDownload({
@@ -1173,11 +1213,11 @@ export class FileService {
         originalUrl = signed.url;
       }
     }
-    const row = this.db().get<FileRow>('SELECT * FROM files WHERE id = ?', [
-      record.id,
-    ]);
+    const row = await (
+      await this.db()
+    ).get<FileRow>('SELECT * FROM files WHERE id = ?', [record.id]);
     const variants: DeliveryResult['variants'] = {};
-    for (const variant of loadVariants(this.db(), record.id)) {
+    for (const variant of await loadVariants(await this.db(), record.id)) {
       const variantToken = signToken(this.secret ?? '', {
         f: record.id,
         n: variant.id,
@@ -1230,7 +1270,7 @@ export class FileService {
     total: number;
     contentType: string;
   }> {
-    const sql = this.db();
+    const sql = await this.db();
     const payload = readToken(this.secret ?? '', token);
     const kind = payload?.n;
     const fileId = payload?.f;
@@ -1241,7 +1281,7 @@ export class FileService {
       });
     }
     assertUnexpired(exp);
-    const row = sql.get<FileRow>(
+    const row = await sql.get<FileRow>(
       'SELECT * FROM files WHERE id = ? AND deleted_at IS NULL',
       [fileId],
     );
@@ -1250,7 +1290,7 @@ export class FileService {
     let total = row.bytes;
     let contentType = row.detected_mime ?? row.declared_mime;
     if (kind !== 'original') {
-      const variant = sql.get<{
+      const variant = await sql.get<{
         storage_key: string;
         bytes: number;
         mime: string;
@@ -1286,8 +1326,13 @@ export class FileService {
     };
   }
 
-  private requireSession(id: string, principal: Principal): SessionRow {
-    const row = this.db().get<SessionRow>(
+  private async requireSession(
+    id: string,
+    principal: Principal,
+  ): Promise<SessionRow> {
+    const row = await (
+      await this.db()
+    ).get<SessionRow>(
       'SELECT * FROM upload_sessions WHERE id = ? AND tenant_id = ? AND owner_id = ?',
       [id, principal.tenantId, principal.id],
     );
@@ -1295,11 +1340,13 @@ export class FileService {
     return row;
   }
 
-  private assertSessionOpen(session: SessionRow): void {
+  private async assertSessionOpen(session: SessionRow): Promise<void> {
     if (session.status === 'aborted' || session.status === 'expired')
       throw fail('UPLOAD_SESSION_EXPIRED');
     if (Date.parse(session.expires_at) <= Date.now()) {
-      this.db().run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
+      await (
+        await this.db()
+      ).run('UPDATE upload_sessions SET status = ? WHERE id = ?', [
         'expired',
         session.id,
       ]);
@@ -1307,14 +1354,17 @@ export class FileService {
     }
   }
 
-  private assertQuota(tenantId: string, incoming: number): void {
+  private async assertQuota(tenantId: string, incoming: number): Promise<void> {
     const quota = this.config.defaults.tenantQuotaBytes;
     if (!quota) return;
-    const files = this.db().get<{ total: number }>(
+    const files = await (
+      await this.db()
+    ).get<{ total: number }>(
       'SELECT COALESCE(SUM(bytes), 0) AS total FROM files WHERE tenant_id = ? AND deleted_at IS NULL',
       [tenantId],
     );
-    if ((files?.total ?? 0) + incoming > quota) throw fail('QUOTA_EXCEEDED');
+    if (Number(files?.total ?? 0) + incoming > quota)
+      throw fail('QUOTA_EXCEEDED');
   }
 
   private resolveVisibility(requested: Visibility | undefined): Visibility {
@@ -1345,15 +1395,19 @@ export class FileService {
       backoffMs: this.config.queue.backoffBaseMs,
       scope: this.config.storage.root,
     });
-    this.db().run(
+    await (
+      await this.db()
+    ).run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ? AND processing_state = 'none'`,
       [nowIso(), fileId],
     );
     this.ensureWorker();
   }
 
-  private mapSession(row: SessionRow): UploadSession {
-    const parts = this.db().all<PartRow>(
+  private async mapSession(row: SessionRow): Promise<UploadSession> {
+    const parts = await (
+      await this.db()
+    ).all<PartRow>(
       'SELECT * FROM upload_parts WHERE upload_session_id = ? ORDER BY part_number ASC',
       [row.id],
     );
@@ -1374,14 +1428,14 @@ export class FileService {
     };
   }
 
-  private audit(
+  private async audit(
     sql: Sql,
     principal: Principal,
     fileId: string,
     action: string,
     details: Record<string, unknown>,
-  ): void {
-    sql.run(
+  ): Promise<void> {
+    await sql.run(
       `INSERT INTO audit_events (id, tenant_id, file_id, action, actor_id, details_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -1407,42 +1461,41 @@ function mapPart(row: PartRow): UploadPartRecord {
   };
 }
 
-function loadVariants(sql: Sql, fileId: string): FileVariant[] {
-  return sql
-    .all<{
-      id: string;
-      file_id: string;
-      name: string;
-      recipe_id: string;
-      recipe_version: number;
-      mime: string;
-      bytes: number;
-      width: number | null;
-      height: number | null;
-      duration_ms: number | null;
-      checksum: string;
-      status: string;
-      created_at: string;
-    }>(
-      `SELECT id, file_id, name, recipe_id, recipe_version, mime, bytes, width, height, duration_ms, checksum, status, created_at
-       FROM variants WHERE file_id = ? AND status = 'ready' ORDER BY name ASC`,
-      [fileId],
-    )
-    .map((row) => ({
-      id: row.id,
-      fileId: row.file_id,
-      name: row.name,
-      recipeId: row.recipe_id,
-      recipeVersion: row.recipe_version,
-      mimeType: row.mime,
-      bytes: row.bytes,
-      ...(row.width ? { width: row.width } : {}),
-      ...(row.height ? { height: row.height } : {}),
-      ...(row.duration_ms ? { durationMs: row.duration_ms } : {}),
-      checksum: row.checksum,
-      status: 'ready' as const,
-      createdAt: row.created_at,
-    }));
+async function loadVariants(sql: Sql, fileId: string): Promise<FileVariant[]> {
+  const rows = await sql.all<{
+    id: string;
+    file_id: string;
+    name: string;
+    recipe_id: string;
+    recipe_version: number;
+    mime: string;
+    bytes: number;
+    width: number | null;
+    height: number | null;
+    duration_ms: number | null;
+    checksum: string;
+    status: string;
+    created_at: string;
+  }>(
+    `SELECT id, file_id, name, recipe_id, recipe_version, mime, bytes, width, height, duration_ms, checksum, status, created_at
+     FROM variants WHERE file_id = ? AND status = 'ready' ORDER BY name ASC`,
+    [fileId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    fileId: row.file_id,
+    name: row.name,
+    recipeId: row.recipe_id,
+    recipeVersion: row.recipe_version,
+    mimeType: row.mime,
+    bytes: row.bytes,
+    ...(row.width ? { width: row.width } : {}),
+    ...(row.height ? { height: row.height } : {}),
+    ...(row.duration_ms ? { durationMs: row.duration_ms } : {}),
+    checksum: row.checksum,
+    status: 'ready' as const,
+    createdAt: row.created_at,
+  }));
 }
 
 function mapFile(row: FileRow): FileRecord {

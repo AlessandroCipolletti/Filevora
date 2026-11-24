@@ -5,7 +5,112 @@ on:
   pull_request:
 
 jobs:
-  verify:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - run: pnpm typecheck
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+
+  knip:
+    name: knip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - run: pnpm knip
+
+  circular:
+    name: circular
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - run: pnpm circular
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - name: Install FFmpeg and Poppler
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils
+      - run: pnpm test
+
+  test-redis:
+    name: test-redis
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: ./.github/actions/setup
+      - name: Install FFmpeg and Poppler
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils
+      - run: pnpm build
+      - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/bullmq.test.ts test/m3.test.ts test/m5.test.ts
+
+  test-s3:
+    name: test-s3
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        # The old Docker Hub MinIO repository is gone. pgsty/silo is a public
+        # MinIO-compatible server with the same command, env, and health URL.
+        image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z
+        env:
+          MINIO_ROOT_USER: local
+          MINIO_ROOT_PASSWORD: localpassword
+        ports:
+          - 9000:9000
+        command: server /data
+    env:
+      FILEVORA_S3_ENDPOINT: http://127.0.0.1:9000
+      FILEVORA_S3_BUCKET: filevora-ci
+      FILEVORA_S3_ACCESS_KEY_ID: local
+      FILEVORA_S3_SECRET_ACCESS_KEY: localpassword
+      FILEVORA_S3_REGION: us-east-1
+    steps:
+      - uses: ./.github/actions/setup
+      - name: Wait for MinIO
+        run: |
+          node --input-type=module -e "
+          const deadline = Date.now() + 60000;
+          while (Date.now() < deadline) {
+            try {
+              const response = await fetch('http://127.0.0.1:9000/minio/health/live');
+              if (response.ok) process.exit(0);
+            } catch {}
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          process.exit(1);
+          "
+      - run: pnpm build
+      - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/external-services.test.ts
+
+  test-postgres:
+    name: test-postgres
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -21,48 +126,32 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
-      minio:
-        # The old Docker Hub MinIO repository is gone. pgsty/silo is a public
-        # MinIO-compatible server with the same command, env, and health URL.
-        image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z
-        env:
-          MINIO_ROOT_USER: local
-          MINIO_ROOT_PASSWORD: localpassword
-        ports:
-          - 9000:9000
-        command: server /data
     env:
       FILEVORA_POSTGRES_URL: postgres://filevora:filevora@127.0.0.1:5432/filevora
-      FILEVORA_S3_ENDPOINT: http://127.0.0.1:9000
-      FILEVORA_S3_BUCKET: filevora-ci
-      FILEVORA_S3_ACCESS_KEY_ID: local
-      FILEVORA_S3_SECRET_ACCESS_KEY: localpassword
-      FILEVORA_S3_REGION: us-east-1
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.1
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - name: Install FFmpeg and Poppler
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Wait for MinIO
-        run: |
-          node --input-type=module -e "
-          const deadline = Date.now() + 60000;
-          while (Date.now() < deadline) {
-            try {
-              const response = await fetch('http://127.0.0.1:9000/minio/health/live');
-              if (response.ok) process.exit(0);
-            } catch {}
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-          process.exit(1);
-          "
-      - name: Typecheck, lint, and test
-        run: pnpm run verify
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+      - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/stored-sql.test.ts test/m7.test.ts
+
+  test-mysql:
+    name: test-mysql
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: filevora
+          MYSQL_DATABASE: filevora
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pfilevora"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      FILEVORA_MYSQL_URL: mysql://root:filevora@127.0.0.1:3306/filevora
+    steps:
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+      - run: pnpm --filter filevora exec node --experimental-strip-types --test --test-reporter=spec test/stored-sql.test.ts

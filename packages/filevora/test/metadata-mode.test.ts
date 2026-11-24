@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { FileSdkError } from '../dist/errors/error.js';
+import { resolveConfig, supportedDatabases } from '../dist/config/load.js';
 import { createFiles } from '../dist/server/index.js';
 import { runCli } from '../dist/cli/main.js';
 
@@ -12,6 +13,66 @@ const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
 );
+
+test('database URL selects stored mode and the driver', () => {
+  assert.equal(resolveConfig({}).metadata.mode, 'lite');
+  assert.equal(
+    resolveConfig({}, { FILEVORA_DATABASE_URL: 'postgres://u:p@db/app' })
+      .metadata.driver,
+    'postgres',
+  );
+  assert.equal(
+    resolveConfig({}, { FILEVORA_DATABASE_URL: 'postgresql://u:p@db/app' })
+      .metadata.driver,
+    'postgres',
+  );
+  assert.equal(
+    resolveConfig({}, { FILEVORA_DATABASE_URL: 'mysql://u:p@db/app' }).metadata
+      .driver,
+    'mysql',
+  );
+  assert.equal(
+    resolveConfig({}, { FILEVORA_DATABASE_URL: 'mariadb://u:p@db/app' })
+      .metadata.driver,
+    'mysql',
+  );
+  const sqlite = resolveConfig(
+    {},
+    { FILEVORA_DATABASE_URL: 'sqlite:///tmp/host.sqlite' },
+  );
+  assert.equal(sqlite.metadata.mode, 'stored');
+  assert.equal(sqlite.metadata.driver, 'sqlite');
+  assert.equal(sqlite.metadata.filename, '/tmp/host.sqlite');
+  const pathOnly = resolveConfig(
+    {},
+    { FILEVORA_DATABASE_URL: '/tmp/host.sqlite' },
+  );
+  assert.equal(pathOnly.metadata.driver, 'sqlite');
+  assert.throws(
+    () => resolveConfig({ metadata: { mode: 'stored' } }),
+    (error: unknown) =>
+      error instanceof FileSdkError &&
+      error.code === 'INVALID_CONFIG' &&
+      error.message.includes('FILEVORA_DATABASE_URL'),
+  );
+  assert.throws(
+    () =>
+      resolveConfig({}, { FILEVORA_DATABASE_URL: 'mongodb://localhost/db' }),
+    (error: unknown) =>
+      error instanceof FileSdkError &&
+      error.message.includes('PostgreSQL') &&
+      error.message.includes('MySQL') &&
+      error.message.includes('SQLite') &&
+      supportedDatabases().includes('SQLite'),
+  );
+  assert.equal(
+    resolveConfig(
+      { metadata: { mode: 'lite' } },
+      { FILEVORA_DATABASE_URL: 'postgres://u:p@db/app' },
+    ).metadata.mode,
+    'lite',
+  );
+});
 
 test('lite mode has no database file and list asks for stored mode', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'filevora-lite-'));

@@ -3,6 +3,7 @@ import { resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
 import { fail, isFileSdkError } from '../errors/error.js';
 import { openBackend } from '../metadata/backend.js';
+import type { Sql } from '../metadata/sqlite.js';
 import {
   type MediaTransform,
   publishAudioPreset,
@@ -42,7 +43,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
     env: config.env,
     redisUrl: config.queue.redisUrl,
   });
-  const sql = openBackend(config);
+  const sql = await openBackend(config);
   const limit = run.once ? 1 : run.limit;
   const queueName = processingQueueName(config.env, config.storage.root);
   if (limit !== undefined) {
@@ -59,7 +60,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
       (counts.delayed ?? 0) +
       (counts.prioritized ?? 0);
     if (pending === 0) {
-      sql.close();
+      await sql.close();
       return;
     }
   }
@@ -78,7 +79,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
   const stop = async () => {
     clearInterval(beat);
     await worker.close(true);
-    sql.close();
+    await sql.close();
   };
   try {
     await new Promise<void>((resolve, reject) => {
@@ -97,7 +98,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
 }
 
 async function executeJob(
-  sql: ReturnType<typeof openBackend>,
+  sql: Sql,
   job: Job<ProcessingJobData>,
   config: ReturnType<typeof resolveConfig>,
 ): Promise<Record<string, unknown>> {
@@ -115,18 +116,18 @@ async function executeJob(
         message: 'test.hold is only available when env is test.',
       });
     }
-    sql.run(
+    await sql.run(
       `UPDATE files SET processing_state = 'processing', updated_at = ? WHERE id = ?`,
       [new Date().toISOString(), data.fileId],
     );
     await delay(Math.min(payload.delayMs ?? 0, 10_000), signal);
-    sql.run(
+    await sql.run(
       `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
       [new Date().toISOString(), data.fileId],
     );
     return { held: true };
   }
-  const file = sql.get<{
+  const file = await sql.get<{
     id: string;
     tenant_id: string;
     detected_mime: string | null;
@@ -136,7 +137,7 @@ async function executeJob(
     [data.fileId],
   );
   if (!file) throw fail('NOT_FOUND');
-  sql.run(
+  await sql.run(
     `UPDATE files SET processing_state = 'processing', updated_at = ? WHERE id = ?`,
     [new Date().toISOString(), data.fileId],
   );
@@ -207,7 +208,7 @@ async function executeJob(
     const attempts = job.opts.attempts ?? 1;
     const terminal = !sdk.retryable || (job.attemptsMade ?? 0) + 1 >= attempts;
     if (terminal) {
-      sql.run(
+      await sql.run(
         `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
         [new Date().toISOString(), data.fileId],
       );

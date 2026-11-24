@@ -155,7 +155,7 @@ export async function runCli(
       return 0;
     }
     if (command === 'doctor') {
-      const report = runDoctor({}, env);
+      const report = await runDoctor({}, env);
       out.stdout(`${JSON.stringify(report, null, json ? 2 : 0)}\n`);
       return report.ok ? 0 : 1;
     }

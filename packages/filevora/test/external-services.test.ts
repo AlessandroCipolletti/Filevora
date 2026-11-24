@@ -33,16 +33,32 @@ test('external service gate stays closed without endpoints', () => {
   );
 });
 
-test('GitHub Actions runs verify against Postgres and MinIO when the workflow is used', () => {
+test('GitHub Actions runs each check as its own job', () => {
   const workflow = readFileSync(
     path.join(repoRoot, '.github/workflows/ci.yml'),
     'utf8',
   );
-  assert.match(workflow, /pnpm run verify/);
+  for (const name of [
+    'typecheck',
+    'lint',
+    'knip',
+    'circular',
+    'build',
+    'test',
+    'test-redis',
+    'test-s3',
+    'test-postgres',
+    'test-mysql',
+  ]) {
+    assert.match(workflow, new RegExp(`^  ${name}:`, 'm'));
+  }
+  assert.equal(workflow.includes('needs:'), false);
   assert.match(workflow, /poppler-utils/);
   assert.match(workflow, /FILEVORA_POSTGRES_URL/);
+  assert.match(workflow, /FILEVORA_MYSQL_URL/);
   assert.match(workflow, /FILEVORA_S3_ENDPOINT/);
   assert.match(workflow, /postgres:16/);
+  assert.match(workflow, /mysql:8/);
   assert.match(workflow, /pgsty\/silo:RELEASE\.2026-11-12T00-00-00Z/);
 });
 

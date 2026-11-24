@@ -2,13 +2,14 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+/** Async metadata session. SQLite, Postgres, and lite cards share this shape. */
 export interface Sql {
-  exec(sql: string): void;
-  get<T>(sql: string, params?: unknown[]): T | undefined;
-  all<T>(sql: string, params?: unknown[]): T[];
-  run(sql: string, params?: unknown[]): void;
-  transaction<T>(fn: () => T): T;
-  close(): void;
+  exec(sql: string): Promise<void>;
+  get<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
+  all<T>(sql: string, params?: unknown[]): Promise<T[]>;
+  run(sql: string, params?: unknown[]): Promise<void>;
+  transaction<T>(fn: () => Promise<T>): Promise<T>;
+  close(): Promise<void>;
 }
 
 function normalize(value: unknown): unknown {
@@ -33,13 +34,13 @@ export function openSqlite(filename: string): Sql {
   db.exec('PRAGMA busy_timeout = 5000');
   db.exec('PRAGMA foreign_keys = ON');
   return {
-    exec(sql) {
+    async exec(sql) {
       db.exec(sql);
     },
-    get<T>(sql: string, params: unknown[] = []) {
+    async get<T>(sql: string, params: unknown[] = []) {
       return row(db.prepare(sql).get(...(params as never[]))) as T | undefined;
     },
-    all<T>(sql: string, params: unknown[] = []) {
+    async all<T>(sql: string, params: unknown[] = []) {
       return db
         .prepare(sql)
         .all(...(params as never[]))
@@ -48,13 +49,13 @@ export function openSqlite(filename: string): Sql {
           (entry): entry is NonNullable<typeof entry> => entry !== undefined,
         ) as T[];
     },
-    run(sql, params = []) {
+    async run(sql, params = []) {
       db.prepare(sql).run(...(params as never[]));
     },
-    transaction(fn) {
+    async transaction(fn) {
       db.exec('BEGIN IMMEDIATE');
       try {
-        const result = fn();
+        const result = await fn();
         db.exec('COMMIT');
         return result;
       } catch (error) {
@@ -66,7 +67,7 @@ export function openSqlite(filename: string): Sql {
         throw error;
       }
     },
-    close() {
+    async close() {
       db.close();
     },
   };

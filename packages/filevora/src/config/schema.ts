@@ -72,9 +72,10 @@ export const filesOptionsSchema = z
     metadata: z
       .object({
         mode: z.enum(['lite', 'stored']).optional(),
-        driver: z.enum(['sqlite', 'postgres']).optional(),
+        driver: z.enum(['sqlite', 'postgres', 'mysql']).optional(),
         filename: z.string().min(1).optional(),
         url: z.string().min(1).optional(),
+        autoMigrate: z.boolean().optional(),
         schema: z
           .string()
           .regex(/^[a-z_][a-z0-9_]*$/i)
@@ -210,7 +211,8 @@ const envShape = {
   FILES_S3_UPLOAD_GRANT_TTL_SECONDS: byteString.optional(),
   FILEVORA_METADATA_MODE: z.enum(['lite', 'stored']).optional(),
   FILEVORA_DATABASE_URL: z.string().optional(),
-  FILES_METADATA_DRIVER: z.enum(['sqlite', 'postgres']).optional(),
+  FILEVORA_AUTO_MIGRATE: boolString.optional(),
+  FILES_METADATA_DRIVER: z.enum(['sqlite', 'postgres', 'mysql']).optional(),
   FILES_SQLITE_PATH: z.string().optional(),
   FILES_POSTGRES_URL: z.string().optional(),
   FILES_POSTGRES_SCHEMA: z.string().optional(),

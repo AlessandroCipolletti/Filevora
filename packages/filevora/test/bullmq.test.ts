@@ -67,11 +67,11 @@ test('two BullMQ workers share one Redis queue and each job runs once', async ()
     const other = await files.listAssetIds({}, { principal: principalB });
     assert.deepEqual(other.assetIds, []);
     const sql = openSqlite(path.join(dir, 'meta.sqlite'));
-    const stored = sql.get<{ original_object_key: string }>(
+    const stored = await sql.get<{ original_object_key: string }>(
       'SELECT original_object_key FROM filevora_assets WHERE id = ?',
       [ids[0]],
     );
-    sql.close();
+    await sql.close();
     assert.match(
       stored?.original_object_key ?? '',
       new RegExp(`${ids[0]}_original\\.png$`),

@@ -47,7 +47,7 @@ export async function publishImagePreset(
   }
   const names: string[] = [];
   for (const target of TARGETS) {
-    const existing = sql.get<{ id: string }>(
+    const existing = await sql.get<{ id: string }>(
       `SELECT id FROM variants WHERE file_id = ? AND name = ? AND recipe_id = ? AND recipe_version = ?`,
       [file.id, target.name, 'web-optimized', 1],
     );
@@ -64,7 +64,7 @@ export async function publishImagePreset(
     const id = createId('variant');
     const key = assetObjectKey(file.tenant_id, file.id, target.name, 'webp');
     await writeBytes(root, key, body);
-    sql.run(
+    await sql.run(
       `INSERT INTO variants (
         id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, width, height,
         duration_ms, checksum, status, created_at
@@ -83,7 +83,7 @@ export async function publishImagePreset(
     );
     names.push(target.name);
   }
-  sql.run(
+  await sql.run(
     `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
     [nowIso(), file.id],
   );

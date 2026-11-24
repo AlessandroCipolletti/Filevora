@@ -37,10 +37,11 @@ export interface ResolvedConfig {
   };
   metadata: {
     mode: 'lite' | 'stored';
-    driver: 'sqlite' | 'postgres';
+    driver: 'sqlite' | 'postgres' | 'mysql';
     filename: string;
     url?: string;
     schema: string;
+    autoMigrate: boolean;
   };
   queue: {
     driver: 'bullmq';
@@ -209,6 +210,9 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
     },
     metadata: {
       ...(e.FILEVORA_METADATA_MODE ? { mode: e.FILEVORA_METADATA_MODE } : {}),
+      ...(e.FILEVORA_AUTO_MIGRATE !== undefined
+        ? { autoMigrate: e.FILEVORA_AUTO_MIGRATE }
+        : {}),
       ...(e.FILES_METADATA_DRIVER ? { driver: e.FILES_METADATA_DRIVER } : {}),
       ...(e.FILES_SQLITE_PATH ? { filename: e.FILES_SQLITE_PATH } : {}),
       ...(e.FILEVORA_DATABASE_URL || e.FILES_POSTGRES_URL
@@ -365,6 +369,42 @@ function invalidConfig(error: ZodError): ReturnType<typeof fail> {
  * which override documented defaults. Does not read `.env` files and does not
  * open storage or spawn a worker.
  */
+export function supportedDatabases(): string {
+  return 'Stored mode supports PostgreSQL (postgres:// or postgresql://), MySQL/MariaDB (mysql:// or mariadb://), and SQLite (sqlite:// or a file path).';
+}
+
+function hostDatabase(raw: string): {
+  driver: 'sqlite' | 'postgres' | 'mysql';
+  url: string;
+  filename: string;
+} {
+  const value = raw.trim();
+  const lower = value.toLowerCase();
+  if (lower.startsWith('postgres://') || lower.startsWith('postgresql://')) {
+    return { driver: 'postgres', url: value, filename: '' };
+  }
+  if (lower.startsWith('mysql://') || lower.startsWith('mariadb://')) {
+    return { driver: 'mysql', url: value, filename: '' };
+  }
+  if (lower.startsWith('sqlite://')) {
+    return {
+      driver: 'sqlite',
+      url: value,
+      filename: value.slice('sqlite://'.length),
+    };
+  }
+  if (lower.startsWith('file:')) {
+    const filename = value.replace(/^file:\/\//, '').replace(/^file:/, '');
+    return { driver: 'sqlite', url: value, filename };
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    throw fail('INVALID_CONFIG', {
+      message: `Unsupported database URL. ${supportedDatabases()}`,
+    });
+  }
+  return { driver: 'sqlite', url: value, filename: value };
+}
+
 export function resolveConfig(
   options: FilesOptions = {},
   env: NodeJS.ProcessEnv = {},
@@ -408,11 +448,16 @@ export function resolveConfig(
   const storageDriver = input.storage?.driver ?? 'filesystem';
   const hostFile = input.metadata?.filename;
   const hostUrl = input.metadata?.url;
-  const metadataDriver =
-    input.metadata?.driver ??
-    (hostUrl?.startsWith('postgres') ? 'postgres' : 'sqlite');
-  const metadataMode =
-    input.metadata?.mode ?? (hostUrl || hostFile ? 'stored' : 'lite');
+  const database = hostUrl || hostFile;
+  if (input.metadata?.mode === 'stored' && !database) {
+    throw fail('INVALID_CONFIG', {
+      message: `Stored mode needs FILEVORA_DATABASE_URL. ${supportedDatabases()} Omit the database URL to run in lite mode.`,
+    });
+  }
+  const metadataMode = input.metadata?.mode ?? (database ? 'stored' : 'lite');
+  const hostDb =
+    metadataMode === 'stored' && database ? hostDatabase(database) : undefined;
+  const metadataDriver = hostDb?.driver ?? 'sqlite';
   const mode =
     input.processing?.mode ??
     (provider === 'distributed' ? 'distributed' : 'worker');
@@ -420,13 +465,7 @@ export function resolveConfig(
     input.processing?.spawn ?? (mode === 'worker' ? 'on-demand' : 'never');
   const singleHostAcknowledged = input.singleHostAcknowledged ?? false;
   const root = input.storage?.root ?? './.files/objects';
-  const filename =
-    hostFile ||
-    (hostUrl?.startsWith('sqlite://')
-      ? hostUrl.slice('sqlite://'.length)
-      : hostUrl?.startsWith('file:')
-        ? hostUrl.slice('file:'.length)
-        : '');
+  const filename = hostDb?.filename ?? '';
   const allowPublic = input.defaults?.allowPublicFiles ?? false;
   const visibility = input.defaults?.visibility ?? 'private';
 
@@ -439,18 +478,6 @@ export function resolveConfig(
   if (storageDriver === 's3' && !input.storage?.s3?.bucket) {
     throw fail('INVALID_CONFIG', {
       message: 'S3 storage requires storage.s3.bucket or FILES_S3_BUCKET.',
-    });
-  }
-  if (metadataMode === 'stored' && metadataDriver === 'sqlite' && !filename) {
-    throw fail('INVALID_CONFIG', {
-      message:
-        'Stored mode needs FILEVORA_DATABASE_URL or FILES_SQLITE_PATH. Lite mode does not use a database file.',
-    });
-  }
-  if (metadataDriver === 'postgres' && !hostUrl) {
-    throw fail('INVALID_CONFIG', {
-      message:
-        'Postgres metadata requires FILEVORA_DATABASE_URL or FILES_POSTGRES_URL.',
     });
   }
   if (
@@ -571,8 +598,9 @@ export function resolveConfig(
       mode: metadataMode,
       driver: metadataDriver,
       filename,
-      ...(hostUrl ? { url: hostUrl } : {}),
+      ...(hostDb?.url ? { url: hostDb.url } : {}),
       schema: input.metadata?.schema ?? 'filevora',
+      autoMigrate: input.metadata?.autoMigrate !== false,
     },
     queue: {
       driver: 'bullmq',

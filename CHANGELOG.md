@@ -86,7 +86,7 @@
 
 ### Follow-up — CI, previews, and release checks
 
-- GitHub Actions installs FFmpeg and Poppler, starts Postgres 16 and MinIO, and runs `pnpm verify`. The workflow file is in the repo. It was not executed on GitHub because this branch was not pushed.
+- GitHub Actions installs FFmpeg and Poppler and starts Postgres 16 and MinIO. The workflow now splits typecheck, lint, knip, circular, build, and the Redis, S3, Postgres, and MySQL tests into separate jobs.
 - Networked S3 runs when `FILEVORA_S3_ENDPOINT`, `FILEVORA_S3_BUCKET`, and the access keys are set. Networked Postgres runs when `FILEVORA_POSTGRES_URL` is set. On this machine both tests skipped: Docker was unavailable and `psql` was not installed. PGlite and the in-process S3 emulator remain the local proof. `createFiles` still opens SQLite.
 - PDF normalize stores a PNG of page 1 when `pdftoppm` succeeds. Poppler 26.04.0 rendered the fixture at 200×200. A missing binary returns `preview.available: false` with `PROCESSOR_UNAVAILABLE` and still returns extracted text.
 - Video posters are `image/webp`. FFmpeg encodes them only when `ffmpeg -encoders` lists libwebp. FFmpeg 8.1.2 on this machine does not, so Sharp encodes the poster. `doctor` check `ffmpeg-webp` warns and does not fail the report.
@@ -112,7 +112,8 @@
 - `FILEVORA_METADATA_MODE=lite` is the default. It uses object storage and Redis and does not create a database file.
 - `GET /files/:assetId` probes `{assetId}_{version}.{ext}`. `?detailed=true` includes dimensions. Responses include `asset` (`AssetInfo`).
 - List, retention, and `filevora migrate` return `FEATURE_REQUIRES_STORED_MODE` in lite, with the env change, migrate command, and doctor check.
-- Stored mode uses `FILEVORA_DATABASE_URL` on the host database. `npx filevora migrate` creates `filevora_assets` and `filevora_asset_versions`.
+- Omitting `FILEVORA_DATABASE_URL` stays in lite. Setting it selects stored mode. `postgres://` and `postgresql://` use PostgreSQL, `mysql://` and `mariadb://` use MySQL or MariaDB, and `sqlite://` or a file path uses SQLite. An unknown scheme, or stored mode with no database, returns `INVALID_CONFIG` and names those three.
+- `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
 ### BullMQ processing queue

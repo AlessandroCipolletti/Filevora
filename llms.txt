@@ -8,7 +8,7 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Troubleshooting](docs/agents/troubleshooting.md)
 - [Verification](docs/agents/verification.md)
 - [Capabilities](docs/agents/capabilities.json)
-- [Configuration](docs/configuration.md)
+- [Configuration](docs/configuration.md) — no `FILEVORA_DATABASE_URL` is lite mode; a URL selects stored mode. Schemes: `postgres://`, `postgresql://`, `mysql://`, `mariadb://`, `sqlite://` or a file path. Migrate creates only `filevora_assets` and `filevora_asset_versions`.
 - [Architecture](docs/architecture.md)
 - [Security](docs/security.md)
 - [Changelog](CHANGELOG.md)

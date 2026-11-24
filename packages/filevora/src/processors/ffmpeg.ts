@@ -384,7 +384,7 @@ export async function publishRecipe(
       height: probed.height,
       durationMs: probed.durationMs,
     });
-    sql.run(
+    await sql.run(
       `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
       [nowIso(), file.id],
     );
@@ -590,7 +590,7 @@ async function publishMedia(
         names.push('hd');
       }
     }
-    sql.run(
+    await sql.run(
       `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
       [nowIso(), file.id],
     );
@@ -723,7 +723,7 @@ async function storeVariant(
     durationMs?: number;
   },
 ): Promise<void> {
-  const existing = sql.get<{ id: string }>(
+  const existing = await sql.get<{ id: string }>(
     'SELECT id FROM variants WHERE file_id = ? AND name = ? AND recipe_id = ? AND recipe_version = 1',
     [file.id, input.name, input.recipeId],
   );
@@ -736,7 +736,7 @@ async function storeVariant(
     input.extension,
   );
   await writeBytes(root, key, input.body);
-  sql.run(
+  await sql.run(
     `INSERT INTO variants (
       id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, width, height, duration_ms, checksum, status, created_at
     ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'ready', ?)`,

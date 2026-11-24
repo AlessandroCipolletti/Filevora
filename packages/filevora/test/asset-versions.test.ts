@@ -134,15 +134,11 @@ test('upload start returns a stable asset id and versions keep the original', as
     const sqlPath = options.metadata.filename;
     const { openSqlite } = await import('../dist/metadata/sqlite.js');
     const sql = openSqlite(sqlPath);
-    sql.run(
+    await sql.run(
       `UPDATE filevora_assets SET processing_state = 'failed' WHERE id = ?`,
       [session.assetId],
     );
-    sql.run(
-      `UPDATE jobs SET state = 'failed', error_code = 'FFMPEG_FAILED' WHERE file_id = ?`,
-      [session.assetId],
-    );
-    sql.close();
+    await sql.close();
     const failed = await versions(handler, session.assetId);
     assert.equal(failed.status, 'failed');
     assert.match(failed.versions._original?.url ?? '', /\/content\//);

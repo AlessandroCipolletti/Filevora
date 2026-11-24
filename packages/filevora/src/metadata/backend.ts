@@ -1,54 +1,30 @@
 import type { ResolvedConfig } from '../config/load.js';
 import { fail } from '../errors/error.js';
+import { hostSql } from './host-sql.js';
 import { migrate } from './migrate.js';
+import { openMysql } from './mysql-sql.js';
 import { openObjectSql } from './object-sql.js';
+import { openPostgres } from './postgres-sql.js';
 import { openSqlite, type Sql } from './sqlite.js';
 
 /** Open lite object cards or the host database. Does not create a default SQLite file. */
-export function openBackend(config: ResolvedConfig): Sql {
+export async function openBackend(config: ResolvedConfig): Promise<Sql> {
   if (config.metadata.mode === 'lite')
     return openObjectSql(config.storage.root);
-  if (config.metadata.driver === 'postgres') {
+  if (!config.metadata.url && !config.metadata.filename) {
     throw fail('INVALID_CONFIG', {
       message:
-        'Postgres stored mode is applied with `npx filevora migrate`. Point FILEVORA_DATABASE_URL at a host SQLite file for the in-process service, or run migrate against Postgres.',
+        'Stored mode needs FILEVORA_DATABASE_URL for a PostgreSQL, MySQL/MariaDB, or SQLite database the host already runs.',
     });
   }
-  if (!config.metadata.filename) {
-    throw fail('INVALID_CONFIG', {
-      message:
-        'Stored mode needs FILEVORA_DATABASE_URL or FILES_SQLITE_PATH. Lite mode does not use a database file.',
-    });
+  const sql =
+    config.metadata.driver === 'postgres'
+      ? await openPostgres(config.metadata.url ?? '')
+      : config.metadata.driver === 'mysql'
+        ? await openMysql(config.metadata.url ?? '')
+        : openSqlite(config.metadata.filename);
+  if (config.metadata.autoMigrate !== false) {
+    await migrate(sql, config.metadata.driver);
   }
-  const sql = openSqlite(config.metadata.filename);
-  migrate(sql);
-  return rewriteAssetTables(sql);
-}
-
-/** Existing statements say `files` and `variants`. The host tables use the filevora_ names. */
-function rewriteAssetTables(sql: Sql): Sql {
-  const rewrite = (statement: string) =>
-    statement
-      .replace(/\bfiles\b/g, 'filevora_assets')
-      .replace(/\bvariants\b/g, 'filevora_asset_versions');
-  return {
-    exec(statement) {
-      sql.exec(rewrite(statement));
-    },
-    get(statement, params) {
-      return sql.get(rewrite(statement), params);
-    },
-    all(statement, params) {
-      return sql.all(rewrite(statement), params);
-    },
-    run(statement, params) {
-      sql.run(rewrite(statement), params);
-    },
-    transaction(fn) {
-      return sql.transaction(fn);
-    },
-    close() {
-      sql.close();
-    },
-  };
+  return hostSql(sql);
 }

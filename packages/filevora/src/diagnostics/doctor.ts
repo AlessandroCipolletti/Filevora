@@ -27,10 +27,10 @@ export interface DoctorReport {
 }
 
 /** Read-only-as-possible environment report. Migrations are applied because they are idempotent. */
-export function runDoctor(
+export async function runDoctor(
   options: FilesOptions = {},
   env: NodeJS.ProcessEnv = process.env,
-): DoctorReport {
+): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   const [major = 0, minor = 0] = process.versions.node
     .split('.')
@@ -93,8 +93,8 @@ export function runDoctor(
   } else if (config.metadata.driver === 'sqlite' && config.metadata.filename) {
     try {
       const sql = openSqlite(config.metadata.filename);
-      migrate(sql);
-      sql.close();
+      await migrate(sql, 'sqlite');
+      await sql.close();
       checks.push({
         id: 'metadata',
         status: 'pass',
@@ -109,14 +109,17 @@ export function runDoctor(
         message: 'The host SQLite database could not be opened.',
       });
     }
-  } else if (config.metadata.driver === 'postgres') {
+  } else if (
+    config.metadata.driver === 'postgres' ||
+    config.metadata.driver === 'mysql'
+  ) {
     checks.push({
       id: 'metadata',
       status: config.metadata.url ? 'pass' : 'fail',
       required: true,
       message: config.metadata.url
-        ? 'Postgres stored mode uses the host database. Run npx filevora migrate.'
-        : 'Stored Postgres mode needs FILEVORA_DATABASE_URL.',
+        ? `${config.metadata.driver} stored mode uses the host database. Run npx filevora migrate if auto-migrate is off.`
+        : 'Stored mode needs FILEVORA_DATABASE_URL.',
     });
   }
   const ffmpeg = spawnSync(

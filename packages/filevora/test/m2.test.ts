@@ -142,7 +142,7 @@ test('expired and unknown sessions fail without storing the bytes', async () => 
         (init?.method ?? 'GET') === 'POST'
       ) {
         const db = new DatabaseSync(sqlite);
-        db.prepare('UPDATE upload_sessions SET expires_at = ?').run(
+        db.prepare('UPDATE filevora_assets SET expires_at = ?').run(
           new Date(Date.now() - 1000).toISOString(),
         );
         db.close();

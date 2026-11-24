@@ -31,6 +31,8 @@ Store `assetId` from `POST /sessions`. Object keys are `{tenantHash}/{assetId}_{
 
 ## Stored mode
 
-Set `FILEVORA_METADATA_MODE=stored` and `FILEVORA_DATABASE_URL` to the host database (`sqlite://...` or `postgres://...`). Run `npx filevora migrate` to create `filevora_assets` and `filevora_asset_versions`. `GET /files?kind=&status=&createdAfter=` and `GET /assets` list ids for the signed-in tenant. Verify with `npx filevora doctor --json`.
+Providing `FILEVORA_DATABASE_URL` selects stored mode. Omitting it selects lite mode. `FILEVORA_METADATA_MODE` is an optional override. Stored without a URL is an error. Unsupported schemes name the three supported databases.
+
+The scheme is the driver: `postgres://` or `postgresql://`, `mysql://` or `mariadb://`, `sqlite://` or a file path. The database is one the host already runs. `npx filevora migrate` creates only `filevora_assets` and `filevora_asset_versions`. `GET /files?kind=&status=&createdAfter=` and `GET /assets` list ids for the signed-in tenant. Verify with `npx filevora doctor --json`.
 
 FFmpeg and Poppler are system binaries. This package does not download them. `pg` and `sharp` are optional dependencies.

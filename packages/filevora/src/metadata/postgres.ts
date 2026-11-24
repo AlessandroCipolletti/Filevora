@@ -1,3 +1,5 @@
+import { hostStatements } from './host-schema.js';
+
 interface ResultRow {
   [key: string]: unknown;
 }
@@ -19,65 +21,10 @@ function toPostgres(sql: string): string {
   });
 }
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS filevora_assets (
-  id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  owner_id TEXT NOT NULL,
-  original_name TEXT NOT NULL,
-  detected_mime TEXT,
-  bytes INTEGER NOT NULL,
-  checksum TEXT,
-  original_object_key TEXT,
-  upload_state TEXT NOT NULL,
-  processing_state TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS jobs (
-  id TEXT PRIMARY KEY,
-  file_id TEXT NOT NULL,
-  tenant_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  schema_version INTEGER NOT NULL,
-  state TEXT NOT NULL,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  max_attempts INTEGER NOT NULL,
-  run_after TEXT NOT NULL,
-  lease_owner TEXT,
-  lease_until TEXT,
-  idempotency_key TEXT,
-  error_code TEXT,
-  result_json TEXT,
-  progress_ratio DOUBLE PRECISION,
-  eta_ms INTEGER,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS jobs_idempotency ON jobs (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
-CREATE TABLE IF NOT EXISTS filevora_asset_versions (
-  id TEXT PRIMARY KEY,
-  file_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  recipe_id TEXT NOT NULL,
-  recipe_version INTEGER NOT NULL,
-  storage_key TEXT NOT NULL,
-  mime TEXT NOT NULL,
-  bytes INTEGER NOT NULL,
-  checksum TEXT NOT NULL,
-  status TEXT NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS filevora_asset_versions_recipe ON filevora_asset_versions (file_id, name, recipe_id, recipe_version);
-`;
-
 export async function applyPostgresSchema(
   db: PostgresQueryable,
 ): Promise<void> {
-  const statements = SCHEMA.split(';')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
-  for (const statement of statements) {
+  for (const statement of hostStatements('postgres')) {
     if (db.exec) await db.exec(statement);
     else await db.query(statement);
   }

@@ -115,7 +115,7 @@ test('normalize stores a PNG of PDF page 1 when pdftoppm is installed', async (t
     assert.equal(page?.mimeType, 'image/png');
     assert.equal(page?.width, 200);
     assert.equal(page?.height, 200);
-    const report = runDoctor({
+    const report = await runDoctor({
       env: 'test',
       storage: { root: objects },
       metadata: { filename: path.join(dir, 'meta.sqlite') },

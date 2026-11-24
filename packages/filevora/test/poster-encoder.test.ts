@@ -25,10 +25,10 @@ test('selectPosterEncoder uses libwebp only when the encoder list contains it', 
   );
 });
 
-test('doctor reports Sharp posters when FFmpeg has no libwebp encoder', () => {
+test('doctor reports Sharp posters when FFmpeg has no libwebp encoder', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'filevora-poster-'));
   try {
-    const report = runDoctor({
+    const report = await runDoctor({
       env: 'test',
       storage: { root: path.join(dir, 'objects') },
       metadata: { filename: path.join(dir, 'meta.sqlite') },
