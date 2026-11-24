@@ -23,8 +23,16 @@ const imageCrop = z
 const videoResize = z
   .object({
     op: z.literal('video.resize'),
-    width: z.number().int().min(2).max(1920),
+    width: z.number().int().min(2).max(1920).optional(),
     height: z.number().int().min(2).max(1080),
+  })
+  .strict();
+
+const videoPoster = z
+  .object({
+    op: z.literal('video.poster'),
+    atMs: z.number().int().min(0).optional(),
+    width: z.number().int().min(2).max(1920).optional(),
   })
   .strict();
 
@@ -59,6 +67,7 @@ export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   videoResize,
   videoCrop,
   videoTrim,
+  videoPoster,
   pdfRemovePages,
 ]);
 
@@ -89,7 +98,8 @@ export function mediaFamily(mime: string | null | undefined): MediaFamily {
 export function validOperations(mime: string | null | undefined): string[] {
   const family = mediaFamily(mime);
   if (family === 'image') return ['image.resize', 'image.crop'];
-  if (family === 'video') return ['video.resize', 'video.crop', 'video.trim'];
+  if (family === 'video')
+    return ['video.resize', 'video.crop', 'video.trim', 'video.poster'];
   if (family === 'pdf') return ['pdf.removePages'];
   return [];
 }
@@ -170,8 +180,20 @@ export function assertTransformFits(
         );
       }
     }
+    if (operation.op === 'video.poster') {
+      reject(
+        `${field}.op`,
+        'video.poster is stored as a version. Use preset "poster".',
+        mime,
+        allowed,
+      );
+    }
     if (operation.op === 'video.resize' || operation.op === 'video.crop') {
-      if (operation.width % 2 !== 0 || operation.height % 2 !== 0) {
+      const width = 'width' in operation ? operation.width : undefined;
+      if (
+        operation.height % 2 !== 0 ||
+        (width !== undefined && width % 2 !== 0)
+      ) {
         reject(
           `${field}.width`,
           'Video width and height must be even.',

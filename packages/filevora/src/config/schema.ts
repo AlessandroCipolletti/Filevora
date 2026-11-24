@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { MalwareScanner } from '../safety/scan.js';
+import { customPresetsSchema } from '../presets/schema.js';
 
 const byteString = z
   .string()
@@ -123,6 +124,7 @@ export const filesOptionsSchema = z
         allowPublicFiles: z.boolean().optional(),
       })
       .optional(),
+    presets: customPresetsSchema.optional(),
     upload: z
       .object({
         chunkBytes: z
@@ -269,6 +271,7 @@ const envShape = {
   FILES_DEFAULT_VISIBILITY: z.enum(['private', 'public']).optional(),
   FILES_KEEP_ORIGINAL: boolString.optional(),
   FILES_DEFAULT_PRESET: z.string().optional(),
+  FILEVORA_PRESETS: z.string().optional(),
   FILES_MAX_FILE_BYTES: byteString.optional(),
   FILES_ALLOWED_MIME_TYPES: z.string().optional(),
   FILES_MAX_FILES_PER_BATCH: byteString.optional(),

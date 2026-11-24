@@ -12,6 +12,8 @@ import {
   publishVideoPreset,
 } from '../processors/ffmpeg.js';
 import { publishImagePreset } from '../processors/image.js';
+import { publishNamedPreset } from '../presets/publish.js';
+import { findPreset } from '../presets/catalog.js';
 import { applyAssetTransform } from '../transform/apply.js';
 import type { AssetTransformOperation } from '../transform/schema.js';
 import {
@@ -219,8 +221,9 @@ async function executeJob(
     tenant_id: string;
     detected_mime: string | null;
     original_object_key: string | null;
+    preset: string | null;
   }>(
-    'SELECT id, tenant_id, detected_mime, original_object_key FROM files WHERE id = ?',
+    'SELECT id, tenant_id, detected_mime, original_object_key, preset FROM files WHERE id = ?',
     [data.fileId],
   );
   if (!file) throw fail('NOT_FOUND');
@@ -279,6 +282,38 @@ async function executeJob(
       return { variants: ['_original'], processingState: 'ready' };
     }
     if (data.type === 'preset') {
+      const requested =
+        typeof data.payload.preset === 'string'
+          ? data.payload.preset
+          : file.preset || 'web-optimized';
+      const named = findPreset(requested, config.presets);
+      if (!named) {
+        throw fail('TRANSFORM_REJECTED', {
+          message: `Unknown preset "${requested}".`,
+          context: {
+            field: 'preset',
+            reason: `Unknown preset "${requested}".`,
+          },
+        });
+      }
+      if (named.delivery !== 'legacy') {
+        const names = await publishNamedPreset({
+          sql,
+          root: config.storage.root,
+          file,
+          preset: named,
+          exif: config.safety.exif,
+          ffmpeg: paths.ffmpeg,
+          ffprobe: paths.ffprobe,
+          timeoutMs: limits.timeoutMs,
+          jobId: job.id ?? data.fileId,
+          maxPixels: config.processing.imageMaxPixels,
+          maxHeight: limits.maxHeight,
+          ...(signal ? { signal } : {}),
+        });
+        await notifyTerminal(sql, config, data, 'processing.completed');
+        return { variants: names, processingState: 'ready' };
+      }
       if (file.detected_mime?.startsWith('image/')) {
         const names = await publishImagePreset(
           sql,

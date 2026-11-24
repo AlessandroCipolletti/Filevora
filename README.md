@@ -95,7 +95,8 @@ Mode follows the environment. Omit `FILEVORA_DATABASE_URL` and the SDK uses **li
 
 Each line is implemented in this package. Status of what an automated test covers is in the [capability manifest](docs/agents/capabilities.json). Deeper notes stay in the linked docs.
 
-- **Upload.** Resumable chunked sessions, pause, retry, and resume after refresh. `complete()` means the original is stored. [docs/agents/install.md](docs/agents/install.md)
+- **Upload.** Resumable chunked sessions, pause, retry, and resume after refresh. `complete()` means the original is stored. Pass `preset` to choose the versions. [docs/agents/install.md](docs/agents/install.md)
+- **Presets.** Named image and video recipes (`thumbnail`, `avatar`, `og-image`, `hero`, `social-square`, `video-480p`, `video-720p`, `video-1080p`, `video-preview`, `poster`) plus the default `web-optimized` set. Custom presets use the same operations as transform. [docs/presets.md](docs/presets.md)
 - **URL import.** `POST /assets/from-url` returns an asset id, then the SDK downloads the URL, sniffs the bytes, and queues the same encoding jobs. Private and metadata addresses are rejected. [docs/configuration.md](docs/configuration.md)
 - **Transform.** One config object: `image.resize`, `image.crop`, `video.resize`, `video.crop`, `video.trim`, `pdf.removePages`. `replace` defaults to true. [docs/agents/transform.md](docs/agents/transform.md)
 - **Processing.** Image presets write WebP thumbnail, optimized, and HD with Sharp and do not enlarge the source. Video presets write an H.264 MP4 and a WebP poster. Audio presets write AAC in an M4A file. PDF text extraction reads literal text; `pdftoppm` stores a PNG of page 1 when it is on `PATH`. CSV and XLSX return row counts. OCR returns `OCR_NOT_CONFIGURED`.
@@ -105,7 +106,7 @@ Each line is implemented in this package. Status of what an automated test cover
 - **Retention and cleanup.** `FILES_RETENTION_*` and `FILES_UNUSED_RETENTION_DAYS`. A delivery URL updates `last_accessed_at` (the asset row in stored mode, the asset card in lite). Cleanup also removes old orphans. Pins are kept. [docs/agents/retention.md](docs/agents/retention.md)
 - **Upload safety.** Optional ClamAV scan after the original is stored and before encoding. No scanner means the scan is skipped. `FILEVORA_EXIF_STRIP` defaults to `gps`. `FILEVORA_TYPE_MAX_BYTES` limits size by the sniffed type, not the extension.
 - **Test helpers.** `filevora/testing` uses a temporary filesystem, lite mode, and synchronous processing. No Redis or S3. [docs/agents/testing.md](docs/agents/testing.md)
-- **Init and doctor.** `filevora init` detects Express, Fastify, Hono, Next.js, or Node and writes files only with `--force` when they already exist. `filevora doctor` checks config, mode, storage, Redis, the database, ffmpeg, ffprobe, the scanner, and webhooks. `health: true` serves that report. [docs/agents/init.md](docs/agents/init.md) · [docs/agents/doctor.md](docs/agents/doctor.md)
+- **Init and doctor.** `filevora init` detects Express, Fastify, Hono, Next.js, or Node and writes files only with `--force` when they already exist. The env template sets `FILES_DEFAULT_PRESET`. `filevora doctor` checks config, mode, storage, Redis, the database, ffmpeg, ffprobe, the scanner, webhooks, and that the default preset exists. `health: true` serves that report. [docs/agents/init.md](docs/agents/init.md) · [docs/agents/doctor.md](docs/agents/doctor.md)
 - **Manifest and MCP.** `filevora manifest --json` and `readManifest()` return the versioned capability document. `filevora mcp` exposes lookup, config validation, and doctor over stdio with no extra dependency. [docs/agents/manifest.md](docs/agents/manifest.md)
 - **Storage.** Filesystem, or S3-compatible storage via `FILEVORA_S3_*`. `filevora init --profile local-s3` writes a MinIO Compose file and does not start Docker.
 - **Metadata databases.** Lite has none. Stored uses PostgreSQL, MySQL or MariaDB, or SQLite, chosen by the database URL scheme.
@@ -125,13 +126,13 @@ Routes come from `HTTP_ROUTES`. The host principal is required on every route ex
 | `POST` | `/sessions/:sessionId/abort` | Abort the session. |
 | `GET` | `/assets` | List asset ids. Stored mode only. |
 | `POST` | `/retention/cleanup` | Run retention. Body `{ dryRun?: boolean }`. |
-| `POST` | `/assets/from-url` | Import an http(s) URL. Returns the file record before the download finishes. |
+| `POST` | `/assets/from-url` | Import an http(s) URL. Optional `preset`. Returns the file record before the download finishes. |
 | `POST` | `/files/batch` | Read many files by id. |
 | `GET` | `/files` | List files for the tenant. Stored mode only. |
 | `GET` | `/files/:fileId` | Read one file. |
 | `DELETE` | `/files/:fileId` | Soft-delete the asset and its versions. |
 | `GET` | `/files/:fileId/versions` | Signed URLs for every ready version, including `_original`. |
-| `POST` | `/files/:fileId/transform` | Queue a transform. Returns `{ launched, jobId, assetId, sourceAssetId, replace }`. |
+| `POST` | `/files/:fileId/transform` | Queue a transform. Body may be `operations` or `preset` (single-output presets accept extra `operations` after the preset). Returns `{ launched, jobId, assetId, sourceAssetId, replace }`. |
 | `GET` | `/files/:fileId/progress` | Progress event as `text/event-stream` or JSON. |
 | `POST` | `/files/:fileId/delivery` | Sign delivery URLs. Optional `expiresInSeconds`. |
 | `GET` | `/content/:token` | Download bytes for a signed token. No principal. |
@@ -146,9 +147,9 @@ Public entry points match `package.json` `exports` and `catalog.exports` in the 
 
 ### `filevora/server`
 
-`createFiles(options?)` returns a `Files` instance: sessions, URL import, transform, get, list, delete, delivery URLs, progress snapshots, retention, and normalize. Construction does not spawn a worker.
+`createFiles(options?)` returns a `Files` instance: sessions, URL import, transform, get, list, delete, delivery URLs, progress snapshots, retention, and normalize. `listPresets()` lists built-in and custom preset names. Construction does not spawn a worker.
 
-Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, `RequestContext`, `assetTransformSchema`, `AssetTransform`, `AssetTransformInput`, `AssetTransformOperation`.
+Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, `RequestContext`, `listPresets`, `PresetSummary`, `assetTransformSchema`, `AssetTransform`, `AssetTransformInput`, `AssetTransformOperation`.
 
 ### `filevora/client`
 
@@ -214,6 +215,8 @@ Start at [llms.txt](llms.txt). The manifest is the source of truth for routes, e
 - [docs/agents/retention.md](docs/agents/retention.md)
 - [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md)
 - [docs/agents/verification.md](docs/agents/verification.md)
+- [Presets](docs/presets.md) — built-in image and video presets and custom recipes
+- [docs/agents/presets.md](docs/agents/presets.md)
 - [docs/configuration.md](docs/configuration.md)
 - [docs/architecture.md](docs/architecture.md)
 - [docs/security.md](docs/security.md)

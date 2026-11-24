@@ -43,6 +43,7 @@
     "processingProgress": "tested",
     "uploadHistory": "tested",
     "metadataModes": "tested",
+    "namedPresets": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -56,6 +57,7 @@
     "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary or a PDF Poppler cannot read leaves the preview unavailable and still returns extracted text. OCR returns OCR_NOT_CONFIGURED.",
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
     "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs.",
-    "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest."
+    "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest.",
+    "Named presets expand to transform operations. The default web-optimized preset still publishes thumbnail, optimized, and hd. Custom presets are a presets object or FILEVORA_PRESETS JSON. See docs/presets.md."
   ]
 }

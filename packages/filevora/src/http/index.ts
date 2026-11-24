@@ -170,9 +170,14 @@ async function dispatch(
       });
     }
     const webhook = webhookFrom(record.webhook);
+    const preset = stringField(record, 'preset');
     return json(
       await options.files.createFromUrl(
-        { url, ...(webhook ? { webhook } : {}) },
+        {
+          url,
+          ...(webhook ? { webhook } : {}),
+          ...(preset ? { preset } : {}),
+        },
         ctx,
       ),
       202,

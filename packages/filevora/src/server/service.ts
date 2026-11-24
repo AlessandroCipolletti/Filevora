@@ -37,11 +37,13 @@ import {
   readProcessingProgress,
   removeProcessingJob,
 } from '../queue/processing-queue.js';
-import {
-  assertTransformFits,
-  parseAssetTransform,
-} from '../transform/schema.js';
+import { assertTransformFits } from '../transform/schema.js';
 import { measureOriginal } from '../transform/apply.js';
+import {
+  assertKnownPreset,
+  expandTransform,
+  presetQueueAction,
+} from '../presets/expand.js';
 import { downloadRemote } from '../remote/download.js';
 import { assertDetectedSize } from '../safety/limits.js';
 import { checkRemoteUrl } from '../remote/policy.js';
@@ -441,7 +443,7 @@ export class FileService {
   }> {
     const raw = isRecord(input) ? input : {};
     const webhook = webhookRequest(raw.webhook);
-    const config = parseAssetTransform(withoutWebhook(raw));
+    const body = withoutWebhook(raw);
     const located = await this.locateOriginal(assetId, ctx);
     const prefix = await readPrefix(this.root(), located.key);
     const detected = sniffMime(prefix);
@@ -453,9 +455,51 @@ export class FileService {
           reason: 'The original bytes did not match image, video, or PDF.',
           detectedType: null,
           validOperations: [],
+          validPresets: [],
         },
       });
     }
+    const expanded = expandTransform(body, detected, this.config.presets);
+    if (expanded.mode === 'versions') {
+      const now = nowIso();
+      const jobId =
+        this.config.processing.mode === 'sync'
+          ? `inline_${assetId}`
+          : createId('job');
+      await (
+        await this.db()
+      ).run(
+        `UPDATE files SET preset = ?, processing_state = 'queued', updated_at = ? WHERE id = ?`,
+        [expanded.preset.name, now, assetId],
+      );
+      if (this.config.processing.mode !== 'sync') {
+        await removeProcessingJob({
+          env: this.config.env,
+          redisUrl: this.config.queue.redisUrl,
+          id: `preset_${assetId}`,
+          scope: this.config.storage.root,
+        });
+      }
+      await this.dispatchJob({
+        id: jobId,
+        fileId: assetId,
+        tenantId: ctx.principal.tenantId,
+        type: 'preset',
+        payload: { schemaVersion: 1, preset: expanded.preset.name },
+        maxAttempts: this.config.queue.maxAttempts,
+      });
+      return {
+        launched: true,
+        jobId,
+        assetId,
+        sourceAssetId: assetId,
+        replace: false,
+      };
+    }
+    const config = {
+      replace: expanded.replace,
+      operations: expanded.operations,
+    };
     const bounds = await measureOriginal(
       this.root(),
       located.key,
@@ -869,6 +913,7 @@ export class FileService {
       });
     }
     const preset = input.preset ?? this.config.defaults.preset;
+    assertKnownPreset(preset, this.config.presets);
     const visibility = this.resolveVisibility(input.visibility);
     await this.assertQuota(ctx.principal.tenantId, input.bytes);
     if (input.idempotencyKey) {
@@ -982,10 +1027,12 @@ export class FileService {
    * The download and the normal encoding queue continue after this returns.
    */
   async createFromUrl(
-    input: { url: string; webhook?: WebhookRequest },
+    input: { url: string; webhook?: WebhookRequest; preset?: string },
     ctx: RequestContext,
   ): Promise<FileRecord> {
     await checkRemoteUrl(input.url, this.config.remote, 'request');
+    const preset = input.preset ?? this.config.defaults.preset;
+    assertKnownPreset(preset, this.config.presets);
     const sql = await this.db();
     if (this.config.storage.driver === 's3') await this.s3();
     const now = nowIso();
@@ -1002,7 +1049,7 @@ export class FileService {
         ctx.principal.tenantId,
         ctx.principal.id,
         filename,
-        this.config.defaults.preset,
+        preset,
         JSON.stringify({
           filevoraSource: 'remote-url',
           ...(await this.checkedWebhook(input.webhook)),
@@ -1876,7 +1923,17 @@ export class FileService {
     mime: string,
     ctx: RequestContext,
   ): Promise<boolean> {
-    if (!/^(image|video|audio)\//.test(mime)) return false;
+    const row = await (
+      await this.db()
+    ).get<{ preset: string | null }>('SELECT preset FROM files WHERE id = ?', [
+      fileId,
+    ]);
+    const action = presetQueueAction(
+      row?.preset || this.config.defaults.preset,
+      mime,
+      this.config.presets,
+    );
+    if (action === 'skip') return false;
     await this.queueWebhook(fileId, ctx, 'upload.completed');
     const sync = this.config.processing.mode === 'sync';
     await this.dispatchJob({

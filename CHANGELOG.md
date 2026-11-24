@@ -148,6 +148,12 @@
 - `FILEVORA_EXIF_STRIP` defaults to `gps` for image versions. `all` drops metadata and `none` keeps it.
 - `FILEVORA_TYPE_MAX_BYTES` limits size by the sniffed type.
 
+### Named presets
+
+- Built-in presets: `web-optimized` (default; thumbnail, optimized, hd), `thumbnail`, `avatar`, `og-image`, `hero`, `social-square`, `video-480p`, `video-720p`, `video-1080p`, `video-preview`, and `poster`.
+- Upload and URL import store the preset's versions next to `_original`. `POST /files/:assetId/transform` accepts `preset`. Single-output presets can be followed by `operations`. Unknown or incompatible names return `TRANSFORM_REJECTED` with `validPresets`.
+- Custom presets are `presets` in config or `FILEVORA_PRESETS` JSON, validated like transform operations. See `docs/presets.md`.
+
 ### Transform an existing asset
 
 - `POST /files/:assetId/transform` accepts one config object and returns `{ launched, jobId, assetId }` immediately. The job uses the BullMQ queue.

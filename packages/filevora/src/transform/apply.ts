@@ -178,7 +178,11 @@ async function applyVideo(
         `crop=${operation.width}:${operation.height}:${operation.x}:${operation.y}`,
       );
     } else if (operation.op === 'video.resize') {
-      filters.push(`scale=${operation.width}:${operation.height}`);
+      filters.push(
+        operation.width
+          ? `scale=${operation.width}:${operation.height}`
+          : `scale=-2:${operation.height}`,
+      );
     } else if (operation.op === 'video.trim') {
       start = operation.startMs / 1000;
       end = operation.endMs / 1000;

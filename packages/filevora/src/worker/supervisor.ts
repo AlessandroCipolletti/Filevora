@@ -56,7 +56,11 @@ export function workerConfigOptions(config: ResolvedConfig): FilesOptions {
     defaults: {
       maxFileBytes: config.defaults.maxFileBytes,
       allowedMimeTypes: config.defaults.allowedMimeTypes,
+      preset: config.defaults.preset,
     },
+    ...(Object.keys(config.presets).length > 0
+      ? { presets: config.presets }
+      : {}),
   };
 }
 

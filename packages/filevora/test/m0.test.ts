@@ -391,6 +391,7 @@ test('capabilities manifest matches the schema and does not mark untested featur
     'processingProgress',
     'uploadHistory',
     'metadataModes',
+    'namedPresets',
   ]);
   for (const [id, status] of Object.entries(manifest.features)) {
     if (status === 'tested')

@@ -560,7 +560,7 @@ export const ERROR_CATALOG = {
     message: 'The asset transform was rejected.',
     resolution: resolution(
       'docs/errors/TRANSFORM_REJECTED.md',
-      'The config does not match the sniffed media type, or a crop, trim, or page list is outside the file. context.field is the offending key, context.reason says why, context.detectedType is the sniffed type, and context.validOperations lists what that type accepts.',
+      'The config does not match the sniffed media type, a preset name is unknown, or a crop, trim, or page list is outside the file. context.field is the offending key, context.reason says why, context.detectedType is the sniffed type, context.validOperations lists operations, and context.validPresets lists preset names when the failure is about a preset.',
       [
         action(
           'match_type',

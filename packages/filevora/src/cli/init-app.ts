@@ -249,6 +249,7 @@ function envTemplate(mode: 'lite' | 'stored', databaseUrl?: string): string {
     'FILES_STORAGE_DRIVER=filesystem',
     'FILES_STORAGE_ROOT=./.files/objects',
     'REDIS_URL=redis://127.0.0.1:6379',
+    'FILES_DEFAULT_PRESET=web-optimized',
   ];
   if (mode === 'stored') {
     lines.push(

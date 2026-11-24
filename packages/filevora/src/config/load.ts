@@ -1,6 +1,9 @@
 import os from 'node:os';
 import type { ZodError } from 'zod';
 import { fail } from '../errors/error.js';
+import { assertConfiguredPreset } from '../presets/expand.js';
+import { customPresetMap } from '../presets/catalog.js';
+import { type CustomPresetMap, parsePresetJson } from '../presets/schema.js';
 import { parseTypeLimits } from '../safety/limits.js';
 import { createClamAvScanner } from '../safety/scan.js';
 import { redactValue } from '../redact.js';
@@ -77,6 +80,7 @@ export interface ResolvedConfig {
     tenantQuotaBytes?: number;
     allowPublicFiles: boolean;
   };
+  presets: CustomPresetMap;
   upload: {
     chunkBytes: number;
     partConcurrency: number;
@@ -369,6 +373,13 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
         ? { allowPublicFiles: e.FILES_ALLOW_PUBLIC_FILES }
         : {}),
     },
+    ...(e.FILEVORA_PRESETS
+      ? {
+          presets: parsePresetJson(
+            e.FILEVORA_PRESETS,
+          ) as FilesOptions['presets'],
+        }
+      : {}),
     retention: {
       ...(e.FILES_RETENTION_ENABLED !== undefined
         ? { enabled: e.FILES_RETENTION_ENABLED }
@@ -632,6 +643,10 @@ export function resolveConfig(
     });
   }
 
+  const presets = customPresetMap(input.presets);
+  const presetName = input.defaults?.preset ?? 'web-optimized';
+  assertConfiguredPreset(presetName, presets);
+
   const chunkBytes =
     input.upload?.chunkBytes ??
     input.storage?.s3?.partSizeBytes ??
@@ -717,7 +732,7 @@ export function resolveConfig(
     defaults: {
       visibility,
       preserveOriginal: input.defaults?.preserveOriginal ?? true,
-      preset: input.defaults?.preset ?? 'web-optimized',
+      preset: presetName,
       maxFileBytes: input.defaults?.maxFileBytes ?? 100 * 1024 * 1024,
       allowedMimeTypes: input.defaults?.allowedMimeTypes ?? [
         ...DEFAULT_MIME_TYPES,
@@ -728,6 +743,7 @@ export function resolveConfig(
         : {}),
       allowPublicFiles: allowPublic,
     },
+    presets,
     upload: {
       chunkBytes,
       partConcurrency: input.upload?.partConcurrency ?? 4,

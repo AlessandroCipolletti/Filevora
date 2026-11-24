@@ -447,7 +447,10 @@ export function createUploadClient(options: UploadClientOptions) {
 
   async function fromUrl(
     url: string,
-    importOptions: { webhook?: { url: string; secret?: string } } = {},
+    importOptions: {
+      webhook?: { url: string; secret?: string };
+      preset?: string;
+    } = {},
   ): Promise<{ assetId: string; id: string }> {
     const created = (await request(doFetch, `${endpoint}/assets/from-url`, {
       method: 'POST',
@@ -457,6 +460,7 @@ export function createUploadClient(options: UploadClientOptions) {
       },
       body: JSON.stringify({
         url,
+        ...(importOptions.preset ? { preset: importOptions.preset } : {}),
         ...(importOptions.webhook ? { webhook: importOptions.webhook } : {}),
       }),
     })) as { id?: string; asset?: { assetId?: string } };

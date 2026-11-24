@@ -70,6 +70,7 @@
     "processingProgress": "tested",
     "uploadHistory": "tested",
     "metadataModes": "tested",
+    "namedPresets": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -83,7 +84,8 @@
     "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary or a PDF Poppler cannot read leaves the preview unavailable and still returns extracted text. OCR returns OCR_NOT_CONFIGURED.",
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
     "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs.",
-    "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest."
+    "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest.",
+    "Named presets expand to transform operations. The default web-optimized preset still publishes thumbnail, optimized, and hd. Custom presets are a presets object or FILEVORA_PRESETS JSON. See docs/presets.md."
   ],
   "catalog": {
     "schema": "filevora.manifest/2",
@@ -136,10 +138,12 @@
           "CreateSessionInput",
           "Files",
           "FilesOptions",
+          "PresetSummary",
           "RequestContext",
           "ResolvedConfig",
           "assetTransformSchema",
-          "createFiles"
+          "createFiles",
+          "listPresets"
         ]
       },
       {
@@ -377,6 +381,7 @@
         "request": {
           "body": {
             "url": "string",
+            "preset": "string?",
             "webhook": "{ url: string, secret?: string }?"
           }
         },
@@ -493,7 +498,7 @@
           "params": {
             "fileId": "string"
           },
-          "body": "{ replace?: boolean, operations: AssetTransformOperation[], webhook?: { url, secret? } }"
+          "body": "{ preset?: string, replace?: boolean, operations?: AssetTransformOperation[], webhook?: { url, secret? } }"
         },
         "response": {
           "status": 202,
@@ -869,6 +874,11 @@
       {
         "key": "defaults.allowPublicFiles",
         "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "presets",
+        "type": "record",
         "appliesTo": "both"
       },
       {
@@ -1662,6 +1672,12 @@
         "appliesTo": "both"
       },
       {
+        "key": "FILEVORA_PRESETS",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
         "key": "FILEVORA_REMOTE_ALLOWED_PORTS",
         "type": "string",
         "default": "80,443",
@@ -1978,7 +1994,7 @@
         "httpStatus": 400,
         "category": "processing",
         "retryable": false,
-        "cause": "The config does not match the sniffed media type, or a crop, trim, or page list is outside the file. context.field is the offending key, context.reason says why, context.detectedType is the sniffed type, and context.validOperations lists what that type accepts.",
+        "cause": "The config does not match the sniffed media type, a preset name is unknown, or a crop, trim, or page list is outside the file. context.field is the offending key, context.reason says why, context.detectedType is the sniffed type, context.validOperations lists operations, and context.validPresets lists preset names when the failure is about a preset.",
         "fix": "Use only the operations listed in validOperations for the detected type."
       },
       {

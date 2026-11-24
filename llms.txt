@@ -16,7 +16,8 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Testing](docs/agents/testing.md) — `filevora/testing` runs filesystem lite mode with synchronous processing. No Redis or S3.
 - [Retention](docs/agents/retention.md) — `FILES_RETENTION_*` and `FILES_UNUSED_RETENTION_DAYS`. Stored mode keeps `last_accessed_at` on the asset row. Lite mode keeps it on the asset card and falls back to creation time. Cleanup also removes old orphans.
 - [Webhooks](docs/agents/webhooks.md) — optional signed completion webhooks. The body matches the terminal SSE event. Targets use the URL-import SSRF checks. Localhost needs `FILES_WEBHOOKS_ALLOW_LOOPBACK`.
-- [Transform](docs/agents/transform.md) — `POST /files/:assetId/transform` with one config object. `replace` defaults to true. Progress events share `phase`, `percentage`, `etaMs`, and a terminal `versions` list.
+- [Transform](docs/agents/transform.md) — `POST /files/:assetId/transform` with one config object. `replace` defaults to true. `preset` names a built-in or custom recipe. Progress events share `phase`, `percentage`, `etaMs`, and a terminal `versions` list.
+- [Presets](docs/presets.md) and [docs/agents/presets.md](docs/agents/presets.md) — named image and video presets. `FILEVORA_PRESETS` or `presets` in config adds custom ones. Default `web-optimized` is unchanged.
 - [Architecture](docs/architecture.md)
 - [Security](docs/security.md)
 - [Changelog](CHANGELOG.md)

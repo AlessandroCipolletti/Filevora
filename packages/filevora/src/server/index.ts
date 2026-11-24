@@ -35,3 +35,4 @@ export {
   type AssetTransformOperation,
 } from '../transform/schema.js';
 export type { FilesOptions, ResolvedConfig };
+export { listPresets, type PresetSummary } from '../presets/catalog.js';

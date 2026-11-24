@@ -14,6 +14,7 @@ import {
   selectPosterEncoder,
 } from '../processors/ffmpeg.js';
 import { FILEVORA_VERSION, METADATA_EXPORT_VERSION } from '../version.js';
+import { listPresets } from '../presets/catalog.js';
 
 interface DoctorCheck {
   id: string;
@@ -270,6 +271,25 @@ export async function runDoctor(
   );
   checks.push(await scannerCheck(env));
   if (config) checks.push(await webhookCheck(config));
+  if (config) {
+    const custom = listPresets(config.presets).filter(
+      (preset) => preset.source === 'custom',
+    );
+    checks.push(
+      described({
+        id: 'presets',
+        status: 'pass',
+        required: false,
+        message: `Default preset ${config.defaults.preset} is available.`,
+        code: 'OK',
+        explanation:
+          custom.length === 0
+            ? 'Built-in image and video presets are available. No custom presets are configured.'
+            : `Custom presets: ${custom.map((preset) => preset.name).join(', ')}.`,
+        fix: 'Set FILES_DEFAULT_PRESET or define presets in config. See docs/presets.md.',
+      }),
+    );
+  }
   return {
     ok: checks.every((check) => !check.required || check.status === 'pass'),
     version: FILEVORA_VERSION,

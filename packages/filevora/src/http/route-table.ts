@@ -111,7 +111,11 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
     modes: ['lite', 'stored'],
     auth: 'principal',
     request: {
-      body: { url: 'string', webhook: '{ url: string, secret?: string }?' },
+      body: {
+        url: 'string',
+        preset: 'string?',
+        webhook: '{ url: string, secret?: string }?',
+      },
     },
     response: { status: 202, body: 'FileRecord' },
   },
@@ -174,7 +178,7 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
     auth: 'principal',
     request: {
       params: { fileId: 'string' },
-      body: '{ replace?: boolean, operations: AssetTransformOperation[], webhook?: { url, secret? } }',
+      body: '{ preset?: string, replace?: boolean, operations?: AssetTransformOperation[], webhook?: { url, secret? } }',
     },
     response: {
       status: 202,
