@@ -28,6 +28,7 @@ import {
   type WebhookEventName,
 } from '../webhooks/deliver.js';
 import { webhookProgress } from '../webhooks/payload.js';
+import { runCleanup } from '../retention/cleanup.js';
 import { heartbeatSupervisor } from './supervisor.js';
 
 export interface WorkerRunOptions {
@@ -52,6 +53,28 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
     env: config.env,
     redisUrl: config.queue.redisUrl,
   });
+  if (config.retention.enabled) {
+    const queue = await processingQueue(
+      redisUrl,
+      processingQueueName(config.env, config.storage.root),
+    );
+    await queue.upsertJobScheduler(
+      'filevora-retention',
+      {
+        every: Math.max(1, config.retention.cleanupIntervalMinutes) * 60_000,
+      },
+      {
+        name: 'retention',
+        data: {
+          fileId: 'retention',
+          tenantId: 'system',
+          type: 'retention',
+          payload: { dryRun: false },
+          schemaVersion: 1,
+        },
+      },
+    );
+  }
   const sql = await openBackend(config);
   const limit = run.once ? 1 : run.limit;
   const queueName = processingQueueName(config.env, config.storage.root);
@@ -137,6 +160,17 @@ async function executeJob(
   config: ResolvedConfig,
 ): Promise<Record<string, unknown>> {
   const data = job.data;
+  if (data.type === 'retention') {
+    const payload = data.payload as { dryRun?: boolean };
+    const report = await runCleanup({
+      sql,
+      root: config.storage.root,
+      retention: config.retention,
+      sessionTtlSeconds: config.upload.sessionTtlSeconds,
+      dryRun: Boolean(payload.dryRun),
+    });
+    return { ...report };
+  }
   if (data.type === 'webhook') {
     const payload = data.payload as {
       url?: string;

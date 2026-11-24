@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS filevora_assets (
   deleted_at ${blob},
   grace_until ${blob},
   last_touch_at ${blob},
+  last_accessed_at ${blob},
   session_id ${id},
   session_status ${blob},
   transport ${blob},

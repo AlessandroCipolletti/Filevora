@@ -116,6 +116,11 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Retention cleanup
+
+- Delivery URLs update `last_accessed_at`. Stored mode keeps it on `filevora_assets`. Lite mode keeps it on the asset card and, when that timestamp is missing, uses creation time so files are not deleted early.
+- `POST /retention/cleanup` and `filevora cleanup --dry-run` report expired assets and old orphans. A BullMQ job repeats at `FILES_CLEANUP_INTERVAL_MINUTES` when retention is enabled.
+
 ### Completion webhooks
 
 - Optional `FILEVORA_WEBHOOK_URL` and `FILEVORA_WEBHOOK_SECRET`, or a per-request `webhook` object.

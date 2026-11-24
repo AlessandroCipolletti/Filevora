@@ -39,6 +39,7 @@ function helpText(): string {
     '  filevora config validate --json',
     '  filevora doctor --json',
     '  filevora migrate',
+    '  filevora cleanup [--dry-run] [--json]',
     '  filevora worker',
     '  filevora --help',
     '  filevora --version',
@@ -143,6 +144,45 @@ export async function runCli(
       out.stdout(
         `${JSON.stringify({ ok: true, profile, directory, started: false })}\n`,
       );
+      return 0;
+    }
+    if (command === 'cleanup') {
+      const { createFiles } = await import('../server/index.js');
+      const maxAge = Number(env.FILES_RETENTION_MAX_AGE_DAYS || '');
+      const unused = Number(env.FILES_UNUSED_RETENTION_DAYS || '');
+      const files = createFiles({
+        ...(env.FILES_ENV === 'production' ||
+        env.FILES_ENV === 'development' ||
+        env.FILES_ENV === 'test'
+          ? { env: env.FILES_ENV }
+          : { env: 'test' as const }),
+        storage: {
+          root: env.FILES_STORAGE_ROOT || './.files/objects',
+        },
+        retention: {
+          enabled: env.FILES_RETENTION_ENABLED === 'true',
+          ...(Number.isFinite(maxAge) && maxAge > 0
+            ? { maxAgeDays: maxAge }
+            : {}),
+          ...(Number.isFinite(unused) && unused > 0
+            ? { unusedAfterDays: unused }
+            : {}),
+        },
+      });
+      try {
+        const report = await files.retentionSweep(
+          { dryRun: args.includes('--dry-run') },
+          {
+            principal: {
+              id: 'cli',
+              tenantId: readOption(args, '--tenant') ?? 'tenant',
+            },
+          },
+        );
+        out.stdout(`${JSON.stringify(report, null, json ? 2 : 0)}\n`);
+      } finally {
+        await files.close();
+      }
       return 0;
     }
     if (command === 'migrate') {

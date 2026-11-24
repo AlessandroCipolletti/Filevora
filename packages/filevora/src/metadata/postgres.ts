@@ -24,9 +24,18 @@ function toPostgres(sql: string): string {
 export async function applyPostgresSchema(
   db: PostgresQueryable,
 ): Promise<void> {
-  for (const statement of hostStatements('postgres')) {
-    if (db.exec) await db.exec(statement);
-    else await db.query(statement);
+  for (const statement of [
+    ...hostStatements('postgres'),
+    'ALTER TABLE filevora_assets ADD COLUMN last_accessed_at TEXT',
+  ]) {
+    try {
+      if (db.exec) await db.exec(statement);
+      else await db.query(statement);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/duplicate|already exists/i.test(message)) continue;
+      throw error;
+    }
   }
 }
 

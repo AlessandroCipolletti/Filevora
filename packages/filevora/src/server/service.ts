@@ -45,7 +45,7 @@ import { measureOriginal } from '../transform/apply.js';
 import { downloadRemote } from '../remote/download.js';
 import { assertDetectedSize } from '../safety/limits.js';
 import { checkRemoteUrl } from '../remote/policy.js';
-import { planRetention, type RetentionRow } from '../retention/plan.js';
+import { runCleanup } from '../retention/cleanup.js';
 import {
   enqueueWebhookJob,
   type WebhookEventName,
@@ -550,77 +550,22 @@ export class FileService {
   }
 
   async retentionSweep(opts: { dryRun?: boolean } = {}, ctx: RequestContext) {
-    this.requireStored('Retention');
-    const rows = await (
-      await this.db()
-    ).all<RetentionRow>(
-      `SELECT id, bytes, pinned, created_at, deleted_at, grace_until, last_touch_at, original_object_key
-       FROM files WHERE tenant_id = ?`,
-      [ctx.principal.tenantId],
-    );
-    const plan = planRetention(rows, this.config.retention, Date.now());
-    let filesDeleted = 0;
-    if (!opts.dryRun) {
-      for (const item of plan) {
-        const row = rows.find((candidate) => candidate.id === item.fileId);
-        if (!row) continue;
-        const now = nowIso();
-        const immediate =
-          item.reason === 'grace-elapsed' ||
-          this.config.retention.gracePeriodDays === 0;
-        if (
-          immediate &&
-          row.original_object_key &&
-          this.config.storage.driver === 'filesystem'
-        ) {
-          const { rm } = await import('node:fs/promises');
-          await rm(path.join(this.root(), row.original_object_key), {
-            force: true,
-          });
-          filesDeleted += 1;
-        }
-        const grace = new Date(
-          Date.now() + this.config.retention.gracePeriodDays * 86_400_000,
-        ).toISOString();
-        const sql = await this.db();
-        await sql.run(
-          `UPDATE files SET deleted_at = COALESCE(deleted_at, ?), grace_until = ?, original_object_key = CASE WHEN ? = 1 THEN NULL ELSE original_object_key END,
-           processing_state = CASE WHEN ? = 1 THEN 'deleted' ELSE processing_state END, updated_at = ? WHERE id = ?`,
-          [
-            now,
-            immediate ? now : grace,
-            immediate ? 1 : 0,
-            immediate ? 1 : 0,
-            now,
-            row.id,
-          ],
-        );
-        if (immediate) {
-          await sql.run(
-            `UPDATE variants SET status = 'deleted' WHERE file_id = ?`,
-            [row.id],
-          );
-        }
-        await this.audit(
-          await this.db(),
-          ctx.principal,
-          row.id,
-          immediate ? 'retention.delete' : 'retention.soft',
-          { reason: item.reason },
-        );
-      }
-    }
-    return {
+    return runCleanup({
+      sql: await this.db(),
+      root: this.root(),
+      retention: this.config.retention,
+      sessionTtlSeconds: this.config.upload.sessionTtlSeconds,
+      tenantId: ctx.principal.tenantId,
       dryRun: Boolean(opts.dryRun),
-      filesEligible: plan.length,
-      bytesEligible: plan.reduce((sum, item) => sum + item.bytes, 0),
-      filesDeleted,
-      items: plan.map((item) => ({
-        fileId: item.fileId,
-        bytes: item.bytes,
-        reason: item.reason,
-      })),
-    };
+      remove: async (key) => {
+        if (this.config.storage.driver === 'filesystem') {
+          const { rm } = await import('node:fs/promises');
+          await rm(path.join(this.root(), key), { force: true });
+          return;
+        }
+        await this.storage?.deleteObject(key);
+      },
+    });
   }
 
   async normalize(
@@ -1656,6 +1601,14 @@ export class FileService {
     const record = await this.get(fileId, ctx);
     if (record.uploadState !== 'verified' || !record.checksum)
       throw fail('NOT_FOUND');
+    await (
+      await this.db()
+    )
+      .run(
+        'UPDATE files SET last_accessed_at = ?, updated_at = ? WHERE id = ?',
+        [nowIso(), nowIso(), record.id],
+      )
+      .catch(() => undefined);
     const ttl = input.expiresInSeconds ?? this.config.delivery.urlTtlSeconds;
     if (ttl < 30 || ttl > 86_400)
       throw fail('INVALID_CONFIG', {

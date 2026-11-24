@@ -6,7 +6,10 @@ export async function migrate(
   db: Sql,
   dialect: HostDialect = 'sqlite',
 ): Promise<void> {
-  for (const statement of hostStatements(dialect)) {
+  for (const statement of [
+    ...hostStatements(dialect),
+    'ALTER TABLE filevora_assets ADD COLUMN last_accessed_at TEXT',
+  ]) {
     try {
       await db.exec(statement);
     } catch (error) {

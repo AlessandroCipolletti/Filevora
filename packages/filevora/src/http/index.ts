@@ -123,7 +123,8 @@ interface Route {
     | 'delivery'
     | 'progress'
     | 'transform'
-    | 'versions';
+    | 'versions'
+    | 'cleanup';
   sessionId?: string;
   fileId?: string;
   partNumber?: number;
@@ -166,6 +167,8 @@ function matchRoute(method: string, pathname: string): Route | null {
   }
   if (method === 'GET' && pathname === '/assets')
     return { operation: 'file.list', name: 'assets' };
+  if (method === 'POST' && pathname === '/retention/cleanup')
+    return { operation: 'retention.run', name: 'cleanup' };
   if (method === 'POST' && pathname === '/assets/from-url')
     return { operation: 'file.import', name: 'from-url' };
   if (method === 'POST' && pathname === '/files/batch')
@@ -230,6 +233,14 @@ async function dispatch(
   requestId: string,
 ): Promise<Response> {
   const ctx = { principal };
+  if (route.name === 'cleanup') {
+    const body = asRecord(await readJson(request));
+    return json(
+      await options.files.retentionSweep({ dryRun: body.dryRun === true }, ctx),
+      200,
+      requestId,
+    );
+  }
   if (route.name === 'transform' && route.fileId) {
     const body = await readJson(request);
     return json(

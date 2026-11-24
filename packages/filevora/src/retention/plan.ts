@@ -20,6 +20,7 @@ export interface RetentionRow {
   deleted_at: string | null;
   grace_until: string | null;
   last_touch_at: string | null;
+  last_accessed_at?: string | null;
   original_object_key: string | null;
 }
 
@@ -59,11 +60,11 @@ export function planRetention(
       });
       continue;
     }
+    const lastRequest =
+      row.last_accessed_at || row.last_touch_at || row.created_at;
     if (
       policy.unusedAfterDays &&
-      row.last_touch_at &&
-      Date.parse(row.last_touch_at) + policy.unusedAfterDays * 86_400_000 <=
-        nowMs
+      Date.parse(lastRequest) + policy.unusedAfterDays * 86_400_000 <= nowMs
     ) {
       items.push({
         fileId: row.id,
