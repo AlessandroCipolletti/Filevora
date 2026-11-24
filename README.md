@@ -87,7 +87,7 @@ Mode follows the environment. Omit `FILEVORA_DATABASE_URL` and the SDK uses **li
 | --- | --- | --- |
 | When | No `FILEVORA_DATABASE_URL` | `postgres://`, `postgresql://`, `mysql://`, `mariadb://`, `sqlite://`, or a SQLite file path |
 | Metadata | A JSON card next to the object | Your database. `filevora migrate` creates only `filevora_assets` and `filevora_asset_versions` |
-| List `GET /files` and `GET /assets` | `FEATURE_REQUIRES_STORED_MODE` | Lists the signed-in tenant |
+| `GET /assets` | `FEATURE_REQUIRES_STORED_MODE` | Id list. Stored mode only |
 | Queue | Redis (BullMQ) in both modes. Asset ids are not stored in Redis | Same |
 | Object key | `{tenantHash}/{assetId}_{version}.{ext}` in both modes | Same |
 
@@ -133,7 +133,7 @@ Routes come from `HTTP_ROUTES`. The host principal is required on every route ex
 | `POST` | `/retention/cleanup` | Run retention. Body `{ dryRun?: boolean }`. |
 | `POST` | `/assets/from-url` | Import an http(s) URL. Optional `preset`. Returns the file record before the download finishes. |
 | `POST` | `/files/batch` | Read many files by id. |
-| `GET` | `/files` | List files for the tenant. Stored mode only. |
+| `GET` | `/files` | List files for the tenant. Filters: type, dates, tags, `q`, mime, filename, size, duration, dimensions, status, visibility, preset. See [docs/list.md](docs/list.md). |
 | `GET` | `/files/:fileId` | Read one file. |
 | `DELETE` | `/files/:fileId` | Soft-delete the asset and its versions. |
 | `GET` | `/files/:fileId/versions` | Signed URLs for every ready version of a private asset. Public assets use `/public` URLs. |

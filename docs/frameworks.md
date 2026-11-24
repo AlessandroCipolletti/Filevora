@@ -121,3 +121,18 @@ export function UploadButton() {
 ```
 
 The button in that example is the app's UI, not a component shipped by Filevora.
+
+## List
+
+The HTTP adapters serve `GET /files` with the list filters. The browser client sends them:
+
+```ts
+const page = await client.list({
+  type: 'video',
+  tags: 'emotion:joyful',
+  createdFrom: '2026-10-01',
+  createdTo: '2026-10-31',
+});
+```
+
+`filevora/react` does not add a list hook. The same query works on the Next, Express, Fastify, and Hono routes. See [docs/list.md](list.md).

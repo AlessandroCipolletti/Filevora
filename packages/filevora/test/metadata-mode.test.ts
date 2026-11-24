@@ -98,20 +98,34 @@ test('lite mode has no database file and list asks for stored mode', async () =>
     assert.equal(file.asset?.assetId, file.id);
     assert.equal(file.asset?.versions._original?.status, 'ready');
     assert.match(file.asset?.kind ?? '', /image/);
-    await assert.rejects(files.list({}, { principal }), (error: unknown) => {
-      assert.ok(error instanceof FileSdkError);
-      assert.equal(error.code, 'FEATURE_REQUIRES_STORED_MODE');
-      assert.ok(
-        error.resolution?.actions.some((action) =>
-          action.command?.includes('migrate'),
-        ),
-      );
-      assert.equal(
-        error.resolution?.documentationPath,
-        'docs/errors/FEATURE_REQUIRES_STORED_MODE.md',
-      );
-      return true;
-    });
+    const listed = await files.list({ type: 'image' }, { principal });
+    assert.equal(listed.items[0]?.id, file.id);
+    await assert.rejects(
+      files.list({ tag: 'hill' }, { principal }),
+      (error: unknown) => {
+        assert.ok(error instanceof FileSdkError);
+        assert.equal(error.code, 'DESCRIPTION_REQUIRES_DATABASE');
+        assert.match(error.message, /FILEVORA_DATABASE_URL/);
+        return true;
+      },
+    );
+    await assert.rejects(
+      files.listAssetIds({}, { principal }),
+      (error: unknown) => {
+        assert.ok(error instanceof FileSdkError);
+        assert.equal(error.code, 'FEATURE_REQUIRES_STORED_MODE');
+        assert.ok(
+          error.resolution?.actions.some((action) =>
+            action.command?.includes('migrate'),
+          ),
+        );
+        assert.equal(
+          error.resolution?.documentationPath,
+          'docs/errors/FEATURE_REQUIRES_STORED_MODE.md',
+        );
+        return true;
+      },
+    );
     const lines: string[] = [];
     const code = await runCli(
       ['migrate', '--json'],

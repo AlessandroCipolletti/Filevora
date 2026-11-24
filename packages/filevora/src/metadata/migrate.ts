@@ -1,4 +1,8 @@
-import { hostStatements, type HostDialect } from './host-schema.js';
+import {
+  hostStatements,
+  postMigrateStatements,
+  type HostDialect,
+} from './host-schema.js';
 import type { Sql } from './sqlite.js';
 
 /** Create filevora_assets and filevora_asset_versions. Does not touch any other table. */
@@ -17,6 +21,7 @@ export async function migrate(
     'ALTER TABLE filevora_assets ADD COLUMN described_at TEXT',
     'ALTER TABLE filevora_assets ADD COLUMN description_model TEXT',
     'ALTER TABLE filevora_assets ADD COLUMN describe_requested INTEGER DEFAULT 0',
+    ...postMigrateStatements(dialect),
   ]) {
     try {
       await db.exec(statement);

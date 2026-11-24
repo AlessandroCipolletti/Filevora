@@ -51,6 +51,16 @@ async function roundTrip(url: string, label: string): Promise<void> {
     assert.ok(loaded.variants.some((variant) => variant.name === 'thumbnail'));
     const page = await files.list({}, { principal });
     assert.ok(page.items.some((item) => item.id === created.id));
+    const images = await files.list(
+      { type: 'image', filename: 'dot', sort: 'filename', order: 'asc' },
+      { principal },
+    );
+    assert.ok(images.items.some((item) => item.id === created.id));
+    const videos = await files.list({ type: 'video' }, { principal });
+    assert.equal(
+      videos.items.some((item) => item.id === created.id),
+      false,
+    );
     await files.delete(created.id, { principal });
     await assert.rejects(files.get(created.id, { principal }));
   } finally {

@@ -40,6 +40,6 @@ The job starts when a smaller copy exists and keeps going beside later encodes:
 
 Image and video tag categories are `subject`, `action`, `style`, `purpose`, and `emotion`. Audio categories are `kind` (`music`, `sound-effects`, `speech`) and `language`. PDF and text categories are `subject`, `purpose`, and `language`.
 
-`GET /files/:id` includes `description` when one was requested. `GET /files?tag=landscape` filters stored assets by tag.
+`GET /files/:id` includes `description` when one was requested. `GET /files?tag=landscape` filters stored assets by tag when `FILEVORA_GEMINI_API_KEY` is set. `q`, `tags`, `tagsAll`, `descriptionStatus`, and `hasDescription` use the same rule. See [list filters](list.md).
 
 Content is sent to Google only for that job. The API key is not logged.

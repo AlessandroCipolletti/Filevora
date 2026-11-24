@@ -1,5 +1,14 @@
 export type HostDialect = 'sqlite' | 'postgres' | 'mysql';
 
+/** Indexes that depend on columns added to databases created before descriptions. */
+export function postMigrateStatements(dialect: HostDialect): string[] {
+  return [
+    dialect === 'mysql'
+      ? 'CREATE INDEX filevora_assets_description_status ON filevora_assets (description_status(32))'
+      : 'CREATE INDEX IF NOT EXISTS filevora_assets_description_status ON filevora_assets (description_status)',
+  ];
+}
+
 /**
  * The only tables Filevora creates on a host database.
  * Upload session fields live on the asset row so no other tables are touched.
@@ -109,6 +118,42 @@ CREATE TABLE IF NOT EXISTS filevora_asset_versions (
     ),
     index(
       'CREATE INDEX IF NOT EXISTS filevora_asset_tags_tag ON filevora_asset_tags (tag)',
+    ),
+    index(
+      dialect === 'mysql'
+        ? 'CREATE INDEX filevora_assets_tenant_updated ON filevora_assets (tenant_id, updated_at(64), id)'
+        : 'CREATE INDEX IF NOT EXISTS filevora_assets_tenant_updated ON filevora_assets (tenant_id, updated_at, id)',
+    ),
+    index(
+      'CREATE INDEX IF NOT EXISTS filevora_assets_tenant_bytes ON filevora_assets (tenant_id, bytes)',
+    ),
+    index(
+      dialect === 'mysql'
+        ? 'CREATE INDEX filevora_assets_tenant_name ON filevora_assets (tenant_id, original_name(191))'
+        : 'CREATE INDEX IF NOT EXISTS filevora_assets_tenant_name ON filevora_assets (tenant_id, original_name)',
+    ),
+    index(
+      dialect === 'mysql'
+        ? 'CREATE INDEX filevora_assets_processing ON filevora_assets (tenant_id, processing_state(32))'
+        : 'CREATE INDEX IF NOT EXISTS filevora_assets_processing ON filevora_assets (tenant_id, processing_state)',
+    ),
+    index(
+      dialect === 'mysql'
+        ? 'CREATE INDEX filevora_assets_mime ON filevora_assets (tenant_id, detected_mime(64))'
+        : 'CREATE INDEX IF NOT EXISTS filevora_assets_mime ON filevora_assets (tenant_id, detected_mime)',
+    ),
+    index(
+      dialect === 'mysql'
+        ? 'CREATE INDEX filevora_assets_visibility ON filevora_assets (tenant_id, visibility(16))'
+        : 'CREATE INDEX IF NOT EXISTS filevora_assets_visibility ON filevora_assets (tenant_id, visibility)',
+    ),
+    index(
+      'CREATE INDEX IF NOT EXISTS filevora_asset_tags_category ON filevora_asset_tags (category, tag)',
+    ),
+    index(
+      dialect === 'mysql'
+        ? 'CREATE INDEX filevora_asset_versions_file ON filevora_asset_versions (file_id, status(32))'
+        : 'CREATE INDEX IF NOT EXISTS filevora_asset_versions_file ON filevora_asset_versions (file_id, status)',
     ),
   ];
 }

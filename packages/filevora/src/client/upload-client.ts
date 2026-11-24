@@ -30,6 +30,41 @@ export interface UploadClientOptions {
   progress?: { channel?: 'sse' | 'poll'; pollMs?: number };
 }
 
+/** Query for `GET /files`. Arrays are repeated parameters. `document` means PDF, text, CSV, and Office files. */
+export interface ListFilesQuery {
+  limit?: number;
+  cursor?: string;
+  kind?: string;
+  type?: string | string[];
+  types?: string | string[];
+  createdFrom?: string;
+  createdTo?: string;
+  createdAfter?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  tag?: string | string[];
+  tags?: string | string[];
+  tagsAll?: string | string[];
+  tagCategory?: string;
+  q?: string;
+  mime?: string;
+  filename?: string;
+  sizeMin?: number;
+  sizeMax?: number;
+  durationMin?: number;
+  durationMax?: number;
+  widthMin?: number;
+  heightMin?: number;
+  status?: string;
+  processingStatus?: string;
+  descriptionStatus?: string;
+  visibility?: string;
+  preset?: string;
+  hasDescription?: boolean;
+  sort?: 'created' | 'updated' | 'size' | 'filename';
+  order?: 'asc' | 'desc';
+}
+
 export interface UploadOptions {
   preset?: string;
   metadata?: Record<string, string>;
@@ -599,6 +634,20 @@ export function createUploadClient(options: UploadClientOptions) {
     );
   }
 
+  async function list(query: ListFilesQuery = {}) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === '') continue;
+      if (Array.isArray(value)) {
+        for (const item of value) params.append(key, item);
+      } else params.set(key, String(value));
+    }
+    const suffix = params.size > 0 ? `?${params.toString()}` : '';
+    return request(doFetch, `${endpoint}/files${suffix}`, {
+      headers: await headers(options.headers),
+    });
+  }
+
   async function describe(fileId: string) {
     return request(
       doFetch,
@@ -625,6 +674,7 @@ export function createUploadClient(options: UploadClientOptions) {
     upload,
     uploadDirect,
     fetchSigned,
+    list,
     describe,
     fromUrl,
     transform,

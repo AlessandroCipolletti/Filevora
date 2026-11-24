@@ -27,13 +27,13 @@ Store `assetId` from `POST /sessions`, `POST /assets/from-url`, or `POST /files/
 
 ## Lite mode
 
-`FILEVORA_METADATA_MODE=lite` is the default. Bytes live in object storage. There is no SDK database file. `GET /files/:assetId` probes `{assetId}_original.*`. `?detailed=true` adds dimensions. `GET /files`, `GET /assets`, and `npx filevora migrate` return `FEATURE_REQUIRES_STORED_MODE`.
+`FILEVORA_METADATA_MODE=lite` is the default. Bytes live in object storage. There is no SDK database file. `GET /files/:assetId` probes `{assetId}_original.*`. `?detailed=true` adds dimensions. `GET /files` lists that tenant from the asset cards. Description filters on that route return `DESCRIPTION_REQUIRES_DATABASE`. `GET /assets` and `npx filevora migrate` return `FEATURE_REQUIRES_STORED_MODE`.
 
 ## Stored mode
 
 Providing `FILEVORA_DATABASE_URL` selects stored mode. Omitting it selects lite mode. `FILEVORA_METADATA_MODE` is an optional override. Stored without a URL is an error. Unsupported schemes name the three supported databases.
 
-The scheme is the driver: `postgres://` or `postgresql://`, `mysql://` or `mariadb://`, `sqlite://` or a file path. The database is one the host already runs. `npx filevora migrate` creates only `filevora_assets` and `filevora_asset_versions`. `GET /files?kind=&status=&createdAfter=` and `GET /assets` list ids for the signed-in tenant. Verify with `npx filevora doctor --json`.
+The scheme is the driver: `postgres://` or `postgresql://`, `mysql://` or `mariadb://`, `sqlite://` or a file path. The database is one the host already runs. `npx filevora migrate` creates `filevora_assets`, `filevora_asset_versions`, and `filevora_asset_tags`. `GET /files` filters the signed-in tenant. `GET /assets` lists ids. See `docs/agents/list.md`. Verify with `npx filevora doctor --json`.
 
 `FILEVORA_MALWARE_SCAN` is optional. Leave it unset to skip scanning. `clamav` scans the stored original before encoding. `FILEVORA_EXIF_STRIP` defaults to `gps`. `FILEVORA_TYPE_MAX_BYTES` is a comma-separated list of `mime=bytes` limits checked against the sniffed type.
 

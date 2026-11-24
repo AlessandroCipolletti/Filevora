@@ -92,6 +92,7 @@ test('the MCP server lists read-only tools', async () => {
     'manifest_lookup',
     'validate_config',
     'doctor',
+    'list_files',
     'describe_asset',
   ]);
   const describe = await handleMcpMessage({

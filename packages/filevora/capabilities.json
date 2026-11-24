@@ -84,6 +84,7 @@
     "directUpload": "tested",
     "frameworkHelpers": "tested",
     "assetDescriptions": "tested",
+    "assetListFilters": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -103,7 +104,8 @@
     "Audio tools use ffmpeg. audio.transcode writes mp3, aac, ogg, or wav. audio.loudnorm uses loudnorm at EBU R128 (-23 LUFS). audio.waveform writes a PNG and JSON peaks. audio.describe writes probe metadata. Presets audio-mp3, audio-aac, audio-loudnorm, audio-waveform, and audio-describe.",
     "Direct S3 upload: POST /uploads/direct signs a single PUT or multipart part URLs. POST /uploads/direct/:sessionId/complete heads the object, checks size and sniffed type, applies the EXIF policy, runs the malware scanner, and queues the same preset pipeline. Filesystem storage cannot sign. Bucket CORS must expose ETag. See docs/direct-upload.md.",
     "Framework helpers are filevora/next, filevora/express, filevora/fastify, filevora/hono, and optional filevora/react. They do not render UI. useUpload and useAssetProgress return state. filevora/client does not import Node builtins.",
-    "Gemini descriptions are stored mode only. FILEVORA_GEMINI_API_KEY, FILEVORA_DESCRIBE_ASSETS (default false), and describe on create. POST /files/:id/describe retriggers. GET /files?tag= filters tags. Content is sent to Google only when a description runs. See docs/descriptions.md.",
+    "Gemini descriptions are stored mode only. FILEVORA_GEMINI_API_KEY, FILEVORA_DESCRIBE_ASSETS (default false), and describe on create. POST /files/:id/describe retriggers. GET /files filters tags and description text only when a key is set. Content is sent to Google only when a description runs. See docs/descriptions.md and docs/list.md.",
+    "GET /files filters by type, date, size, mime, filename, duration, dimensions, visibility, preset, and processing status in lite and stored mode. tags, tagsAll, q, descriptionStatus, and hasDescription need stored mode and FILEVORA_GEMINI_API_KEY. document means PDF, text, CSV, and Office. There is no separate search endpoint.",
     "Private assets are served with HMAC delivery URLs or S3 presigned URLs. Public assets use /public. FILEVORA_SIGNING_SECRET is a comma-separated key list. A missing asset card is private. See docs/access-control.md.",
     "The package is ESM. Node 22.13 and newer can require() the same entry points. filevora worker reads REDIS_URL or FILEVORA_CONFIG_PATH and does not start redis-memory-server."
   ],
@@ -441,12 +443,37 @@
         "operation": "file.list",
         "auth": "principal",
         "modes": [
+          "lite",
           "stored"
         ],
         "request": {
           "query": {
             "limit": "number?",
             "cursor": "string?",
+            "type": "image|video|document|audio?",
+            "createdFrom": "iso?",
+            "createdTo": "iso?",
+            "updatedFrom": "iso?",
+            "updatedTo": "iso?",
+            "tags": "string?",
+            "tagsAll": "string?",
+            "tagCategory": "string?",
+            "q": "string?",
+            "mime": "string?",
+            "filename": "string?",
+            "sizeMin": "number?",
+            "sizeMax": "number?",
+            "durationMin": "number?",
+            "durationMax": "number?",
+            "widthMin": "number?",
+            "heightMin": "number?",
+            "status": "string?",
+            "descriptionStatus": "pending|done|failed?",
+            "visibility": "public|private?",
+            "preset": "string?",
+            "hasDescription": "boolean?",
+            "sort": "created|updated|size|filename?",
+            "order": "asc|desc?",
             "tag": "string?"
           }
         },
@@ -2438,6 +2465,14 @@
         "retryable": false,
         "cause": "Queries over tags stay on the host database. Asset cards and object storage never hold the description text.",
         "fix": "Set FILEVORA_DATABASE_URL to postgres://, mysql://, or sqlite://./filevora.sqlite and run npx filevora migrate."
+      },
+      {
+        "code": "LIST_QUERY_INVALID",
+        "httpStatus": 400,
+        "category": "config",
+        "retryable": false,
+        "cause": "GET /files rejects an unknown type, sort, date, or range instead of ignoring it.",
+        "fix": "Read the parameter named in the error. type is image, video, document, or audio. sort is created, updated, size, or filename. order is asc or desc."
       },
       {
         "code": "DELIVERY_NOT_FOUND",

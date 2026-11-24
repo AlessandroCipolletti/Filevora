@@ -2,6 +2,13 @@
 
 ## 0.1.0
 
+### List filters
+
+- `GET /files` accepts `type` (`image`, `video`, `document`, `audio`), `createdFrom`/`createdTo`, `updatedFrom`/`updatedTo`, `tags` (any-of), `tagsAll` (all-of), `tagCategory` or `category:tag`, `q`, `mime`, `filename`, `sizeMin`/`sizeMax`, `durationMin`/`durationMax`, `widthMin`/`heightMin`, `status`, `descriptionStatus`, `visibility`, `preset`, `hasDescription`, `sort`, and `order`.
+- `document` means PDF, text, CSV, and Office files. `q` is a case-insensitive `LIKE` over the short and long description. Every word must match. There is no separate search endpoint and no full-text or vector index.
+- The default sort stays `created` descending, with `id` as the tiebreaker. Description filters (`tag`, `tags`, `tagsAll`, `tagCategory`, `q`, `descriptionStatus`, `hasDescription`) need stored mode and `FILEVORA_GEMINI_API_KEY`. Lite mode returns `DESCRIPTION_REQUIRES_DATABASE`. A missing key returns `DESCRIPTION_NOT_CONFIGURED`. The other filters work in lite and stored mode.
+- `createUploadClient().list` sends the query. `list_files` on the MCP server validates it. Indexes for the new columns are created by `filevora migrate` on PostgreSQL, MySQL/MariaDB, and SQLite.
+
 ### Gemini asset descriptions
 
 - `FILEVORA_GEMINI_API_KEY` and `describe` on upload, URL import, direct S3 registration, PDF merge, and PDF split queue a Gemini description. `FILEVORA_DESCRIBE_ASSETS` defaults to false. `describe: false` overrides a true default.

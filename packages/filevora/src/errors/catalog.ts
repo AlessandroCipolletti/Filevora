@@ -893,6 +893,23 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
+  LIST_QUERY_INVALID: {
+    httpStatus: 400,
+    category: 'config',
+    retryable: false,
+    message:
+      'A list filter is invalid. The error names the parameter and the values it accepts.',
+    resolution: resolution(
+      'docs/errors/LIST_QUERY_INVALID.md',
+      'GET /files rejects an unknown type, sort, date, or range instead of ignoring it.',
+      [
+        action(
+          'fix_list_query',
+          'Read the parameter named in the error. type is image, video, document, or audio. sort is created, updated, size, or filename. order is asc or desc.',
+        ),
+      ],
+    ),
+  },
   DELIVERY_NOT_FOUND: {
     httpStatus: 403,
     category: 'auth',

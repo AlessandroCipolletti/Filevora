@@ -4,6 +4,16 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { ResolvedConfig } from '../config/load.js';
 import { enqueueAssetDescription } from '../descriptions/queue.js';
+import {
+  cursorValue,
+  encodeListCursor,
+  isAfterCursor,
+  parseListQuery,
+  rowMatches,
+  sortRows,
+  storedListSql,
+  type ListQueryInput,
+} from './list-query.js';
 import { describeIntent } from '../descriptions/policy.js';
 import { fail, isFileSdkError } from '../errors/error.js';
 import {
@@ -2085,65 +2095,70 @@ export class FileService {
   }
 
   async list(
-    query: {
-      limit?: number;
-      cursor?: string;
-      kind?: string;
-      status?: string;
-      createdAfter?: string;
-      tag?: string;
-    },
+    query: ListQueryInput,
     ctx: RequestContext,
   ): Promise<Page<FileRecord>> {
-    this.requireStored('Listing assets');
-    const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
-    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
-    const params: unknown[] = [ctx.principal.tenantId];
-    let where =
-      "tenant_id = ? AND deleted_at IS NULL AND upload_state = 'verified'";
-    if (query.kind) {
-      where += ' AND (detected_mime LIKE ? OR declared_mime LIKE ?)';
-      const prefix = `${query.kind === 'tabular' ? 'text/csv' : query.kind}/%`;
-      params.push(query.kind === 'pdf' ? 'application/pdf' : prefix, prefix);
-    }
-    if (query.status) {
-      where += ' AND processing_state = ?';
-      params.push(query.status === 'completed' ? 'ready' : query.status);
-    }
-    if (query.createdAfter) {
-      where += ' AND created_at >= ?';
-      params.push(query.createdAfter);
-    }
-    if (query.tag) {
-      where +=
-        ' AND id IN (SELECT asset_id FROM filevora_asset_tags WHERE tag = ?)';
-      params.push(query.tag.toLowerCase());
-    }
-    if (cursor) {
-      where += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
-      params.push(cursor.createdAt, cursor.createdAt, cursor.id);
-    }
-    params.push(limit + 1);
-    const rows = await (
-      await this.db()
-    ).all<FileRow>(
-      `SELECT * FROM files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
-      params,
-    );
+    const parsed = parseListQuery(query, this.config);
+    const rows =
+      this.config.metadata.mode === 'stored'
+        ? await this.listStored(parsed, ctx)
+        : await this.listLite(parsed, ctx);
     const page: FileRecord[] = [];
-    for (const row of rows.slice(0, limit)) {
+    for (const row of rows.slice(0, parsed.limit)) {
       const record = mapFile(row);
       record.variants = await loadVariants(await this.db(), row.id);
       await attachTags(await this.db(), record);
       record.asset = toAssetInfo(record, { detailed: true });
       page.push(record);
     }
-    const last = page[page.length - 1];
+    const last = rows[parsed.limit - 1];
     const next =
-      rows.length > limit && last
-        ? encodeCursor(last.createdAt, last.id)
+      rows.length > parsed.limit && last
+        ? encodeListCursor(cursorValue(last, parsed.sort), last.id)
         : null;
     return { items: page, nextCursor: next };
+  }
+
+  private async listStored(
+    query: ReturnType<typeof parseListQuery>,
+    ctx: RequestContext,
+  ): Promise<FileRow[]> {
+    const compiled = storedListSql(query, ctx.principal.tenantId);
+    return (await this.db()).all<FileRow>(compiled.sql, compiled.params);
+  }
+
+  private async listLite(
+    query: ReturnType<typeof parseListQuery>,
+    ctx: RequestContext,
+  ): Promise<FileRow[]> {
+    const sql = await this.db();
+    const rows = await sql.all<FileRow>(
+      'SELECT * FROM files WHERE tenant_id = ? AND deleted_at IS NULL AND upload_state = ?',
+      [ctx.principal.tenantId, 'verified'],
+    );
+    const needsDimensions =
+      query.durationMin !== undefined ||
+      query.durationMax !== undefined ||
+      query.widthMin !== undefined ||
+      query.heightMin !== undefined;
+    const matched: FileRow[] = [];
+    for (const row of rows) {
+      const variants = needsDimensions
+        ? await sql.all<{
+            width: number | null;
+            height: number | null;
+            duration_ms: number | null;
+            status: string;
+          }>(
+            'SELECT width, height, duration_ms, status FROM variants WHERE file_id = ?',
+            [row.id],
+          )
+        : [];
+      if (rowMatches(row, variants, query)) matched.push(row);
+    }
+    return sortRows(matched, query)
+      .filter((row) => isAfterCursor(row, query))
+      .slice(0, query.limit + 1);
   }
 
   async delete(fileId: string, ctx: RequestContext): Promise<void> {
@@ -2970,18 +2985,6 @@ function mapFile(row: FileRow): FileRecord {
       : {}),
     variants: [],
   };
-}
-
-function encodeCursor(createdAt: string, id: string): string {
-  return Buffer.from(`${createdAt}\n${id}`).toString('base64url');
-}
-
-function decodeCursor(cursor: string): { createdAt: string; id: string } {
-  const raw = Buffer.from(cursor, 'base64url').toString('utf8');
-  const splitAt = raw.indexOf('\n');
-  if (splitAt <= 0)
-    throw fail('INVALID_CONFIG', { message: 'The list cursor is invalid.' });
-  return { createdAt: raw.slice(0, splitAt), id: raw.slice(splitAt + 1) };
 }
 
 function publicMetadata(raw: string): Record<string, string> {

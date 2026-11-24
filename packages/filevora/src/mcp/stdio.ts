@@ -2,6 +2,11 @@ import { resolveConfig } from '../config/load.js';
 import { runDoctor } from '../diagnostics/doctor.js';
 import { isFileSdkError } from '../errors/error.js';
 import { readManifest } from '../manifest/index.js';
+import {
+  descriptionsEnabled,
+  parseListQuery,
+  type ListQueryInput,
+} from '../server/list-query.js';
 
 interface RpcRequest {
   jsonrpc?: string;
@@ -38,6 +43,22 @@ const tools = [
     name: 'doctor',
     description: 'Run filevora doctor and return the check report.',
     inputSchema: { type: 'object', properties: { env: { type: 'object' } } },
+  },
+  {
+    name: 'list_files',
+    description:
+      'Validate GET /files filters and return the query to send. Does not open the database. Description filters need stored mode and FILEVORA_GEMINI_API_KEY.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        env: { type: 'object' },
+        query: {
+          type: 'object',
+          description:
+            'type, createdFrom, createdTo, updatedFrom, updatedTo, tags, tagsAll, tagCategory, q, mime, filename, sizeMin, sizeMax, durationMin, durationMax, widthMin, heightMin, status, descriptionStatus, visibility, preset, hasDescription, sort, order, limit, cursor',
+        },
+      },
+    },
   },
   {
     name: 'describe_asset',
@@ -122,6 +143,20 @@ async function runTool(
   if (name === 'doctor') {
     return JSON.stringify(await runDoctor({}, env));
   }
+  if (name === 'list_files') {
+    const config = resolveConfig({}, env);
+    const query = isQueryRecord(args.query) ? args.query : {};
+    const parsed = parseListQuery(query, config);
+    return JSON.stringify({
+      endpoint: 'GET /files',
+      descriptions: descriptionsEnabled(config),
+      query: parsed,
+      examples: [
+        'GET /files?type=video&tags=joyful&tagCategory=emotion&createdFrom=2026-10-01&createdTo=2026-10-31',
+        'GET /files?type=audio&tagsAll=kind:speech&tagsAll=language:italian',
+      ],
+    });
+  }
   if (name === 'describe_asset') {
     try {
       const config = resolveConfig({}, env);
@@ -142,6 +177,10 @@ async function runTool(
     }
   }
   throw new Error(`Unknown tool ${name}.`);
+}
+
+function isQueryRecord(value: unknown): value is ListQueryInput {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

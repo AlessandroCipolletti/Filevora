@@ -1,6 +1,7 @@
 import { createRequestId, fail, isFileSdkError } from '../errors/error.js';
 import { mimeAllowed } from '../mime.js';
 import type { Files } from '../server/index.js';
+import { parseListSearchParams } from '../server/list-query.js';
 import { HTTP_ROUTES, matchRoute, type MatchedRoute } from './route-table.js';
 import type {
   FileOperation,
@@ -429,21 +430,8 @@ async function dispatch(
   }
   if (route.name === 'list') {
     const url = new URL(request.url);
-    const limit = url.searchParams.get('limit');
-    const cursor = url.searchParams.get('cursor') ?? undefined;
-    const kind = url.searchParams.get('kind') ?? undefined;
-    const status = url.searchParams.get('status') ?? undefined;
-    const createdAfter = url.searchParams.get('createdAfter') ?? undefined;
-    const tag = url.searchParams.get('tag') ?? undefined;
     const page = await options.files.list(
-      {
-        ...(limit ? { limit: Number(limit) } : {}),
-        ...(cursor ? { cursor } : {}),
-        ...(kind ? { kind } : {}),
-        ...(status ? { status } : {}),
-        ...(createdAfter ? { createdAfter } : {}),
-        ...(tag ? { tag } : {}),
-      },
+      parseListSearchParams(url.searchParams),
       ctx,
     );
     return json(page, 200, requestId);

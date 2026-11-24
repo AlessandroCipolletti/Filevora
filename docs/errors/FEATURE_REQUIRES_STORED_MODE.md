@@ -1,6 +1,6 @@
 # FEATURE_REQUIRES_STORED_MODE
 
-Listing, search, retention, and `filevora migrate` need stored metadata mode.
+`GET /assets`, retention, and `filevora migrate` need stored metadata mode. `GET /files` works in lite mode except for tag and description filters, which return `DESCRIPTION_REQUIRES_DATABASE`.
 
 Category: `config`. HTTP 400. Retryable: false.
 
