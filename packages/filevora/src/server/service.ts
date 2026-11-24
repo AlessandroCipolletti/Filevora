@@ -347,9 +347,8 @@ export class FileService {
         const grace = new Date(
           Date.now() + this.config.retention.gracePeriodDays * 86_400_000,
         ).toISOString();
-        await (
-          await this.db()
-        ).run(
+        const sql = await this.db();
+        await sql.run(
           `UPDATE files SET deleted_at = COALESCE(deleted_at, ?), grace_until = ?, original_object_key = CASE WHEN ? = 1 THEN NULL ELSE original_object_key END,
            processing_state = CASE WHEN ? = 1 THEN 'deleted' ELSE processing_state END, updated_at = ? WHERE id = ?`,
           [
@@ -361,6 +360,12 @@ export class FileService {
             row.id,
           ],
         );
+        if (immediate) {
+          await sql.run(
+            `UPDATE variants SET status = 'deleted' WHERE file_id = ?`,
+            [row.id],
+          );
+        }
         await this.audit(
           await this.db(),
           ctx.principal,
@@ -1172,6 +1177,10 @@ export class FileService {
       await sql.run(
         `UPDATE files SET deleted_at = ?, processing_state = 'deleted', updated_at = ? WHERE id = ?`,
         [now, now, row.id],
+      );
+      await sql.run(
+        `UPDATE variants SET status = 'deleted' WHERE file_id = ?`,
+        [row.id],
       );
       await this.audit(sql, ctx.principal, row.id, 'file.delete', {});
     });

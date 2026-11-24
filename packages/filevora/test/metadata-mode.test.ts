@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -147,6 +148,20 @@ test('stored mode lists ids from the host database', async () => {
     assert.equal(page.items[0]?.id, file.id);
     const ids = await files.listAssetIds({}, { principal });
     assert.deepEqual(ids.assetIds, [file.id]);
+    const db = new DatabaseSync(database);
+    db.prepare(
+      `INSERT INTO filevora_asset_versions
+        (id, file_id, name, recipe_id, recipe_version, storage_key, mime, bytes, checksum, status)
+       VALUES ('ver_thumb', ?, 'thumbnail', 'preset', 1, 'objects/thumb', 'image/webp', 12, 'abc', 'ready')`,
+    ).run(file.id);
+    db.close();
+    await files.delete(file.id, { principal });
+    const after = new DatabaseSync(database);
+    const version = after
+      .prepare('SELECT status FROM filevora_asset_versions WHERE file_id = ?')
+      .get(file.id) as { status: string };
+    after.close();
+    assert.equal(version.status, 'deleted');
   } finally {
     await files.close();
     rmSync(dir, { recursive: true, force: true });
