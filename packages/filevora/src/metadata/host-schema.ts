@@ -65,13 +65,17 @@ CREATE TABLE IF NOT EXISTS filevora_asset_versions (
   status ${blob} NOT NULL,
   created_at ${blob} NOT NULL DEFAULT ''
 )`.trim();
+  const table = (statement: string) =>
+    dialect === 'mysql'
+      ? statement.replace(/DEFAULT '([^']*)'/g, "DEFAULT ('$1')")
+      : statement;
   const index = (statement: string) =>
     dialect === 'mysql'
       ? statement.replace(/ INDEX IF NOT EXISTS /g, ' INDEX ')
       : statement;
   return [
-    assets,
-    versions,
+    table(assets),
+    table(versions),
     index(
       dialect === 'mysql'
         ? 'CREATE INDEX filevora_assets_tenant_created ON filevora_assets (tenant_id, created_at(64), id)'

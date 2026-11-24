@@ -121,6 +121,15 @@ jobs:
     name: test-postgres
     runs-on: ubuntu-latest
     services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
       postgres:
         image: postgres:16
         env:
@@ -135,6 +144,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     env:
+      REDIS_URL: redis://127.0.0.1:6379
       FILEVORA_POSTGRES_URL: postgres://filevora:filevora@127.0.0.1:5432/filevora
     steps:
       - uses: actions/checkout@v4
@@ -146,6 +156,15 @@ jobs:
     name: test-mysql
     runs-on: ubuntu-latest
     services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
       mysql:
         image: mysql:8.4
         env:
@@ -159,6 +178,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
+      REDIS_URL: redis://127.0.0.1:6379
       FILEVORA_MYSQL_URL: mysql://root:filevora@127.0.0.1:3306/filevora
     steps:
       - uses: actions/checkout@v4
