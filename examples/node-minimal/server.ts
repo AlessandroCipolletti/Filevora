@@ -46,3 +46,10 @@ server.listen(0, '127.0.0.1', () => {
   const port = address && typeof address === 'object' ? address.port : 0;
   process.stdout.write(`listening ${port}\n`);
 });
+
+process.on('SIGTERM', () => {
+  server.close(() => {
+    void files.close().finally(() => process.exit(0));
+  });
+  setTimeout(() => process.exit(0), 500).unref();
+});

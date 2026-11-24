@@ -39,6 +39,7 @@ export async function redisUrlFor(input: {
     '';
   if (configured) {
     process.env.REDIS_URL = configured;
+    await probeRedis(configured);
     return configured;
   }
   throw fail('INVALID_CONFIG', {
@@ -49,17 +50,39 @@ export async function redisUrlFor(input: {
   });
 }
 
+const probedRedis = new Set<string>();
+
 function connection(url: string) {
-  return {
-    url,
-    maxRetriesPerRequest: null as null,
-    connectTimeout: 2_000,
+  return { url, maxRetriesPerRequest: null as null };
+}
+
+/** Fail before BullMQ opens a client that retries forever and ignores shutdown. */
+async function probeRedis(url: string): Promise<void> {
+  if (probedRedis.has(url)) return;
+  const { Redis } = await import('ioredis');
+  const client = new Redis(url, {
+    connectTimeout: 1500,
+    maxRetriesPerRequest: 1,
+    lazyConnect: true,
+    retryStrategy: () => null,
     enableOfflineQueue: false,
-    retryStrategy(times: number) {
-      if (times > 2) return null;
-      return 200;
-    },
-  };
+  });
+  client.on('error', () => undefined);
+  try {
+    await Promise.race([
+      client.connect(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 2000),
+      ),
+    ]);
+    const pong = await client.ping();
+    if (pong !== 'PONG') throw new Error('no pong');
+    probedRedis.add(url);
+  } catch (error) {
+    redisDown(error);
+  } finally {
+    client.disconnect();
+  }
 }
 
 function redisDown(error: unknown): never {
