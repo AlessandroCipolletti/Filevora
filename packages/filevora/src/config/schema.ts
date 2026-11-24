@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { MalwareScanner } from '../safety/scan.js';
 
 const byteString = z
   .string()
@@ -181,6 +182,20 @@ export const filesOptionsSchema = z
         allowLoopback: z.boolean().optional(),
       })
       .optional(),
+    safety: z
+      .object({
+        exif: z.enum(['gps', 'all', 'none']).optional(),
+        typeMaxBytes: z
+          .record(z.string(), z.number().int().positive())
+          .optional(),
+        scanner: z
+          .custom<MalwareScanner>(
+            (value) =>
+              !value || typeof (value as MalwareScanner).scan === 'function',
+          )
+          .optional(),
+      })
+      .optional(),
     remote: z
       .object({
         maxBytes: z.number().int().positive().optional(),
@@ -284,6 +299,11 @@ const envShape = {
   FILEVORA_REMOTE_ALLOW_PRIVATE: boolString.optional(),
   FILEVORA_REMOTE_HOST_ALLOW: z.string().optional(),
   FILEVORA_REMOTE_HOST_DENY: z.string().optional(),
+  FILEVORA_MALWARE_SCAN: z.enum(['off', 'clamav']).optional(),
+  FILEVORA_CLAMAV_HOST: z.string().optional(),
+  FILEVORA_CLAMAV_PORT: byteString.optional(),
+  FILEVORA_EXIF_STRIP: z.enum(['gps', 'all', 'none']).optional(),
+  FILEVORA_TYPE_MAX_BYTES: z.string().optional(),
   REDIS_URL: z.string().min(1).optional(),
   FILES_REDIS_URL: z.string().min(1).optional(),
   FILES_UPLOAD_CHUNK_BYTES: byteString.optional(),

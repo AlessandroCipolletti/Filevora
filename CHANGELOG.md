@@ -116,6 +116,12 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Upload safety
+
+- Optional malware scan after the original is stored and before encoding. No scanner skips the check. `FILEVORA_MALWARE_SCAN=clamav` uses ClamAV INSTREAM. Infected files return `MALWARE_DETECTED` and are quarantined.
+- `FILEVORA_EXIF_STRIP` defaults to `gps` for image versions. `all` drops metadata and `none` keeps it.
+- `FILEVORA_TYPE_MAX_BYTES` limits size by the sniffed type.
+
 ### Transform an existing asset
 
 - `POST /files/:assetId/transform` accepts one config object and returns `{ launched, jobId, assetId }` immediately. The job uses the BullMQ queue.

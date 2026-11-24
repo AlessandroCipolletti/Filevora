@@ -1,6 +1,8 @@
 import os from 'node:os';
 import type { ZodError } from 'zod';
 import { fail } from '../errors/error.js';
+import { parseTypeLimits } from '../safety/limits.js';
+import { createClamAvScanner } from '../safety/scan.js';
 import { redactValue } from '../redact.js';
 import { detectRuntime, isEphemeralPath } from './runtime.js';
 import {
@@ -110,6 +112,11 @@ export interface ResolvedConfig {
   };
   webhooks: {
     allowLoopback: boolean;
+  };
+  safety: {
+    exif: 'gps' | 'all' | 'none';
+    typeMaxBytes: Record<string, number>;
+    scanner?: import('../safety/scan.js').MalwareScanner;
   };
   remote: {
     maxBytes: number;
@@ -229,6 +236,18 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
               : {}),
             ...(e.FILEVORA_REMOTE_HOST_DENY
               ? { denyHosts: splitList(e.FILEVORA_REMOTE_HOST_DENY) }
+              : {}),
+          },
+        }
+      : {}),
+    ...(e.FILEVORA_EXIF_STRIP ||
+    e.FILEVORA_TYPE_MAX_BYTES ||
+    e.FILEVORA_MALWARE_SCAN === 'clamav'
+      ? {
+          safety: {
+            ...(e.FILEVORA_EXIF_STRIP ? { exif: e.FILEVORA_EXIF_STRIP } : {}),
+            ...(e.FILEVORA_TYPE_MAX_BYTES
+              ? { typeMaxBytes: parseTypeLimits(e.FILEVORA_TYPE_MAX_BYTES) }
               : {}),
           },
         }
@@ -740,6 +759,20 @@ export function resolveConfig(
     },
     webhooks: {
       allowLoopback: input.webhooks?.allowLoopback ?? sdkEnv !== 'production',
+    },
+    safety: {
+      exif: input.safety?.exif ?? 'gps',
+      typeMaxBytes: input.safety?.typeMaxBytes ?? {},
+      ...(input.safety?.scanner
+        ? { scanner: input.safety.scanner }
+        : env.FILEVORA_MALWARE_SCAN === 'clamav'
+          ? {
+              scanner: createClamAvScanner({
+                host: env.FILEVORA_CLAMAV_HOST ?? '127.0.0.1',
+                port: Number(env.FILEVORA_CLAMAV_PORT ?? 3310),
+              }),
+            }
+          : {}),
     },
     remote: {
       maxBytes: Math.min(

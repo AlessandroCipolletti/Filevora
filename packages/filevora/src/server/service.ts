@@ -43,6 +43,7 @@ import {
 } from '../transform/schema.js';
 import { measureOriginal } from '../transform/apply.js';
 import { downloadRemote } from '../remote/download.js';
+import { assertDetectedSize } from '../safety/limits.js';
 import { checkRemoteUrl } from '../remote/policy.js';
 import { planRetention, type RetentionRow } from '../retention/plan.js';
 import { assertUnexpired, readToken, signToken } from '../security/token.js';
@@ -759,7 +760,9 @@ export class FileService {
   ): Promise<ProgressEvent> {
     const record = await this.get(fileId, ctx);
     const jobId = record.metadata.filevoraJobId ?? null;
-    const errorCode = record.metadata.filevoraImportError;
+    const errorCode =
+      record.metadata.filevoraImportError ??
+      record.metadata.filevoraSafetyError;
     const base = { fileId: record.id, assetId: record.id, jobId };
     if (
       record.metadata.filevoraSource === 'remote-url' &&
@@ -805,6 +808,7 @@ export class FileService {
       record.processingState === 'ready' ||
       record.processingState === 'partially_ready' ||
       failed ||
+      record.processingState === 'quarantined' ||
       record.processingState === 'deleted';
     const versions =
       terminal && record.uploadState === 'verified' && !failed && opts?.baseUrl
@@ -1073,7 +1077,7 @@ export class FileService {
       if (!mimeAllowed(remote.mime, this.config.defaults.allowedMimeTypes)) {
         throw fail('UNSUPPORTED_MIME', {
           message: 'The remote file type is not allowed.',
-          context: { detected: remote.mime },
+          context: { detectedType: remote.mime },
         });
       }
       key = assetObjectKey(
@@ -1099,7 +1103,15 @@ export class FileService {
          upload_state = 'verified', updated_at = ? WHERE id = ?`,
         [remote.mime, stored.bytes, stored.checksum, key, now, fileId],
       );
-      await this.enqueuePreset(fileId, remote.mime, ctx);
+      assertDetectedSize(
+        remote.mime,
+        stored.bytes,
+        this.config.safety.typeMaxBytes,
+        this.config.defaults.maxFileBytes,
+      );
+      if (await this.acceptOriginal(fileId, key, remote.mime, stored.bytes)) {
+        await this.enqueuePreset(fileId, remote.mime, ctx);
+      }
     } catch (error) {
       if (key) await this.storage?.deleteObject(key).catch(() => undefined);
       const code = isFileSdkError(error) ? error.code : 'REMOTE_URL_BLOCKED';
@@ -1251,7 +1263,23 @@ export class FileService {
         },
       );
     });
-    await this.enqueuePreset(session.file_id, detected, ctx);
+    assertDetectedSize(
+      detected,
+      stored.bytes,
+      this.config.safety.typeMaxBytes,
+      this.config.defaults.maxFileBytes,
+    );
+    if (
+      await this.acceptOriginal(
+        session.file_id,
+        session.object_key ?? '',
+        detected,
+        stored.bytes,
+        bytes,
+      )
+    ) {
+      await this.enqueuePreset(session.file_id, detected, ctx);
+    }
     return this.get(session.file_id, ctx);
   }
 
@@ -1373,8 +1401,16 @@ export class FileService {
       });
     }
     if (!mimeAllowed(detected, this.config.defaults.allowedMimeTypes)) {
-      throw fail('UNSUPPORTED_MIME');
+      throw fail('UNSUPPORTED_MIME', {
+        context: { detectedType: detected },
+      });
     }
+    assertDetectedSize(
+      detected,
+      storedBytes,
+      this.config.safety.typeMaxBytes,
+      this.config.defaults.maxFileBytes,
+    );
     const originalKey = assetObjectKey(
       session.tenant_id,
       session.file_id,
@@ -1420,7 +1456,16 @@ export class FileService {
     for (const part of parts) {
       await this.storage?.deleteObject(part.object_key);
     }
-    await this.enqueuePreset(session.file_id, detected, ctx);
+    if (
+      await this.acceptOriginal(
+        session.file_id,
+        originalKey,
+        detected,
+        assembled.bytes,
+      )
+    ) {
+      await this.enqueuePreset(session.file_id, detected, ctx);
+    }
     return this.get(session.file_id, ctx);
   }
 
@@ -1765,6 +1810,76 @@ export class FileService {
       return 'public';
     }
     return 'private';
+  }
+
+  private async acceptOriginal(
+    fileId: string,
+    key: string,
+    mime: string,
+    bytes: number,
+    body?: Uint8Array,
+  ): Promise<boolean> {
+    assertDetectedSize(
+      mime,
+      bytes,
+      this.config.safety.typeMaxBytes,
+      this.config.defaults.maxFileBytes,
+    );
+    const scanner = this.config.safety.scanner;
+    if (!scanner) return true;
+    try {
+      const verdict = await scanner.scan({
+        assetId: fileId,
+        mime,
+        ...(body ? { bytes: body } : { path: path.join(this.root(), key) }),
+      });
+      if (verdict === 'infected') {
+        await this.quarantine(fileId, key, 'MALWARE_DETECTED');
+        return false;
+      }
+      return true;
+    } catch (error) {
+      const code = isFileSdkError(error) ? error.code : 'MALWARE_SCAN_FAILED';
+      await this.quarantine(
+        fileId,
+        key,
+        code === 'MALWARE_DETECTED'
+          ? 'MALWARE_DETECTED'
+          : 'MALWARE_SCAN_FAILED',
+      );
+      return false;
+    }
+  }
+
+  private async quarantine(
+    fileId: string,
+    key: string,
+    code: 'MALWARE_DETECTED' | 'MALWARE_SCAN_FAILED',
+  ): Promise<void> {
+    if (key && this.config.storage.driver === 'filesystem') {
+      const { mkdir, rename } = await import('node:fs/promises');
+      const held = path.join(
+        this.root(),
+        '.filevora',
+        'quarantine',
+        path.basename(key),
+      );
+      await mkdir(path.dirname(held), { recursive: true });
+      await rename(path.join(this.root(), key), held).catch(() => undefined);
+    } else if (key) {
+      await this.storage?.deleteObject(key).catch(() => undefined);
+    }
+    await (
+      await this.db()
+    ).run(
+      `UPDATE files SET upload_state = 'expired', processing_state = ?, metadata_json = ?, updated_at = ? WHERE id = ?`,
+      [
+        code === 'MALWARE_DETECTED' ? 'quarantined' : 'failed',
+        JSON.stringify({ filevoraSafetyError: code }),
+        nowIso(),
+        fileId,
+      ],
+    );
   }
 
   private async enqueuePreset(

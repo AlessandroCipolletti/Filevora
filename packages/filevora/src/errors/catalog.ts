@@ -521,6 +521,38 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
+  MALWARE_DETECTED: {
+    httpStatus: 422,
+    category: 'upload',
+    retryable: false,
+    message: 'The file was rejected by the malware scanner.',
+    resolution: resolution(
+      'docs/errors/MALWARE_DETECTED.md',
+      'The scanner marked the original as infected after it was stored and before encoding. The original was quarantined and no variants were published.',
+      [
+        action(
+          'discard',
+          'Do not retry this file. Upload a clean copy if the detection was a false positive.',
+        ),
+      ],
+    ),
+  },
+  MALWARE_SCAN_FAILED: {
+    httpStatus: 503,
+    category: 'upload',
+    retryable: true,
+    message: 'The malware scan did not finish.',
+    resolution: resolution(
+      'docs/errors/MALWARE_SCAN_FAILED.md',
+      'A scanner is configured, but it was unreachable or returned an unusable result. The original was quarantined and encoding did not start.',
+      [
+        action(
+          'check_scanner',
+          'Check FILEVORA_CLAMAV_HOST and FILEVORA_CLAMAV_PORT, then upload again.',
+        ),
+      ],
+    ),
+  },
   TRANSFORM_REJECTED: {
     httpStatus: 400,
     category: 'processing',

@@ -186,6 +186,8 @@ async function executeJob(
         mime: jobPayload.mime ?? file.detected_mime ?? '',
         sourceKey: jobPayload.sourceKey ?? file.original_object_key ?? '',
         operations: jobPayload.operations ?? [],
+        exif: config.safety.exif,
+        ...(config.safety.scanner ? { scanner: config.safety.scanner } : {}),
       });
       return { variants: ['_original'], processingState: 'ready' };
     }
@@ -196,6 +198,7 @@ async function executeJob(
           config.storage.root,
           file,
           config.processing.imageMaxPixels,
+          config.safety.exif,
         );
         return { variants: names, processingState: 'ready' };
       }
@@ -233,9 +236,20 @@ async function executeJob(
     const attempts = job.opts.attempts ?? 1;
     const terminal = !sdk.retryable || (job.attemptsMade ?? 0) + 1 >= attempts;
     if (terminal) {
+      const malware =
+        sdk.code === 'MALWARE_DETECTED' || sdk.code === 'MALWARE_SCAN_FAILED';
       await sql.run(
-        `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
-        [new Date().toISOString(), data.fileId],
+        malware
+          ? `UPDATE files SET processing_state = ?, metadata_json = ?, updated_at = ? WHERE id = ?`
+          : `UPDATE files SET processing_state = 'failed', updated_at = ? WHERE id = ?`,
+        malware
+          ? [
+              sdk.code === 'MALWARE_DETECTED' ? 'quarantined' : 'failed',
+              JSON.stringify({ filevoraSafetyError: sdk.code }),
+              new Date().toISOString(),
+              data.fileId,
+            ]
+          : [new Date().toISOString(), data.fileId],
       );
     }
     const wrapped = new Error(`${sdk.code}: ${sdk.message}`);

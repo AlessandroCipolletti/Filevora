@@ -10,6 +10,8 @@ import {
   recordRunnerPid,
 } from '../queue/processing-queue.js';
 import { writeBytes } from '../storage/filesystem.js';
+import type { ExifMode } from '../safety/exif.js';
+import type { MalwareScanner } from '../safety/scan.js';
 import type { AssetTransformOperation } from './schema.js';
 
 export async function measureOriginal(
@@ -60,13 +62,15 @@ export async function applyAssetTransform(input: {
   mime: string;
   sourceKey: string;
   operations: AssetTransformOperation[];
+  exif?: ExifMode;
+  scanner?: MalwareScanner;
 }): Promise<void> {
   const sourcePath = path.join(input.root, input.sourceKey);
   const startedAt = Date.now();
   let body: Buffer;
   let outMime = input.mime;
   if (input.mime.startsWith('image/')) {
-    body = await applyImage(sourcePath, input.operations);
+    body = await applyImage(sourcePath, input.operations, input.exif ?? 'gps');
     outMime = input.mime === 'image/jpeg' ? 'image/jpeg' : 'image/png';
     await recordProcessingProgress(input.targetId, 1, startedAt);
   } else if (input.mime.startsWith('video/')) {
@@ -88,6 +92,19 @@ export async function applyAssetTransform(input: {
     extensionForMime(outMime),
   );
   await writeBytes(input.root, key, body);
+  if (input.scanner) {
+    const verdict = await input.scanner.scan({
+      assetId: input.targetId,
+      mime: outMime,
+      path: path.join(input.root, key),
+      bytes: body,
+    });
+    if (verdict === 'infected') {
+      const { rm } = await import('node:fs/promises');
+      await rm(path.join(input.root, key), { force: true });
+      throw fail('MALWARE_DETECTED');
+    }
+  }
   if (input.sourceId === input.targetId && input.sourceKey !== key) {
     const { rm } = await import('node:fs/promises');
     await rm(path.join(input.root, input.sourceKey), { force: true });
@@ -111,6 +128,7 @@ export async function applyAssetTransform(input: {
 async function applyImage(
   source: string,
   operations: AssetTransformOperation[],
+  exif: ExifMode,
 ): Promise<Buffer> {
   const sharp = (await import('sharp')).default;
   let pipeline = sharp(source).rotate();
@@ -130,6 +148,7 @@ async function applyImage(
       });
     }
   }
+  if (exif === 'none') pipeline = pipeline.withMetadata();
   const meta = await sharp(source).metadata();
   if (meta.format === 'jpeg') return pipeline.jpeg({ quality: 90 }).toBuffer();
   return pipeline.png().toBuffer();

@@ -35,4 +35,6 @@ Providing `FILEVORA_DATABASE_URL` selects stored mode. Omitting it selects lite 
 
 The scheme is the driver: `postgres://` or `postgresql://`, `mysql://` or `mariadb://`, `sqlite://` or a file path. The database is one the host already runs. `npx filevora migrate` creates only `filevora_assets` and `filevora_asset_versions`. `GET /files?kind=&status=&createdAfter=` and `GET /assets` list ids for the signed-in tenant. Verify with `npx filevora doctor --json`.
 
+`FILEVORA_MALWARE_SCAN` is optional. Leave it unset to skip scanning. `clamav` scans the stored original before encoding. `FILEVORA_EXIF_STRIP` defaults to `gps`. `FILEVORA_TYPE_MAX_BYTES` is a comma-separated list of `mime=bytes` limits checked against the sniffed type.
+
 FFmpeg and Poppler are system binaries. This package does not download them. `pg` and `sharp` are optional dependencies.

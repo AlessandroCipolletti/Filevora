@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fail } from '../errors/error.js';
 import { assetObjectKey, createId, nowIso, sha256 } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
+import type { ExifMode } from '../safety/exif.js';
 import { writeBytes } from '../storage/filesystem.js';
 
 const TARGETS = [
@@ -26,6 +27,7 @@ export async function publishImagePreset(
   root: string,
   file: ImageFile,
   maxPixels: number,
+  exif: ExifMode = 'gps',
 ): Promise<string[]> {
   if (!file.original_object_key) throw fail('NOT_FOUND');
   const sharp = await loadSharp();
@@ -55,11 +57,11 @@ export async function publishImagePreset(
       names.push(target.name);
       continue;
     }
-    const body = await sharp(input, { limitInputPixels: maxPixels })
+    let pipeline = sharp(input, { limitInputPixels: maxPixels })
       .rotate()
-      .resize({ width: target.width, withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
+      .resize({ width: target.width, withoutEnlargement: true });
+    if (exif === 'none') pipeline = pipeline.withMetadata();
+    const body = await pipeline.webp({ quality: 80 }).toBuffer();
     const info = await sharp(body).metadata();
     const id = createId('variant');
     const key = assetObjectKey(file.tenant_id, file.id, target.name, 'webp');
