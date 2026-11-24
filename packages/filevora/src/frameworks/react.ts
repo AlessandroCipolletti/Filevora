@@ -3,7 +3,10 @@ import type { UploadProgress, UploadState } from '../client/upload-client.js';
 import type { ProcessingUpdate } from '../client/progress-stream.js';
 
 interface UploadLike {
-  upload(file: File): {
+  upload(
+    file: File,
+    options?: { describe?: boolean },
+  ): {
     on(event: 'progress', listener: (progress: UploadProgress) => void): void;
     on(event: 'state', listener: (state: UploadState) => void): void;
     complete(): Promise<{ id: string }>;
@@ -13,6 +16,7 @@ interface UploadLike {
     init: {
       mimeType: string;
       mode?: 'single' | 'multipart';
+      describe?: boolean;
       onProgress?: (progress: UploadProgress) => void;
     },
   ): Promise<{ id: string }>;
@@ -30,9 +34,9 @@ export function useUpload(client: UploadLike) {
   const [error, setError] = useState<unknown>(null);
   const [fileId, setFileId] = useState<string | null>(null);
 
-  function start(file: File) {
+  function start(file: File, options?: { describe?: boolean }) {
     setError(null);
-    const task = client.upload(file);
+    const task = client.upload(file, options);
     task.on('progress', setProgress);
     task.on('state', setState);
     return task.complete().then(
@@ -47,11 +51,21 @@ export function useUpload(client: UploadLike) {
     );
   }
 
-  function uploadToS3(file: Blob & { name?: string }, mimeType: string) {
+  function uploadToS3(
+    file: Blob & { name?: string },
+    mimeType: string,
+    options?: { describe?: boolean },
+  ) {
     setError(null);
     setState('uploading');
     return client
-      .uploadDirect(file, { mimeType, onProgress: setProgress })
+      .uploadDirect(file, {
+        mimeType,
+        onProgress: setProgress,
+        ...(options?.describe !== undefined
+          ? { describe: options.describe }
+          : {}),
+      })
       .then(
         (record) => {
           setState('completed');

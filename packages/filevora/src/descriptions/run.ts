@@ -33,6 +33,7 @@ export async function runAssetDescription(
   storage: StorageDriver,
   config: ResolvedConfig,
   fileId: string,
+  options: { allowOriginal?: boolean } = {},
 ): Promise<void> {
   const row = await sql.get<AssetRow>(
     `SELECT id, tenant_id, detected_mime, declared_mime, original_object_key,
@@ -49,7 +50,15 @@ export async function runAssetDescription(
   }
   const mime = row.detected_mime || row.declared_mime;
   try {
-    const source = await sourceBytes(sql, storage, config, row, mime);
+    const source = await sourceBytes(
+      sql,
+      storage,
+      config,
+      row,
+      mime,
+      options.allowOriginal === true,
+    );
+    if (!source) return;
     const result = await askGemini({
       apiKey: config.gemini.apiKey,
       model: config.gemini.model,
@@ -102,7 +111,9 @@ function promptFor(mime: string): string {
     `description_short is at most ${SHORT_LIMIT} characters.`,
     `tags use only these categories: ${categories}.`,
     'Image and video tags cover subject, action, style, purpose, and emotion.',
-    'Audio kind is music, sound-effects, or speech. Speech also gets a language tag (ISO code). Speech descriptions summarise what is said. Music and effects describe the sound.',
+    'Purpose examples: family memory photo, landscape, artwork, advertising video, product shot, wedding, tutorial, screenshot.',
+    'Emotion examples: joyful, scary, calm.',
+    'Audio kind is music, sound-effects, or speech. Speech also gets a language tag (ISO code or name). Speech descriptions summarise what is said. Music and effects describe the sound.',
     'Text and PDF tags cover subject, purpose, and language. The descriptions are summaries.',
     'Lowercase the tags. At most 12 tags. Do not invent categories.',
   ].join(' ');
@@ -114,12 +125,16 @@ async function sourceBytes(
   config: ResolvedConfig,
   row: AssetRow,
   mime: string,
-): Promise<{ bytes: Uint8Array; mime: string }> {
+  allowOriginal: boolean,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const variant = await sql.get<{ storage_key: string; mime: string }>(
     `SELECT storage_key, mime FROM variants
      WHERE file_id = ? AND name = 'optimized' AND status = 'ready'`,
     [row.id],
   );
+  if (!variant && !allowOriginal && /^(image|video|audio)\//.test(mime)) {
+    return null;
+  }
   const key = variant?.storage_key ?? row.original_object_key;
   const sourceMime = variant?.mime ?? mime;
   if (!key) throw new Error('The asset has no bytes to describe.');

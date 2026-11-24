@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { resolveConfig } from '../dist/config/load.js';
 import { askGemini } from '../dist/descriptions/gemini.js';
-import { normaliseTags } from '../dist/descriptions/run.js';
+import { clip, normaliseTags } from '../dist/descriptions/run.js';
 import { FileSdkError } from '../dist/errors/error.js';
 import { hostStatements } from '../dist/metadata/host-schema.js';
 import { createFiles } from '../dist/server/index.js';
@@ -69,11 +69,20 @@ function geminiResponse() {
 function mockFetch(calls: string[]) {
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
-    calls.push(url);
     if (url.includes(':generateContent')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        contents?: Array<{
+          parts?: Array<{ inlineData?: { mimeType?: string } }>;
+        }>;
+      };
+      const mime = body.contents?.[0]?.parts?.find(
+        (part) => part.inlineData?.mimeType,
+      )?.inlineData?.mimeType;
+      calls.push(mime ?? url);
       assert.equal(String(init?.body ?? '').includes('test-key'), false);
       return new Response(geminiResponse(), { status: 200 });
     }
+    calls.push(url);
     if (init?.method === 'DELETE') return new Response(null, { status: 200 });
     return new Response(
       JSON.stringify({
@@ -203,7 +212,18 @@ test('describe overrides the default and stores tags', async () => {
     );
     assert.equal(skipped.description, undefined);
     assert.equal(calls.length, 0);
+    const plain = stored(path.join(dir, 'plain'), mockFetch(calls), false);
+    const forced = await upload(
+      plain,
+      samplePng(),
+      'forced.png',
+      'image/png',
+      true,
+    );
+    assert.equal(forced.description?.status, 'done');
+    await plain.close();
     const image = await upload(files, samplePng(), 'hill.png', 'image/png');
+    assert.equal(calls.includes('image/webp'), true);
     assert.equal(image.description?.status, 'done');
     assert.equal(image.description?.short, 'Calm landscape.');
     assert.equal(image.processingState === 'failed', false);
@@ -225,6 +245,7 @@ test('describe overrides the default and stores tags', async () => {
       true,
     );
     assert.equal(pdf.description?.status, 'done');
+    assert.equal(calls.includes('application/pdf'), true);
     assert.ok(pdf.description?.tags.some((tag) => tag.category === 'language'));
     assert.equal(
       pdf.description?.tags.some((tag) => tag.category === 'emotion'),
@@ -233,6 +254,7 @@ test('describe overrides the default and stores tags', async () => {
     const audio = await upload(files, wav(), 'note.wav', 'audio/wav', true);
     assert.equal(audio.description?.status, 'done');
     assert.ok(audio.description?.tags.some((tag) => tag.category === 'kind'));
+    assert.equal(calls.includes('audio/mp4'), true);
     const video = await upload(
       files,
       await sampleMp4(),
@@ -244,6 +266,7 @@ test('describe overrides the default and stores tags', async () => {
     assert.ok(
       video.description?.tags.some((tag) => tag.category === 'emotion'),
     );
+    assert.equal(calls.includes('video/mp4'), true);
   } finally {
     await files.close();
     rmSync(dir, { recursive: true, force: true });
@@ -301,6 +324,8 @@ test('tag normalisation and host schemas include descriptions', () => {
     'audio/mpeg',
   );
   assert.deepEqual(tags, [{ category: 'kind', tag: 'speech' }]);
+  assert.equal(clip('x'.repeat(4000), 3000).length <= 3000, true);
+  assert.equal(clip('y'.repeat(500), 300).length <= 300, true);
   for (const dialect of ['sqlite', 'postgres', 'mysql'] as const) {
     const sql = hostStatements(dialect).join('\n');
     assert.match(sql, /filevora_asset_tags/);

@@ -112,7 +112,7 @@ export function UploadButton() {
   const progress = useAssetProgress(client, upload.fileId);
   return (
     <button
-      onClick={() => upload.start(fileInput.files[0])}
+      onClick={() => upload.start(fileInput.files[0], { describe: true })}
     >
       {upload.progress?.percentage ?? 0} {progress.update?.state}
     </button>

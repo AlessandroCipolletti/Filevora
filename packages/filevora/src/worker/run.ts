@@ -175,7 +175,9 @@ async function executeJob(
   const storage = await openStorage(config.storage);
   try {
     if (data.type === 'describe') {
-      await runAssetDescription(sql, storage, config, data.fileId);
+      await runAssetDescription(sql, storage, config, data.fileId, {
+        allowOriginal: data.payload.allowOriginal === true,
+      });
       return { described: true };
     }
     if (data.type === 'retention') {
@@ -452,6 +454,11 @@ async function executeJob(
             maxHeight: limits.maxHeight,
             ...(signal ? { signal } : {}),
           });
+          if (!names.includes('optimized')) {
+            await enqueueAssetDescription(sql, storage, config, data.fileId, {
+              allowOriginal: true,
+            }).catch(() => undefined);
+          }
           await notifyTerminal(sql, config, data, 'processing.completed');
           return { variants: names, processingState: 'ready' };
         }
@@ -473,6 +480,11 @@ async function executeJob(
               ).catch(() => undefined);
             },
           );
+          if (!names.includes('optimized')) {
+            await enqueueAssetDescription(sql, storage, config, data.fileId, {
+              allowOriginal: true,
+            }).catch(() => undefined);
+          }
           await notifyTerminal(sql, config, data, 'processing.completed');
           return { variants: names, processingState: 'ready' };
         }
@@ -485,6 +497,11 @@ async function executeJob(
             limits,
             hooks,
           );
+          if (!names.includes('optimized')) {
+            await enqueueAssetDescription(sql, storage, config, data.fileId, {
+              allowOriginal: true,
+            }).catch(() => undefined);
+          }
           await notifyTerminal(sql, config, data, 'processing.completed');
           return { variants: names, processingState: 'ready' };
         }
@@ -497,6 +514,11 @@ async function executeJob(
             limits,
             hooks,
           );
+          if (!names.includes('optimized')) {
+            await enqueueAssetDescription(sql, storage, config, data.fileId, {
+              allowOriginal: true,
+            }).catch(() => undefined);
+          }
           await notifyTerminal(sql, config, data, 'processing.completed');
           return { variants: names, processingState: 'ready' };
         }

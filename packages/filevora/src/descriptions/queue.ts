@@ -10,6 +10,7 @@ export async function enqueueAssetDescription(
   storage: StorageDriver,
   config: ResolvedConfig,
   fileId: string,
+  options: { allowOriginal?: boolean } = {},
 ): Promise<void> {
   if (config.metadata.mode !== 'stored' || !config.gemini.apiKey) return;
   const row = await sql.get<{
@@ -28,17 +29,22 @@ export async function enqueueAssetDescription(
     return;
   }
   if (config.processing.mode === 'sync') {
-    await runAssetDescription(sql, storage, config, fileId);
+    await runAssetDescription(sql, storage, config, fileId, options);
     return;
   }
   await enqueueProcessingJob({
     env: config.env,
     redisUrl: config.queue.redisUrl,
-    id: `describe_${fileId}`,
+    id: options.allowOriginal
+      ? `describe_ready_${fileId}`
+      : `describe_${fileId}`,
     fileId,
     tenantId: row.tenant_id,
     type: 'describe',
-    payload: { schemaVersion: 1 },
+    payload: {
+      schemaVersion: 1,
+      allowOriginal: options.allowOriginal === true,
+    },
     maxAttempts: 1,
     backoffMs: config.queue.backoffBaseMs,
     scope: config.storage.root,

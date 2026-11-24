@@ -2668,12 +2668,24 @@ export class FileService {
   }
 
   private async finishDescribe(fileId: string): Promise<void> {
+    if (this.config.metadata.mode !== 'stored') return;
     try {
+      const row = await (
+        await this.db()
+      ).get<{
+        detected_mime: string | null;
+        declared_mime: string;
+      }>('SELECT detected_mime, declared_mime FROM files WHERE id = ?', [
+        fileId,
+      ]);
+      const mime = row?.detected_mime || row?.declared_mime || '';
+      if (/^(image|video|audio)\//.test(mime)) return;
       await enqueueAssetDescription(
         await this.db(),
         await this.driver(),
         this.config,
         fileId,
+        { allowOriginal: true },
       );
     } catch {
       // The asset stays available when a description cannot be queued.
