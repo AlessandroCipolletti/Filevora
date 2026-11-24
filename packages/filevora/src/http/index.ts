@@ -1,6 +1,7 @@
 import { createRequestId, fail, isFileSdkError } from '../errors/error.js';
 import { mimeAllowed } from '../mime.js';
 import type { Files } from '../server/index.js';
+import { HTTP_ROUTES, matchRoute, type MatchedRoute } from './route-table.js';
 import type {
   FileOperation,
   FileRecord,
@@ -61,7 +62,12 @@ export function createFilesHandler(
     try {
       const url = new URL(request.url);
       const pathname = stripBase(url.pathname, basePath);
-      if (request.method === 'GET' && pathname.startsWith('/content/')) {
+      const content = HTTP_ROUTES.find((route) => route.name === 'content');
+      if (
+        content &&
+        request.method === content.method &&
+        pathname.startsWith('/content/')
+      ) {
         return await sendContent(
           options.files,
           pathname.slice('/content/'.length),
@@ -106,122 +112,7 @@ export function createFilesHandler(
   };
 }
 
-interface Route {
-  operation: FileOperation;
-  name:
-    | 'create-session'
-    | 'get-session'
-    | 'write-part'
-    | 'complete'
-    | 'abort'
-    | 'list'
-    | 'assets'
-    | 'from-url'
-    | 'batch'
-    | 'get'
-    | 'delete'
-    | 'delivery'
-    | 'progress'
-    | 'transform'
-    | 'versions'
-    | 'cleanup';
-  sessionId?: string;
-  fileId?: string;
-  partNumber?: number;
-}
-
-function matchRoute(method: string, pathname: string): Route | null {
-  if (method === 'POST' && pathname === '/sessions')
-    return { operation: 'session.create', name: 'create-session' };
-  const session = /^\/sessions\/([^/]+)$/.exec(pathname);
-  if (session?.[1] && method === 'GET')
-    return {
-      operation: 'session.read',
-      name: 'get-session',
-      sessionId: decodeURIComponent(session[1]),
-    };
-  const part = /^\/sessions\/([^/]+)\/parts\/(\d+)$/.exec(pathname);
-  if (part?.[1] && part[2] && method === 'PUT') {
-    return {
-      operation: 'session.write',
-      name: 'write-part',
-      sessionId: decodeURIComponent(part[1]),
-      partNumber: Number(part[2]),
-    };
-  }
-  const complete = /^\/sessions\/([^/]+)\/complete$/.exec(pathname);
-  if (complete?.[1] && method === 'POST') {
-    return {
-      operation: 'session.complete',
-      name: 'complete',
-      sessionId: decodeURIComponent(complete[1]),
-    };
-  }
-  const abort = /^\/sessions\/([^/]+)\/abort$/.exec(pathname);
-  if (abort?.[1] && method === 'POST') {
-    return {
-      operation: 'session.abort',
-      name: 'abort',
-      sessionId: decodeURIComponent(abort[1]),
-    };
-  }
-  if (method === 'GET' && pathname === '/assets')
-    return { operation: 'file.list', name: 'assets' };
-  if (method === 'POST' && pathname === '/retention/cleanup')
-    return { operation: 'retention.run', name: 'cleanup' };
-  if (method === 'POST' && pathname === '/assets/from-url')
-    return { operation: 'file.import', name: 'from-url' };
-  if (method === 'POST' && pathname === '/files/batch')
-    return { operation: 'file.read', name: 'batch' };
-  if (method === 'GET' && pathname === '/files')
-    return { operation: 'file.list', name: 'list' };
-  const file = /^\/files\/([^/]+)$/.exec(pathname);
-  if (file?.[1] && method === 'GET')
-    return {
-      operation: 'file.read',
-      name: 'get',
-      fileId: decodeURIComponent(file[1]),
-    };
-  if (file?.[1] && method === 'DELETE')
-    return {
-      operation: 'file.delete',
-      name: 'delete',
-      fileId: decodeURIComponent(file[1]),
-    };
-  const versions = /^\/files\/([^/]+)\/versions$/.exec(pathname);
-  if (versions?.[1] && method === 'GET') {
-    return {
-      operation: 'delivery.sign',
-      name: 'versions',
-      fileId: decodeURIComponent(versions[1]),
-    };
-  }
-  const transform = /^\/files\/([^/]+)\/transform$/.exec(pathname);
-  if (transform?.[1] && method === 'POST') {
-    return {
-      operation: 'process.request',
-      name: 'transform',
-      fileId: decodeURIComponent(transform[1]),
-    };
-  }
-  const progress = /^\/files\/([^/]+)\/progress$/.exec(pathname);
-  if (progress?.[1] && method === 'GET') {
-    return {
-      operation: 'job.read',
-      name: 'progress',
-      fileId: decodeURIComponent(progress[1]),
-    };
-  }
-  const delivery = /^\/files\/([^/]+)\/delivery$/.exec(pathname);
-  if (delivery?.[1] && method === 'POST') {
-    return {
-      operation: 'delivery.sign',
-      name: 'delivery',
-      fileId: decodeURIComponent(delivery[1]),
-    };
-  }
-  return null;
-}
+type Route = MatchedRoute;
 
 async function dispatch(
   options: FilesHandlerOptions,

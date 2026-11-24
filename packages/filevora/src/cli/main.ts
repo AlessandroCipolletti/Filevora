@@ -5,6 +5,7 @@ import { redactConfig, resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
 import { runDoctor } from '../diagnostics/doctor.js';
 import { isFileSdkError } from '../errors/error.js';
+import { CLI_COMMANDS } from './commands.js';
 import { FILEVORA_VERSION } from '../version.js';
 
 export interface CliIo {
@@ -35,16 +36,8 @@ function helpText(): string {
     'No Filevora account is required. Managed hosting is not part of this package.',
     '',
     'Usage:',
-    '  filevora capabilities --json',
-    '  filevora config validate --json',
-    '  filevora doctor --json',
-    '  filevora migrate',
-    '  filevora cleanup [--dry-run] [--json]',
-    '  filevora worker',
-    '  filevora --help',
-    '  filevora --version',
+    ...CLI_COMMANDS.map((command) => `  filevora ${command}`),
     '',
-    'inspect and init are added in later milestones.',
     `version ${FILEVORA_VERSION}`,
   ].join('\n');
 }
@@ -101,6 +94,16 @@ export async function runCli(
         );
       }
       out.stdout(json ? (raw.endsWith('\n') ? raw : `${raw}\n`) : `${raw}\n`);
+      return 0;
+    }
+    if (command === 'manifest') {
+      const { readManifest } = await import('../manifest/index.js');
+      out.stdout(`${JSON.stringify(readManifest(), null, json ? 2 : 0)}\n`);
+      return 0;
+    }
+    if (command === 'mcp') {
+      const { serveMcp } = await import('../mcp/stdio.js');
+      await serveMcp();
       return 0;
     }
     if (command === 'config' && sub === 'validate') {

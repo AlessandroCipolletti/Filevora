@@ -16,10 +16,12 @@
     "imports",
     "cli",
     "runtimes",
-    "features"
+    "features",
+    "catalog"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
+    "catalog": { "type": "object" },
     "name": { "const": "filevora" },
     "package": { "const": "filevora" },
     "version": { "type": "string" },

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "filevora",
   "package": "filevora",
   "version": "0.1.0",
@@ -9,23 +9,34 @@
   "accounts": "unsupported",
   "hostedControlPlane": "unsupported",
   "imports": [
-    "filevora/server",
     "filevora/client",
     "filevora/http",
-    "filevora/worker",
-    "filevora/types"
+    "filevora/manifest",
+    "filevora/server",
+    "filevora/testing",
+    "filevora/types",
+    "filevora/worker"
   ],
   "cli": [
     "capabilities --json",
+    "manifest --json",
     "config validate --json",
     "doctor --json",
-    "worker --help"
+    "mcp",
+    "migrate",
+    "cleanup [--dry-run] [--json]",
+    "init --profile local-s3",
+    "worker",
+    "--help",
+    "--version"
   ],
   "runtimes": {
     "node": {
       "status": "tested",
       "engines": ">=22.13",
-      "verifiedOn": ["darwin node v26.5.0"]
+      "verifiedOn": [
+        "darwin node v26.5.0"
+      ]
     },
     "browser": {
       "status": "tested",
@@ -70,6 +81,2022 @@
     "Lite metadata is the default and does not create a database file. A FILEVORA_DATABASE_URL selects stored mode. postgres and postgresql use PostgreSQL, mysql and mariadb use MySQL or MariaDB, and sqlite or a file path uses SQLite. Migrate creates only filevora_assets and filevora_asset_versions. The processing queue is Redis only.",
     "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary or a PDF Poppler cannot read leaves the preview unavailable and still returns extracted text. OCR returns OCR_NOT_CONFIGURED.",
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
-    "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs."
-  ]
+    "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs.",
+    "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest."
+  ],
+  "catalog": {
+    "schema": "filevora.manifest/2",
+    "exports": [
+      {
+        "module": "filevora/client",
+        "symbols": [
+          "ClientEnvOptions",
+          "HistoryVariant",
+          "ProcessingUpdate",
+          "ResumeRecord",
+          "ResumeStore",
+          "UploadClient",
+          "UploadClientOptions",
+          "UploadHistory",
+          "UploadHistoryItem",
+          "UploadOptions",
+          "UploadProgress",
+          "UploadState",
+          "UploadTask",
+          "UploadedFile",
+          "createIndexedDbResumeStore",
+          "createMemoryResumeStore",
+          "createUploadClient",
+          "uploadClientOptionsFromEnv"
+        ]
+      },
+      {
+        "module": "filevora/http",
+        "symbols": [
+          "FilesHandlerOptions",
+          "createFilesHandler",
+          "handleNodeRequest"
+        ]
+      },
+      {
+        "module": "filevora/manifest",
+        "symbols": [
+          "ManifestHand",
+          "buildManifest",
+          "readManifest"
+        ]
+      },
+      {
+        "module": "filevora/server",
+        "symbols": [
+          "AssetTransform",
+          "AssetTransformInput",
+          "AssetTransformOperation",
+          "CreateSessionInput",
+          "Files",
+          "FilesOptions",
+          "RequestContext",
+          "ResolvedConfig",
+          "assetTransformSchema",
+          "createFiles"
+        ]
+      },
+      {
+        "module": "filevora/testing",
+        "symbols": [
+          "TestFiles",
+          "assertProgress",
+          "createTestFiles",
+          "sampleMp4",
+          "samplePdf",
+          "samplePng",
+          "uploadBytes"
+        ]
+      },
+      {
+        "module": "filevora/types",
+        "symbols": [
+          "AbortMultipartInput",
+          "AssetInfo",
+          "AssetKind",
+          "AssetProcessingStatus",
+          "AssetTransform",
+          "AssetTransformInput",
+          "AssetTransformOperation",
+          "AssetVersionInfo",
+          "CompleteMultipartInput",
+          "DeliveryResult",
+          "DeliveryTarget",
+          "FileOperation",
+          "FileRecord",
+          "FileSdkErrorShape",
+          "FileVariant",
+          "InactivityEvidence",
+          "JobState",
+          "ManagedProvider",
+          "MetadataExport",
+          "MultipartInit",
+          "MultipartSession",
+          "NormalizeColumn",
+          "NormalizeRequest",
+          "NormalizeResult",
+          "ObjectMetadata",
+          "Page",
+          "Principal",
+          "ProbeResult",
+          "ProcessRequest",
+          "ProcessingJob",
+          "ProcessingState",
+          "ProcessorContext",
+          "ProcessorPlugin",
+          "ProducedArtifact",
+          "PutObjectInput",
+          "RetentionReport",
+          "RowError",
+          "SignDownloadInput",
+          "SignPartInput",
+          "SignedPart",
+          "SignedUrl",
+          "StorageCapabilities",
+          "StorageDriver",
+          "StoredObject",
+          "TransformRecipe",
+          "UploadPartRecord",
+          "UploadPolicy",
+          "UploadSession",
+          "UploadState",
+          "UploadTransport",
+          "ValidationResult",
+          "Visibility",
+          "WebhookRegistration"
+        ]
+      },
+      {
+        "module": "filevora/worker",
+        "symbols": [
+          "WorkerOptions",
+          "ensureEmbeddedWorker",
+          "runWorker",
+          "startWorker"
+        ]
+      }
+    ],
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/sessions",
+        "operation": "session.create",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "body": {
+            "filename": "string",
+            "mimeType": "string",
+            "bytes": "number",
+            "checksum": "string?",
+            "idempotencyKey": "string?",
+            "preset": "string?",
+            "metadata": "Record<string, string>?",
+            "visibility": "private | public?",
+            "webhook": "{ url: string, secret?: string }?"
+          }
+        },
+        "response": {
+          "status": 201,
+          "body": "UploadSession plus part URLs"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/sessions/:sessionId",
+        "operation": "session.read",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "sessionId": "string"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "UploadSession"
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/sessions/:sessionId/parts/:partNumber",
+        "operation": "session.write",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "sessionId": "string",
+            "partNumber": "number"
+          },
+          "body": "raw part bytes"
+        },
+        "response": {
+          "status": 200,
+          "body": "{ etag, partNumber }"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/sessions/:sessionId/complete",
+        "operation": "session.complete",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "sessionId": "string"
+          },
+          "body": "{ checksum?: string }?"
+        },
+        "response": {
+          "status": 200,
+          "body": "FileRecord"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/sessions/:sessionId/abort",
+        "operation": "session.abort",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "sessionId": "string"
+          }
+        },
+        "response": {
+          "status": 204,
+          "body": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/assets",
+        "operation": "file.list",
+        "auth": "principal",
+        "modes": [
+          "stored"
+        ],
+        "request": {
+          "query": {
+            "limit": "number?",
+            "cursor": "string?"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "{ assetIds, nextCursor }"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/retention/cleanup",
+        "operation": "retention.run",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "body": "{ dryRun?: boolean }"
+        },
+        "response": {
+          "status": 200,
+          "body": "CleanupReport"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/assets/from-url",
+        "operation": "file.import",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "body": {
+            "url": "string",
+            "webhook": "{ url: string, secret?: string }?"
+          }
+        },
+        "response": {
+          "status": 202,
+          "body": "FileRecord"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/files/batch",
+        "operation": "file.read",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "body": {
+            "ids": "string[]"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "FileRecord[]"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/files",
+        "operation": "file.list",
+        "auth": "principal",
+        "modes": [
+          "stored"
+        ],
+        "request": {
+          "query": {
+            "limit": "number?",
+            "cursor": "string?"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "Page<FileRecord>"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/files/:fileId",
+        "operation": "file.read",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "FileRecord"
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/files/:fileId",
+        "operation": "file.delete",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          }
+        },
+        "response": {
+          "status": 204,
+          "body": null
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/files/:fileId/versions",
+        "operation": "delivery.sign",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "DeliveryResult"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/files/:fileId/transform",
+        "operation": "process.request",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          },
+          "body": "{ replace?: boolean, operations: AssetTransformOperation[], webhook?: { url, secret? } }"
+        },
+        "response": {
+          "status": 202,
+          "body": "{ launched, jobId, assetId, sourceAssetId, replace }"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/files/:fileId/progress",
+        "operation": "job.read",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          },
+          "headers": {
+            "accept": "application/json | text/event-stream"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "ProgressEvent"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/files/:fileId/delivery",
+        "operation": "delivery.sign",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          },
+          "body": "{ expiresInSeconds?: number }?"
+        },
+        "response": {
+          "status": 200,
+          "body": "DeliveryResult"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/content/:token",
+        "operation": "delivery.sign",
+        "auth": "token",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "token": "string"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "file bytes"
+        }
+      }
+    ],
+    "config": [
+      {
+        "key": "env",
+        "type": "string",
+        "enum": [
+          "development",
+          "test",
+          "production"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "provider",
+        "type": "string",
+        "enum": [
+          "embedded",
+          "distributed",
+          "managed",
+          "hybrid"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "runtime",
+        "type": "string",
+        "enum": [
+          "long-running",
+          "serverless",
+          "edge"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "singleHostAcknowledged",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "strict",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "publicBaseUrl",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "signingSecret",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.driver",
+        "type": "string",
+        "enum": [
+          "filesystem",
+          "s3",
+          "managed"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.root",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.endpoint",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.region",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.bucket",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.accessKeyId",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.secretAccessKey",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.sessionToken",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.forcePathStyle",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.multipartThresholdBytes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.partSizeBytes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.signedUrlTtlSeconds",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "storage.s3.uploadGrantTtlSeconds",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "metadata.mode",
+        "type": "string",
+        "enum": [
+          "lite",
+          "stored"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "metadata.driver",
+        "type": "string",
+        "enum": [
+          "sqlite",
+          "postgres",
+          "mysql"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "metadata.filename",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "metadata.url",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "metadata.autoMigrate",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "metadata.schema",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "queue.driver",
+        "type": "string",
+        "enum": [
+          "bullmq"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "queue.redisUrl",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "queue.pollIntervalMs",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "queue.maxAttempts",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "queue.leaseSeconds",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "queue.timeoutSeconds",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "queue.backoffBaseMs",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.mode",
+        "type": "string",
+        "enum": [
+          "worker",
+          "inline",
+          "distributed",
+          "cloud",
+          "sync"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.spawn",
+        "type": "string",
+        "enum": [
+          "on-demand",
+          "never"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.concurrency",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.tempDir",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.tempMaxBytes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.shutdownGraceMs",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.ffmpegPath",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.ffprobePath",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.videoMaxDurationSeconds",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.videoMaxOutputHeight",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "processing.imageMaxPixels",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.visibility",
+        "type": "string",
+        "enum": [
+          "private",
+          "public"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.preserveOriginal",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.preset",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.maxFileBytes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.allowedMimeTypes",
+        "type": "string[]",
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.maxFilesPerBatch",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.tenantQuotaBytes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "defaults.allowPublicFiles",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "upload.chunkBytes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "upload.partConcurrency",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "upload.fileConcurrency",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "upload.retryMaxAttempts",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "upload.sessionTtlSeconds",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "retention.enabled",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "retention.maxAgeDays",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "retention.unusedAfterDays",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "retention.inactivityEvidence",
+        "type": "string",
+        "enum": [
+          "application-touch",
+          "url-issued",
+          "proxy-access"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "retention.gracePeriodDays",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "retention.keepOriginal",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "retention.cleanupIntervalMinutes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "delivery.urlTtlSeconds",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "delivery.accessLoggingEnabled",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "diagnostics.aiEnabled",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "diagnostics.aiProvider",
+        "type": "string",
+        "enum": [
+          "openai",
+          "anthropic",
+          "gemini",
+          "custom"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "diagnostics.aiModel",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "diagnostics.aiMaxCostUsd",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "diagnostics.aiRedact",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "cloud.apiKey",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "cloud.endpoint",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "cloud.projectId",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "webhooks.allowLoopback",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "webhooks.url",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "webhooks.secret",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "safety.exif",
+        "type": "string",
+        "enum": [
+          "gps",
+          "all",
+          "none"
+        ],
+        "appliesTo": "both"
+      },
+      {
+        "key": "safety.typeMaxBytes",
+        "type": "record",
+        "appliesTo": "both"
+      },
+      {
+        "key": "safety.scanner",
+        "type": "unknown",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.maxBytes",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.connectTimeoutMs",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.timeoutMs",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.maxRedirects",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.allowedPorts",
+        "type": "number[]",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.allowPrivate",
+        "type": "boolean",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.allowHosts",
+        "type": "string[]",
+        "appliesTo": "both"
+      },
+      {
+        "key": "remote.denyHosts",
+        "type": "string[]",
+        "appliesTo": "both"
+      }
+    ],
+    "env": [
+      {
+        "key": "FILES_ACCESS_LOGGING_ENABLED",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_ALLOWED_MIME_TYPES",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_ALLOW_PUBLIC_FILES",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_CLEANUP_INTERVAL_MINUTES",
+        "type": "string",
+        "default": 60,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_CLOUD_API_KEY",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_CLOUD_ENDPOINT",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_CLOUD_PROJECT_ID",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_CONFIG_STRICT",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": true,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DEFAULT_PRESET",
+        "type": "string",
+        "default": "web-optimized",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DEFAULT_VISIBILITY",
+        "type": "string",
+        "enum": [
+          "private",
+          "public"
+        ],
+        "default": "private",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DELIVERY_URL_TTL_SECONDS",
+        "type": "string",
+        "default": 900,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DIAGNOSTICS_AI_ENABLED",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DIAGNOSTICS_AI_MAX_COST_USD",
+        "type": "string",
+        "default": 0,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DIAGNOSTICS_AI_MODEL",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DIAGNOSTICS_AI_PROVIDER",
+        "type": "string",
+        "enum": [
+          "openai",
+          "anthropic",
+          "gemini",
+          "custom"
+        ],
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_DIAGNOSTICS_AI_REDACT",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": true,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_ENV",
+        "type": "string",
+        "enum": [
+          "development",
+          "test",
+          "production"
+        ],
+        "default": "development",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_FFMPEG_PATH",
+        "type": "string",
+        "default": "ffmpeg",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_FFPROBE_PATH",
+        "type": "string",
+        "default": "ffprobe",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_IMAGE_MAX_PIXELS",
+        "type": "string",
+        "default": 40000000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_INACTIVITY_EVIDENCE",
+        "type": "string",
+        "enum": [
+          "application-touch",
+          "url-issued",
+          "proxy-access"
+        ],
+        "default": "application-touch",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_JOB_BACKOFF_BASE_MS",
+        "type": "string",
+        "default": 1000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_JOB_LEASE_SECONDS",
+        "type": "string",
+        "default": 120,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_JOB_MAX_ATTEMPTS",
+        "type": "string",
+        "default": 5,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_JOB_TIMEOUT_SECONDS",
+        "type": "string",
+        "default": 3600,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_KEEP_ORIGINAL",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": true,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_MAX_FILES_PER_BATCH",
+        "type": "string",
+        "default": 10,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_MAX_FILE_BYTES",
+        "type": "string",
+        "default": 104857600,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_METADATA_DRIVER",
+        "type": "string",
+        "enum": [
+          "sqlite",
+          "postgres",
+          "mysql"
+        ],
+        "default": "sqlite",
+        "appliesTo": "stored"
+      },
+      {
+        "key": "FILES_POSTGRES_SCHEMA",
+        "type": "string",
+        "default": "filevora",
+        "appliesTo": "stored"
+      },
+      {
+        "key": "FILES_POSTGRES_URL",
+        "type": "string",
+        "default": null,
+        "appliesTo": "stored"
+      },
+      {
+        "key": "FILES_PROCESSING_MODE",
+        "type": "string",
+        "enum": [
+          "worker",
+          "inline",
+          "distributed",
+          "cloud",
+          "sync"
+        ],
+        "default": "worker",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_PROVIDER",
+        "type": "string",
+        "enum": [
+          "embedded",
+          "distributed",
+          "managed",
+          "hybrid"
+        ],
+        "default": "embedded",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_PUBLIC_BASE_URL",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_QUEUE_DRIVER",
+        "type": "string",
+        "enum": [
+          "bullmq"
+        ],
+        "default": "bullmq",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_QUEUE_POLL_INTERVAL_MS",
+        "type": "string",
+        "default": 1000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_REDIS_URL",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_RETENTION_ENABLED",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_RETENTION_GRACE_DAYS",
+        "type": "string",
+        "default": 7,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_RETENTION_MAX_AGE_DAYS",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_RUNTIME",
+        "type": "string",
+        "enum": [
+          "long-running",
+          "serverless",
+          "edge"
+        ],
+        "default": "long-running",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_ACCESS_KEY_ID",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_BUCKET",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_ENDPOINT",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_FORCE_PATH_STYLE",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_MULTIPART_THRESHOLD_BYTES",
+        "type": "string",
+        "default": 16777216,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_PART_SIZE_BYTES",
+        "type": "string",
+        "default": 8388608,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_REGION",
+        "type": "string",
+        "default": "us-east-1",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_SECRET_ACCESS_KEY",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_SESSION_TOKEN",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_SIGNED_URL_TTL_SECONDS",
+        "type": "string",
+        "default": 900,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_S3_UPLOAD_GRANT_TTL_SECONDS",
+        "type": "string",
+        "default": 900,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_SIGNING_SECRET",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_SINGLE_HOST_ACK",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_SQLITE_PATH",
+        "type": "string",
+        "default": null,
+        "appliesTo": "stored"
+      },
+      {
+        "key": "FILES_STORAGE_DRIVER",
+        "type": "string",
+        "enum": [
+          "filesystem",
+          "s3",
+          "managed"
+        ],
+        "default": "filesystem",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_STORAGE_ROOT",
+        "type": "string",
+        "default": "./.files/objects",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_TENANT_QUOTA_BYTES",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_UNUSED_RETENTION_DAYS",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_UPLOAD_CHUNK_BYTES",
+        "type": "string",
+        "default": 8388608,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_UPLOAD_SESSION_TTL_SECONDS",
+        "type": "string",
+        "default": 86400,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_VIDEO_MAX_DURATION_SECONDS",
+        "type": "string",
+        "default": 600,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_VIDEO_MAX_OUTPUT_HEIGHT",
+        "type": "string",
+        "default": 1080,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_WEBHOOKS_ALLOW_LOOPBACK",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": true,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_WORKER_AUTOSPAWN",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": true,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_WORKER_CONCURRENCY",
+        "type": "string",
+        "default": 2,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_WORKER_SHUTDOWN_GRACE_MS",
+        "type": "string",
+        "default": 15000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_WORKER_TEMP_DIR",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILES_WORKER_TEMP_MAX_BYTES",
+        "type": "string",
+        "default": 2147483648,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_AUTO_MIGRATE",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": true,
+        "appliesTo": "stored"
+      },
+      {
+        "key": "FILEVORA_CLAMAV_HOST",
+        "type": "string",
+        "default": "127.0.0.1",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_CLAMAV_PORT",
+        "type": "string",
+        "default": 3310,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_DATABASE_URL",
+        "type": "string",
+        "default": null,
+        "appliesTo": "stored"
+      },
+      {
+        "key": "FILEVORA_EXIF_STRIP",
+        "type": "string",
+        "enum": [
+          "gps",
+          "all",
+          "none"
+        ],
+        "default": "gps",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_MALWARE_SCAN",
+        "type": "string",
+        "enum": [
+          "off",
+          "clamav"
+        ],
+        "default": "off",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_METADATA_MODE",
+        "type": "string",
+        "enum": [
+          "lite",
+          "stored"
+        ],
+        "default": "lite",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_ALLOWED_PORTS",
+        "type": "string",
+        "default": "80,443",
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_ALLOW_PRIVATE",
+        "type": "string",
+        "enum": [
+          "true",
+          "false",
+          "1",
+          "0"
+        ],
+        "default": false,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_CONNECT_TIMEOUT_MS",
+        "type": "string",
+        "default": 10000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_HOST_ALLOW",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_HOST_DENY",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_MAX_BYTES",
+        "type": "string",
+        "default": 104857600,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_MAX_REDIRECTS",
+        "type": "string",
+        "default": 3,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_REMOTE_TIMEOUT_MS",
+        "type": "string",
+        "default": 120000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_TYPE_MAX_BYTES",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_WEBHOOK_SECRET",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_WEBHOOK_URL",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      },
+      {
+        "key": "REDIS_URL",
+        "type": "string",
+        "default": null,
+        "appliesTo": "both"
+      }
+    ],
+    "errors": [
+      {
+        "code": "UNAUTHORIZED",
+        "httpStatus": 401,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The host authenticate callback returned no principal.",
+        "fix": "Sign the user in before calling the file route."
+      },
+      {
+        "code": "FORBIDDEN",
+        "httpStatus": 403,
+        "category": "auth",
+        "retryable": false,
+        "cause": "The host authorize callback rejected this operation.",
+        "fix": "Update the application authorization rule for this principal and operation."
+      },
+      {
+        "code": "NOT_FOUND",
+        "httpStatus": 404,
+        "category": "internal",
+        "retryable": false,
+        "cause": "The id is unknown, belongs to another tenant, or was deleted. Cross-tenant access returns not found so existence is not leaked.",
+        "fix": "Use the file id returned at upload time for this tenant."
+      },
+      {
+        "code": "QUOTA_EXCEEDED",
+        "httpStatus": 429,
+        "category": "quota",
+        "retryable": false,
+        "cause": "The reserved and stored bytes for this tenant are above FILES_TENANT_QUOTA_BYTES or the policy quota.",
+        "fix": "Raise the tenant quota or delete unneeded files."
+      },
+      {
+        "code": "FILE_TOO_LARGE",
+        "httpStatus": 413,
+        "category": "upload",
+        "retryable": false,
+        "cause": "The declared or actual size exceeds maxFileBytes.",
+        "fix": "Raise FILES_MAX_FILE_BYTES only if the host can store and process that size."
+      },
+      {
+        "code": "UNSUPPORTED_MIME",
+        "httpStatus": 415,
+        "category": "upload",
+        "retryable": false,
+        "cause": "The sniffed type is outside the server allow list. Client extensions are not trusted.",
+        "fix": "Add the sniffed MIME type to the server allow list if the product should accept it."
+      },
+      {
+        "code": "MIME_MISMATCH",
+        "httpStatus": 415,
+        "category": "upload",
+        "retryable": false,
+        "cause": "The upload declared a MIME type that contradicts the byte signature.",
+        "fix": "Upload the file with a declared type that matches its contents."
+      },
+      {
+        "code": "UPLOAD_SESSION_EXPIRED",
+        "httpStatus": 410,
+        "category": "upload",
+        "retryable": false,
+        "cause": "The session TTL elapsed before completion. Parts from that session are not reusable.",
+        "fix": "Create a new upload session and send the remaining bytes under the new id."
+      },
+      {
+        "code": "UPLOAD_PART_MISSING",
+        "httpStatus": 409,
+        "category": "upload",
+        "retryable": true,
+        "cause": "Completion was requested before every part was stored and verified.",
+        "fix": "List the session parts and upload only the missing part numbers."
+      },
+      {
+        "code": "UPLOAD_SIZE_MISMATCH",
+        "httpStatus": 422,
+        "category": "upload",
+        "retryable": false,
+        "cause": "The concatenated parts are a different length than the size authorized at session creation.",
+        "fix": "Abort the session and upload the file again with the correct size."
+      },
+      {
+        "code": "CHECKSUM_MISMATCH",
+        "httpStatus": 422,
+        "category": "upload",
+        "retryable": false,
+        "cause": "SHA-256 of the assembled object differs from the checksum supplied by the client.",
+        "fix": "Upload the file again. Do not ignore a checksum mismatch."
+      },
+      {
+        "code": "STORAGE_UNAVAILABLE",
+        "httpStatus": 503,
+        "category": "storage",
+        "retryable": true,
+        "cause": "The storage driver could not read or write the object.",
+        "fix": "Check the filesystem permissions or S3 credentials and endpoint."
+      },
+      {
+        "code": "WORKER_NOT_RUNNING",
+        "httpStatus": 503,
+        "category": "processing",
+        "retryable": true,
+        "cause": "No live worker heartbeat was found. Embedded mode starts a child on the first job only in a long-running Node process.",
+        "fix": "Start a worker with npx filevora worker, or enable on-demand spawn in a long-running process."
+      },
+      {
+        "code": "WORKER_UNSUPPORTED_RUNTIME",
+        "httpStatus": 501,
+        "category": "processing",
+        "retryable": false,
+        "cause": "Serverless and edge runtimes cannot keep a durable child worker. Use a long-running Node host or distributed workers.",
+        "fix": "Run the app on a long-running Node server, or set FILES_PROCESSING_MODE=distributed and deploy npx filevora worker separately."
+      },
+      {
+        "code": "FFMPEG_NOT_FOUND",
+        "httpStatus": 501,
+        "category": "processing",
+        "retryable": false,
+        "cause": "The configured FFmpeg or ffprobe path is not an executable. Filevora does not download binaries.",
+        "fix": "Install FFmpeg and ffprobe for the operating system."
+      },
+      {
+        "code": "FFMPEG_FAILED",
+        "httpStatus": 422,
+        "category": "processing",
+        "retryable": false,
+        "cause": "The spawned FFmpeg process exited with an error. Arguments come from the validated recipe, not from the user.",
+        "fix": "Probe the original with ffprobe. Reject corrupt or unsupported codecs."
+      },
+      {
+        "code": "PROCESSING_TIMEOUT",
+        "httpStatus": 504,
+        "category": "processing",
+        "retryable": true,
+        "cause": "The job ran longer than FILES_JOB_TIMEOUT_SECONDS or the per-recipe limit.",
+        "fix": "Raise the timeout only for trusted inputs, or reduce output size and duration."
+      },
+      {
+        "code": "PDF_ENCRYPTED",
+        "httpStatus": 422,
+        "category": "processing",
+        "retryable": false,
+        "cause": "Encrypted PDFs are rejected. Filevora does not ask a model to guess the text.",
+        "fix": "Upload a PDF that does not require a password."
+      },
+      {
+        "code": "OCR_NOT_CONFIGURED",
+        "httpStatus": 422,
+        "category": "processing",
+        "retryable": false,
+        "cause": "No text layer was found. Filevora will not invent text. OCR is an optional adapter and is not bundled.",
+        "fix": "Configure an OCR adapter, or accept the no-text result."
+      },
+      {
+        "code": "SCHEMA_VALIDATION_FAILED",
+        "httpStatus": 422,
+        "category": "processing",
+        "retryable": false,
+        "cause": "One or more rows or the header did not match the requested schema. See the row error artifact.",
+        "fix": "Correct the source rows or relax the schema. Invalid values are not coerced silently when the policy says collect or fail."
+      },
+      {
+        "code": "RETENTION_POLICY_UNSAFE",
+        "httpStatus": 400,
+        "category": "config",
+        "retryable": false,
+        "cause": "Inactivity deletion needs an evidence source, and age-based deletion must be explicitly enabled. Dry-run before a real sweep.",
+        "fix": "Run a retention dry-run and review filesEligible before deleting."
+      },
+      {
+        "code": "FEATURE_REQUIRES_STORED_MODE",
+        "httpStatus": 400,
+        "category": "config",
+        "retryable": false,
+        "cause": "Lite mode keeps bytes in object storage and the queue in Redis. Listing, search, and migrate need the host database.",
+        "fix": "Set FILEVORA_METADATA_MODE=stored and FILEVORA_DATABASE_URL to the host database."
+      },
+      {
+        "code": "ASSET_NOT_FOUND",
+        "httpStatus": 404,
+        "category": "storage",
+        "retryable": false,
+        "cause": "Lite get-by-id probes object storage for {assetId}_original.{ext} under the tenant prefix. A missing key is not found.",
+        "fix": "Use the assetId returned when the upload session was created, and confirm the original object is in this tenant prefix."
+      },
+      {
+        "code": "FEATURE_NOT_AVAILABLE",
+        "httpStatus": 501,
+        "category": "config",
+        "retryable": false,
+        "cause": "Managed hosting, billing, accounts, and other reserved providers are intentionally unsupported in the open-source package.",
+        "fix": "Use filesystem or your own S3 and database. A Filevora account is not required and cannot enable this feature."
+      },
+      {
+        "code": "INVALID_CONFIG",
+        "httpStatus": 500,
+        "category": "config",
+        "retryable": false,
+        "cause": "Typed options and FILES_* variables failed schema validation or contradict each other.",
+        "fix": "Run config validation and fix the reported field."
+      },
+      {
+        "code": "UNSAFE_PRODUCTION_CONFIG",
+        "httpStatus": 500,
+        "category": "config",
+        "retryable": false,
+        "cause": "Production must name its storage and metadata drivers. Single-host SQLite or filesystem storage must set FILES_SINGLE_HOST_ACK=true. Storage roots under the OS temp directory are rejected.",
+        "fix": "Point storage at a persistent disk or set an explicit single-host acknowledgement."
+      },
+      {
+        "code": "INVALID_STORAGE_KEY",
+        "httpStatus": 400,
+        "category": "storage",
+        "retryable": false,
+        "cause": "Object keys are opaque and must stay inside the storage root. User filenames are never used as keys.",
+        "fix": "Use the file id returned by Filevora. Do not pass paths from the browser."
+      },
+      {
+        "code": "MALWARE_DETECTED",
+        "httpStatus": 422,
+        "category": "upload",
+        "retryable": false,
+        "cause": "The scanner marked the original as infected after it was stored and before encoding. The original was quarantined and no variants were published.",
+        "fix": "Do not retry this file. Upload a clean copy if the detection was a false positive."
+      },
+      {
+        "code": "MALWARE_SCAN_FAILED",
+        "httpStatus": 503,
+        "category": "upload",
+        "retryable": true,
+        "cause": "A scanner is configured, but it was unreachable or returned an unusable result. The original was quarantined and encoding did not start.",
+        "fix": "Check FILEVORA_CLAMAV_HOST and FILEVORA_CLAMAV_PORT, then upload again."
+      },
+      {
+        "code": "TRANSFORM_REJECTED",
+        "httpStatus": 400,
+        "category": "processing",
+        "retryable": false,
+        "cause": "The config does not match the sniffed media type, or a crop, trim, or page list is outside the file. context.field is the offending key, context.reason says why, context.detectedType is the sniffed type, and context.validOperations lists what that type accepts.",
+        "fix": "Use only the operations listed in validOperations for the detected type."
+      },
+      {
+        "code": "INVALID_RECIPE",
+        "httpStatus": 400,
+        "category": "processing",
+        "retryable": false,
+        "cause": "Transforms must use an allowlisted kind. Arbitrary FFmpeg arguments and shell fragments are rejected.",
+        "fix": "Use a named preset or a typed transform from the recipe reference."
+      },
+      {
+        "code": "PROCESSOR_UNAVAILABLE",
+        "httpStatus": 501,
+        "category": "processing",
+        "retryable": false,
+        "cause": "An optional processor such as sharp could not be loaded. Core upload still works without it.",
+        "fix": "Install the optional dependency named in the error context."
+      },
+      {
+        "code": "JOB_VERSION_UNSUPPORTED",
+        "httpStatus": 409,
+        "category": "processing",
+        "retryable": false,
+        "cause": "The job was written by a newer Filevora schema than this worker.",
+        "fix": "Deploy a worker with the same or newer Filevora version, then retry the job."
+      },
+      {
+        "code": "IDEMPOTENCY_CONFLICT",
+        "httpStatus": 409,
+        "category": "upload",
+        "retryable": false,
+        "cause": "Repeat the original request body or choose a new idempotency key.",
+        "fix": "Retry the same payload to receive the original session, or send a new key."
+      },
+      {
+        "code": "CANCELLED",
+        "httpStatus": 409,
+        "category": "processing",
+        "retryable": false,
+        "cause": "A cancel request stopped the job. Partial outputs were not published.",
+        "fix": "Enqueue a new processing job if the variant is still needed."
+      },
+      {
+        "code": "REMOTE_URL_SCHEME",
+        "httpStatus": 400,
+        "category": "upload",
+        "retryable": false,
+        "cause": "Only http and https are accepted. file, ftp, and other schemes are rejected.",
+        "fix": "Pass an http or https URL with no other scheme."
+      },
+      {
+        "code": "REMOTE_URL_CREDENTIALS",
+        "httpStatus": 400,
+        "category": "upload",
+        "retryable": false,
+        "cause": "A username or password in the URL is rejected so it is not sent or logged.",
+        "fix": "Remove the username and password from the URL."
+      },
+      {
+        "code": "REMOTE_URL_PORT",
+        "httpStatus": 400,
+        "category": "upload",
+        "retryable": false,
+        "cause": "The default allowed ports are 80 and 443. Add the port to FILEVORA_REMOTE_ALLOWED_PORTS when a local server uses another port.",
+        "fix": "Set FILEVORA_REMOTE_ALLOWED_PORTS to include this port."
+      },
+      {
+        "code": "REMOTE_URL_HOST",
+        "httpStatus": 400,
+        "category": "upload",
+        "retryable": false,
+        "cause": "FILEVORA_REMOTE_HOST_DENY always rejects a host. FILEVORA_REMOTE_HOST_ALLOW, when set, rejects every host that is not listed.",
+        "fix": "Change the host allowlist or denylist."
+      },
+      {
+        "code": "REMOTE_URL_BLOCKED",
+        "httpStatus": 400,
+        "category": "upload",
+        "retryable": false,
+        "cause": "Loopback, private, link-local, multicast, and cloud metadata addresses are blocked. DNS answers are checked, and the connection uses a checked address. FILEVORA_REMOTE_ALLOW_PRIVATE=true allows private addresses on the URL you pass, not on a redirect.",
+        "fix": "Use a public http or https URL. For a local server, set FILEVORA_REMOTE_ALLOW_PRIVATE=true."
+      },
+      {
+        "code": "REMOTE_URL_REDIRECT",
+        "httpStatus": 400,
+        "category": "upload",
+        "retryable": false,
+        "cause": "Each redirect is checked with the same rules. A redirect to a private address is rejected even when private addresses are allowed on the original URL. The hop limit is FILEVORA_REMOTE_MAX_REDIRECTS.",
+        "fix": "Pass the final public URL, or raise FILEVORA_REMOTE_MAX_REDIRECTS."
+      },
+      {
+        "code": "REMOTE_URL_TIMEOUT",
+        "httpStatus": 504,
+        "category": "upload",
+        "retryable": true,
+        "cause": "The connect timeout is FILEVORA_REMOTE_CONNECT_TIMEOUT_MS. The whole download, including redirects, stops at FILEVORA_REMOTE_TIMEOUT_MS.",
+        "fix": "Raise the timeout or retry when the host is slow."
+      },
+      {
+        "code": "WEBHOOK_REJECTED",
+        "httpStatus": 400,
+        "category": "config",
+        "retryable": false,
+        "cause": "Webhook targets must be HTTPS in production. Loopback and private addresses are rejected so the worker cannot be used as a proxy.",
+        "fix": "Register an HTTPS endpoint that you control."
+      }
+    ],
+    "progress": {
+      "fileId": "string",
+      "assetId": "string",
+      "jobId": "string | null",
+      "phase": "upload | download | processing",
+      "state": "string",
+      "percentage": "number | null",
+      "etaMs": "number | null",
+      "quiet": "boolean",
+      "terminal": "boolean",
+      "errorCode": "string?",
+      "versions": "Record<version, { version, status, url?, mime?, bytes? }>?"
+    }
+  }
 }

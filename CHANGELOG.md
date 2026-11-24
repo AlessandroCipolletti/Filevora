@@ -116,6 +116,11 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Capability manifest
+
+- `docs/agents/capabilities.json` now includes a generated catalog of exports, HTTP routes, config and env settings, error codes, and the progress event. `pnpm manifest:check` fails when the committed file is stale.
+- `filevora manifest --json` and `filevora/manifest` expose it. `filevora mcp` serves manifest lookup, config validation, and doctor over stdio without an extra dependency.
+
 ### Retention cleanup
 
 - Delivery URLs update `last_accessed_at`. Stored mode keeps it on `filevora_assets`. Lite mode keeps it on the asset card and, when that timestamp is missing, uses creation time so files are not deleted early.
