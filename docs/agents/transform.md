@@ -44,7 +44,8 @@ Valid operations depend on the sniffed original, not the filename:
 
 - `image/*`: `image.resize`, `image.crop`
 - `video/*`: `video.resize`, `video.crop`, `video.trim`, `video.poster`, `video.thumbnails`, `video.sprite`
-- `application/pdf`: `pdf.removePages`, `pdf.pages`
+- `application/pdf`: `pdf.removePages`, `pdf.pages`, `pdf.text`
+- Office documents (Word, PowerPoint, Excel): `office.toPdf`
 
 `pdf.pages` renders selected pages, or every page when `pages` is omitted, with Poppler's `pdftoppm`. `format` is `png`, `jpeg`, or `webp`. `dpi` is 36–300. `width` and `height` bound the image. Presets `pdf-pages` and `pdf-cover` do the same. A missing `pdftoppm` is `PROCESSOR_UNAVAILABLE`. Install Poppler (`poppler-utils` on Debian and Ubuntu, `brew install poppler` on macOS). Text extraction does not need it. More than 50 pages requires an explicit `pages` list.
 

@@ -162,6 +162,28 @@ async function dispatch(
       requestId,
     );
   }
+  if (route.name === 'pdf-merge') {
+    const body = asRecord(await readJson(request));
+    const assetIds = Array.isArray(body.assetIds)
+      ? body.assetIds.filter((item): item is string => typeof item === 'string')
+      : [];
+    return json(await options.files.mergePdfs(assetIds, ctx), 202, requestId);
+  }
+  if (route.name === 'pdf-split' && route.fileId) {
+    const body = asRecord(await readJson(request));
+    const ranges = Array.isArray(body.ranges)
+      ? body.ranges.map((range) =>
+          Array.isArray(range)
+            ? range.filter((page): page is number => typeof page === 'number')
+            : [],
+        )
+      : [];
+    return json(
+      await options.files.splitPdf(route.fileId, ranges, ctx),
+      202,
+      requestId,
+    );
+  }
   if (route.name === 'transform' && route.fileId) {
     const body = await readJson(request);
     return json(

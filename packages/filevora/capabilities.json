@@ -74,6 +74,7 @@
     "signedDelivery": "tested",
     "videoThumbnails": "tested",
     "pdfPageThumbnails": "tested",
+    "pdfTools": "tested",
     "semanticSearch": "unsupported",
     "ocr": "unsupported"
   },
@@ -84,7 +85,7 @@
     "Video posters are image/webp. selectPosterEncoder uses FFmpeg libwebp only when ffmpeg -encoders lists it. FFmpeg 8.1.2 on the machine used for local verification has no libwebp encoder, so posters are encoded by Sharp. doctor check ffmpeg-webp warns in that case and does not fail the report.",
     "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. A networked S3 test runs when FILEVORA_S3_ENDPOINT, FILEVORA_S3_BUCKET, and the access keys are set. Docker was unavailable on the local machine, so that test was skipped. AWS, R2, and MinIO were not certified in this run.",
     "Lite metadata is the default and does not create a database file. A FILEVORA_DATABASE_URL selects stored mode. postgres and postgresql use PostgreSQL, mysql and mariadb use MySQL or MariaDB, and sqlite or a file path uses SQLite. Migrate creates only filevora_assets and filevora_asset_versions. The processing queue is Redis only.",
-    "PDF text extraction reads literal Tj strings from fixtures. It is not a general PDF renderer. Page thumbnails use Poppler pdftoppm (pdf.pages, presets pdf-pages and pdf-cover). When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary leaves text extraction working. A page-image job fails with PROCESSOR_UNAVAILABLE. OCR returns OCR_NOT_CONFIGURED.",
+    "PDF text extraction reads literal Tj strings from fixtures. pdf.text stores per-page text and document metadata. POST /pdf/merge and POST /files/:id/split create new PDF assets. Office-to-PDF uses LibreOffice soffice and is optional; doctor warns when it is missing and the job fails with PROCESSOR_UNAVAILABLE. Page thumbnails use Poppler pdftoppm (pdf.pages, presets pdf-pages and pdf-cover). When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary leaves text extraction working. A page-image job fails with PROCESSOR_UNAVAILABLE. OCR returns OCR_NOT_CONFIGURED.",
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
     "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs.",
     "catalog is generated from the route table, Zod schemas, the error catalog, and public exports. Edit docs/agents/capabilities.hand.json for feature status and notes, then run pnpm manifest.",
@@ -494,6 +495,43 @@
         "response": {
           "status": 200,
           "body": "DeliveryResult"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/pdf/merge",
+        "operation": "process.request",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "body": "{ assetIds: string[] }"
+        },
+        "response": {
+          "status": 202,
+          "body": "{ assetId, jobId, sourceAssetIds }"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/files/:fileId/split",
+        "operation": "process.request",
+        "auth": "principal",
+        "modes": [
+          "lite",
+          "stored"
+        ],
+        "request": {
+          "params": {
+            "fileId": "string"
+          },
+          "body": "{ ranges: number[][] }"
+        },
+        "response": {
+          "status": 202,
+          "body": "{ sourceAssetId, assetIds, jobId }"
         }
       },
       {

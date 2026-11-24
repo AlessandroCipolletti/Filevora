@@ -3,6 +3,7 @@ import type { ResolvedConfig } from '../config/load.js';
 import { resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
 import { fail, isFileSdkError } from '../errors/error.js';
+import { assetObjectKey, nowIso, sha256 } from '../ids.js';
 import { openBackend } from '../metadata/backend.js';
 import type { Sql } from '../metadata/sqlite.js';
 import {
@@ -35,7 +36,8 @@ import {
 } from '../webhooks/deliver.js';
 import { webhookProgress } from '../webhooks/payload.js';
 import { runCleanup } from '../retention/cleanup.js';
-import { openStorage } from '../storage/stage.js';
+import { mergePdfBuffers, splitPdfBuffer } from '../processors/pdf-tools.js';
+import { openStorage, readAll } from '../storage/stage.js';
 import { heartbeatSupervisor } from './supervisor.js';
 
 export interface WorkerRunOptions {
@@ -239,6 +241,107 @@ async function executeJob(
       `UPDATE files SET processing_state = 'processing', updated_at = ? WHERE id = ?`,
       [new Date().toISOString(), data.fileId],
     );
+    if (data.type === 'pdf.merge') {
+      const sourceIds = Array.isArray(data.payload.sourceIds)
+        ? data.payload.sourceIds.filter(
+            (item): item is string => typeof item === 'string',
+          )
+        : [];
+      const parts: Uint8Array[] = [];
+      for (const sourceId of sourceIds) {
+        const source = await sql.get<{
+          tenant_id: string;
+          original_object_key: string | null;
+        }>('SELECT tenant_id, original_object_key FROM files WHERE id = ?', [
+          sourceId,
+        ]);
+        if (
+          !source?.original_object_key ||
+          source.tenant_id !== data.tenantId
+        ) {
+          throw fail('NOT_FOUND');
+        }
+        parts.push(
+          Buffer.from(
+            await readAll(await storage.getObject(source.original_object_key)),
+          ),
+        );
+      }
+      const merged = await mergePdfBuffers(parts);
+      const key = assetObjectKey(data.tenantId, data.fileId, 'original', 'pdf');
+      await storage.putObject({
+        key,
+        body: merged,
+        contentType: 'application/pdf',
+      });
+      await sql.run(
+        `UPDATE files SET bytes = ?, checksum = ?, original_object_key = ?, upload_state = 'verified', processing_state = 'ready', updated_at = ? WHERE id = ?`,
+        [merged.byteLength, sha256(merged), key, nowIso(), data.fileId],
+      );
+      await notifyTerminal(sql, config, data, 'processing.completed');
+      return { assetId: data.fileId, processingState: 'ready' };
+    }
+    if (data.type === 'pdf.split') {
+      const source = await sql.get<{
+        tenant_id: string;
+        original_object_key: string | null;
+      }>('SELECT tenant_id, original_object_key FROM files WHERE id = ?', [
+        data.fileId,
+      ]);
+      if (!source?.original_object_key || source.tenant_id !== data.tenantId) {
+        throw fail('NOT_FOUND');
+      }
+      const outputs = Array.isArray(data.payload.outputs)
+        ? data.payload.outputs
+        : [];
+      const ranges = outputs.map((item) => {
+        const record = item as { pages?: unknown };
+        return Array.isArray(record.pages)
+          ? record.pages.filter(
+              (page): page is number => typeof page === 'number',
+            )
+          : [];
+      });
+      const pieces = await splitPdfBuffer(
+        Buffer.from(
+          await readAll(await storage.getObject(source.original_object_key)),
+        ),
+        ranges,
+      );
+      for (let index = 0; index < pieces.length; index += 1) {
+        const piece = pieces[index];
+        const target = outputs[index] as { assetId?: string } | undefined;
+        if (!piece || !target?.assetId) continue;
+        const key = assetObjectKey(
+          data.tenantId,
+          target.assetId,
+          'original',
+          'pdf',
+        );
+        await storage.putObject({
+          key,
+          body: piece,
+          contentType: 'application/pdf',
+        });
+        await sql.run(
+          `UPDATE files SET bytes = ?, checksum = ?, original_object_key = ?, upload_state = 'verified', processing_state = 'ready', updated_at = ? WHERE id = ? AND tenant_id = ?`,
+          [
+            piece.byteLength,
+            sha256(piece),
+            key,
+            nowIso(),
+            target.assetId,
+            data.tenantId,
+          ],
+        );
+      }
+      await sql.run(
+        `UPDATE files SET processing_state = 'ready', updated_at = ? WHERE id = ?`,
+        [nowIso(), data.fileId],
+      );
+      await notifyTerminal(sql, config, data, 'processing.completed');
+      return { assetIds: outputs, processingState: 'ready' };
+    }
     const paths = {
       ffmpeg: config.processing.ffmpegPath,
       ffprobe: config.processing.ffprobePath,

@@ -2,6 +2,12 @@
 
 ## 0.1.0
 
+### PDF tools
+
+- `pdf.text` and the `pdf-text` preset store a JSON description: document metadata and the text of each page.
+- `POST /pdf/merge` joins PDF assets into one new asset. `POST /files/:id/split` writes one new asset per page range. Both use the storage driver and the same processing job, progress, and webhook path as other work.
+- `office-pdf` converts Word, PowerPoint, and Excel with LibreOffice (`soffice`). The check is optional. `filevora doctor` warns when it is missing, and a conversion fails with `PROCESSOR_UNAVAILABLE`.
+
 ### PDF page thumbnails
 
 - `pdf.pages` renders selected pages, or every page, to PNG, JPEG, or WebP. `dpi`, `width`, and `height` set the size. Presets `pdf-pages` and `pdf-cover` do the same.

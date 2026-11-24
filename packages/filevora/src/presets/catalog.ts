@@ -8,7 +8,7 @@ import {
   parseCustomPresets,
 } from './schema.js';
 
-export type PresetFamily = 'image' | 'video' | 'audio' | 'pdf';
+export type PresetFamily = 'image' | 'video' | 'audio' | 'pdf' | 'office';
 export type PresetDelivery = 'legacy' | 'versions' | 'transform';
 
 export interface PresetOutput {
@@ -193,6 +193,18 @@ export const BUILTIN_PRESETS: NamedPreset[] = [
     ],
   },
   {
+    name: 'pdf-text',
+    families: ['pdf'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'text',
+        operations: [{ op: 'pdf.text' }],
+      },
+    ],
+  },
+  {
     name: 'pdf-cover',
     families: ['pdf'],
     source: 'builtin',
@@ -203,6 +215,18 @@ export const BUILTIN_PRESETS: NamedPreset[] = [
         operations: [
           { op: 'pdf.pages', pages: [1], format: 'webp', dpi: 72, width: 800 },
         ],
+      },
+    ],
+  },
+  {
+    name: 'office-pdf',
+    families: ['office'],
+    source: 'builtin',
+    delivery: 'versions',
+    outputs: [
+      {
+        version: 'pdf',
+        operations: [{ op: 'office.toPdf' }],
       },
     ],
   },
@@ -245,7 +269,10 @@ export function presetNamesFor(
 function customToNamed(name: string, preset: CustomPreset): NamedPreset {
   const poster = preset.operations.some(
     (operation) =>
-      isFrameOperation(operation.op) || operation.op === 'pdf.pages',
+      isFrameOperation(operation.op) ||
+      operation.op === 'pdf.pages' ||
+      operation.op === 'pdf.text' ||
+      operation.op === 'office.toPdf',
   );
   return {
     name,

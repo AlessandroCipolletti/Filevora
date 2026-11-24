@@ -4,7 +4,8 @@ import {
   assetTransformOperationSchema,
   assertFrameOptions,
   isFrameOperation,
-  isPdfPageOperation,
+  isOfficeMimeFamily,
+  isPdfStillOperation,
   mediaFamily,
   parseAssetTransform,
   validOperations,
@@ -243,7 +244,7 @@ export function pdfStillPresetFromPayload(
   const output = parsed.data[0];
   if (
     !output ||
-    !output.operations.every((operation) => isPdfPageOperation(operation.op))
+    !output.operations.every((operation) => isPdfStillOperation(operation.op))
   ) {
     return undefined;
   }
@@ -264,7 +265,7 @@ function pdfStillPreset(
 ): NamedPreset | undefined {
   if (
     operations.length !== 1 ||
-    !operations.every((operation) => isPdfPageOperation(operation.op))
+    !operations.every((operation) => isPdfStillOperation(operation.op))
   ) {
     return undefined;
   }
@@ -314,5 +315,6 @@ function framePreset(
 
 function familyOf(mime: string): string {
   if (mime.startsWith('audio/')) return 'audio';
+  if (isOfficeMimeFamily(mime)) return 'office';
   return mediaFamily(mime);
 }

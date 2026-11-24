@@ -12,6 +12,7 @@ import {
 } from '../processors/frames.js';
 import { probeMedia, runFfmpeg } from '../processors/ffmpeg.js';
 import { renderPdfPage, selectPdfPages } from '../processors/pdf-preview.js';
+import { convertOfficeToPdf, describePdf } from '../processors/pdf-tools.js';
 import { recordProcessingProgress } from '../queue/processing-queue.js';
 import type { ExifMode } from '../safety/exif.js';
 import { materialize } from '../storage/stage.js';
@@ -54,17 +55,21 @@ export async function publishNamedPreset(input: {
       if (!output) continue;
       const family = staged.preset.families[0];
       const written =
-        family === 'pdf' && hasPdfPages(output)
-          ? await publishPdfPages(staged, output)
-          : family === 'video' && hasPoster(output)
-            ? await publishPoster(staged, output)
-            : family === 'video' && hasThumbnails(output)
-              ? await publishThumbnails(staged, output)
-              : family === 'video' && hasSprite(output)
-                ? await publishSprite(staged, output)
-                : family === 'video'
-                  ? await publishVideo(staged, output)
-                  : await publishImage(staged, output);
+        family === 'office'
+          ? await publishOfficePdf(staged, output)
+          : family === 'pdf' && hasPdfText(output)
+            ? await publishPdfText(staged, output)
+            : family === 'pdf' && hasPdfPages(output)
+              ? await publishPdfPages(staged, output)
+              : family === 'video' && hasPoster(output)
+                ? await publishPoster(staged, output)
+                : family === 'video' && hasThumbnails(output)
+                  ? await publishThumbnails(staged, output)
+                  : family === 'video' && hasSprite(output)
+                    ? await publishSprite(staged, output)
+                    : family === 'video'
+                      ? await publishVideo(staged, output)
+                      : await publishImage(staged, output);
       names.push(...written);
       await recordProcessingProgress(
         staged.file.id,
@@ -520,6 +525,57 @@ async function publishPdfPages(
     });
   }
   return names;
+}
+
+async function publishPdfText(
+  input: {
+    sql: Sql;
+    storage: StorageDriver;
+    source: string;
+    file: PresetFile;
+    preset: NamedPreset;
+  },
+  output: PresetOutput,
+): Promise<string[]> {
+  if (await alreadyStored(input, output.version)) return [output.version];
+  const described = await describePdf(readFileSync(input.source));
+  const body = Buffer.from(JSON.stringify(described));
+  await insertVariant(input, {
+    version: output.version,
+    body,
+    mime: 'application/json',
+    extension: 'json',
+  });
+  return [output.version];
+}
+
+async function publishOfficePdf(
+  input: {
+    sql: Sql;
+    storage: StorageDriver;
+    source: string;
+    file: PresetFile;
+    preset: NamedPreset;
+    timeoutMs: number;
+  },
+  output: PresetOutput,
+): Promise<string[]> {
+  if (await alreadyStored(input, output.version)) return [output.version];
+  const pdf = await convertOfficeToPdf({
+    sourcePath: input.source,
+    timeoutMs: Math.min(input.timeoutMs, 60_000),
+  });
+  await insertVariant(input, {
+    version: output.version,
+    body: pdf,
+    mime: 'application/pdf',
+    extension: 'pdf',
+  });
+  return [output.version];
+}
+
+function hasPdfText(output: PresetOutput): boolean {
+  return output.operations.some((operation) => operation.op === 'pdf.text');
 }
 
 function hasPdfPages(output: PresetOutput): boolean {

@@ -94,6 +94,18 @@ const pdfPages = z
   })
   .strict();
 
+const pdfText = z
+  .object({
+    op: z.literal('pdf.text'),
+  })
+  .strict();
+
+const officeToPdf = z
+  .object({
+    op: z.literal('office.toPdf'),
+  })
+  .strict();
+
 export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   imageResize,
   imageCrop,
@@ -105,6 +117,8 @@ export const assetTransformOperationSchema = z.discriminatedUnion('op', [
   videoSprite,
   pdfRemovePages,
   pdfPages,
+  pdfText,
+  officeToPdf,
 ]);
 
 export const FRAME_OPERATIONS = [
@@ -119,6 +133,10 @@ export function isFrameOperation(op: string): boolean {
 
 export function isPdfPageOperation(op: string): boolean {
   return op === 'pdf.pages';
+}
+
+export function isPdfStillOperation(op: string): boolean {
+  return op === 'pdf.pages' || op === 'pdf.text';
 }
 
 /** One transform request. `replace` defaults to true. */
@@ -136,6 +154,18 @@ export type AssetTransform = z.infer<typeof assetTransformSchema>;
 export type AssetTransformInput = z.input<typeof assetTransformSchema>;
 
 export type MediaFamily = 'image' | 'video' | 'pdf' | 'other';
+
+const OFFICE_MIME = new Set([
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/msword',
+  'application/vnd.ms-powerpoint',
+]);
+
+export function isOfficeMimeFamily(mime: string | null | undefined): boolean {
+  return Boolean(mime && OFFICE_MIME.has(mime));
+}
 
 export function mediaFamily(mime: string | null | undefined): MediaFamily {
   if (!mime) return 'other';
@@ -157,7 +187,8 @@ export function validOperations(mime: string | null | undefined): string[] {
       'video.thumbnails',
       'video.sprite',
     ];
-  if (family === 'pdf') return ['pdf.removePages', 'pdf.pages'];
+  if (family === 'pdf') return ['pdf.removePages', 'pdf.pages', 'pdf.text'];
+  if (isOfficeMimeFamily(mime)) return ['office.toPdf'];
   return [];
 }
 
@@ -187,6 +218,8 @@ export function parseAssetTransform(input: unknown): AssetTransform {
           'video.sprite',
           'pdf.removePages',
           'pdf.pages',
+          'pdf.text',
+          'office.toPdf',
         ],
       },
     });
@@ -350,10 +383,18 @@ export function assertTransformFits(
         );
       }
     }
-    if (operation.op === 'pdf.pages') {
+    if (operation.op === 'pdf.text' || operation.op === 'pdf.pages') {
       reject(
         `${field}.op`,
-        'pdf.pages is stored as a version. Send it without pdf.removePages, or use preset pdf-pages or pdf-cover.',
+        `${operation.op} is stored as a version. Send it without pdf.removePages, or use preset pdf-text, pdf-pages, or pdf-cover.`,
+        mime,
+        allowed,
+      );
+    }
+    if (operation.op === 'office.toPdf') {
+      reject(
+        `${field}.op`,
+        'office.toPdf is stored as a PDF version. Use preset office-pdf.',
         mime,
         allowed,
       );

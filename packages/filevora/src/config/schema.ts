@@ -25,6 +25,10 @@ export const DEFAULT_MIME_TYPES = [
   'audio/webm',
   'audio/ogg',
   'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'text/csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ] as const;

@@ -311,6 +311,26 @@ export async function runDoctor(
       fix: 'Install Poppler so pdftoppm is on PATH. Debian and Ubuntu: poppler-utils. macOS: brew install poppler.',
     }),
   );
+  const office = spawnSync('soffice', ['--version'], { encoding: 'utf8' });
+  const officeLine =
+    `${office.stdout ?? ''}\n${office.stderr ?? ''}`
+      .split('\n')
+      .find((line) => line.trim().length > 0) ?? 'LibreOffice found';
+  checks.push(
+    described({
+      id: 'libreoffice',
+      status: office.status === 0 ? 'pass' : 'warn',
+      required: false,
+      message:
+        office.status === 0
+          ? officeLine
+          : 'soffice was not found. Office-to-PDF conversion is unavailable.',
+      code: office.status === 0 ? 'OK' : 'DOCTOR_LIBREOFFICE_MISSING',
+      explanation:
+        'LibreOffice converts Word, PowerPoint, and Excel files to PDF. PDF text, merge, split, and page images do not need it.',
+      fix: 'Install LibreOffice and leave soffice on PATH. The office-pdf preset then writes a PDF version.',
+    }),
+  );
   checks.push(await scannerCheck(env));
   if (config) checks.push(await webhookCheck(config));
   if (config) checks.push(signingSecretCheck(config));

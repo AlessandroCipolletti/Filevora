@@ -25,6 +25,8 @@ Image versions are WebP. `contain` does not enlarge the source. `cover` crops to
 | `sprites` | video | `sprite`, `sprite-vtt`, `sprite-json` | A 4×2 WebP contact sheet, a WebVTT cue file, and a JSON timeline. |
 | `pdf-pages` | pdf | `page-1` … | One PNG per page, 72 DPI, at most 640 wide. Needs `pdftoppm` from Poppler. |
 | `pdf-cover` | pdf | `page-1` | Page 1 as WebP, at most 800 wide. |
+| `pdf-text` | pdf | `text` | JSON with document metadata and the text of each page. |
+| `office-pdf` | office | `pdf` | LibreOffice conversion of a Word, PowerPoint, or Excel file. Optional. |
 
 `video-1080p` fails when `FILES_VIDEO_MAX_OUTPUT_HEIGHT` is below 1080.
 

@@ -447,6 +447,138 @@ export class FileService {
     };
   }
 
+  /** Merge PDF assets into one new PDF. The sources stay in place. */
+  async mergePdfs(
+    assetIds: string[],
+    ctx: RequestContext,
+  ): Promise<{ assetId: string; jobId: string; sourceAssetIds: string[] }> {
+    if (assetIds.length < 2 || assetIds.length > 20) {
+      throw fail('TRANSFORM_REJECTED', {
+        message: 'Merge needs between 2 and 20 PDF assets.',
+        context: {
+          field: 'assetIds',
+          reason: 'Merge needs between 2 and 20 PDF assets.',
+          detectedType: 'application/pdf',
+          validOperations: ['pdf.text', 'pdf.pages', 'pdf.removePages'],
+        },
+      });
+    }
+    for (const assetId of assetIds) {
+      const record = await this.get(assetId, ctx);
+      if (record.detectedMime !== 'application/pdf') {
+        throw fail('TRANSFORM_REJECTED', {
+          message: `Asset ${assetId} is not a PDF.`,
+          context: {
+            field: 'assetIds',
+            reason: `Asset ${assetId} is ${record.detectedMime ?? 'unknown'}.`,
+            detectedType: record.detectedMime,
+            validOperations: ['pdf.text', 'pdf.pages', 'pdf.removePages'],
+          },
+        });
+      }
+    }
+    const assetId = createId('file');
+    const jobId =
+      this.config.processing.mode === 'sync'
+        ? `inline_${assetId}`
+        : createId('job');
+    await this.insertQueuedPdf(assetId, 'merged.pdf', ctx);
+    await this.dispatchJob({
+      id: jobId,
+      fileId: assetId,
+      tenantId: ctx.principal.tenantId,
+      type: 'pdf.merge',
+      payload: { schemaVersion: 1, sourceIds: assetIds },
+      maxAttempts: 1,
+    });
+    return { assetId, jobId, sourceAssetIds: assetIds };
+  }
+
+  /** Split one PDF into new assets, one per page range. */
+  async splitPdf(
+    assetId: string,
+    ranges: number[][],
+    ctx: RequestContext,
+  ): Promise<{
+    sourceAssetId: string;
+    assetIds: string[];
+    jobId: string;
+  }> {
+    const source = await this.get(assetId, ctx);
+    if (source.detectedMime !== 'application/pdf') {
+      throw fail('TRANSFORM_REJECTED', {
+        message: 'Split applies to PDF assets.',
+        context: {
+          field: 'assetId',
+          reason: `Asset ${assetId} is ${source.detectedMime ?? 'unknown'}.`,
+          detectedType: source.detectedMime,
+          validOperations: ['pdf.text', 'pdf.pages', 'pdf.removePages'],
+        },
+      });
+    }
+    if (ranges.length < 1 || ranges.length > 20) {
+      throw fail('TRANSFORM_REJECTED', {
+        message: 'Split needs between 1 and 20 page ranges.',
+        context: {
+          field: 'ranges',
+          reason: 'Split needs between 1 and 20 page ranges.',
+          detectedType: 'application/pdf',
+          validOperations: ['pdf.text', 'pdf.pages', 'pdf.removePages'],
+        },
+      });
+    }
+    const assetIds = ranges.map(() => createId('file'));
+    for (const id of assetIds) await this.insertQueuedPdf(id, 'split.pdf', ctx);
+    const jobId =
+      this.config.processing.mode === 'sync'
+        ? `inline_${assetId}`
+        : createId('job');
+    await this.dispatchJob({
+      id: jobId,
+      fileId: assetId,
+      tenantId: ctx.principal.tenantId,
+      type: 'pdf.split',
+      payload: {
+        schemaVersion: 1,
+        outputs: assetIds.map((id, index) => ({
+          assetId: id,
+          pages: ranges[index] ?? [],
+        })),
+      },
+      maxAttempts: 1,
+    });
+    return { sourceAssetId: assetId, assetIds, jobId };
+  }
+
+  private async insertQueuedPdf(
+    id: string,
+    name: string,
+    ctx: RequestContext,
+  ): Promise<void> {
+    const now = nowIso();
+    await (
+      await this.db()
+    ).run(
+      `INSERT INTO files (
+        id, tenant_id, owner_id, original_name, declared_mime, detected_mime, bytes, checksum,
+        original_object_key, visibility, upload_state, processing_state, preset, metadata_json,
+        pinned, created_at, updated_at, deleted_at
+      ) VALUES (?, ?, ?, ?, 'application/pdf', 'application/pdf', 0, NULL, NULL, 'private', 'verified', 'queued', ?, '{}', 0, ?, ?, NULL)`,
+      [
+        id,
+        ctx.principal.tenantId,
+        ctx.principal.id,
+        name,
+        'pdf-text',
+        now,
+        now,
+      ],
+    );
+    await (
+      await this.db()
+    ).run('UPDATE files SET url_salt = ? WHERE id = ?', [this.freshSalt(), id]);
+  }
+
   /**
    * Queue a transform and return immediately. `replace` defaults to true and
    * keeps the same asset id. `false` creates a new asset id.
@@ -1298,11 +1430,7 @@ export class FileService {
     if (!detected) throw fail('UNSUPPORTED_MIME');
     if (
       detected !== session.declared_mime &&
-      !(
-        session.declared_mime ===
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' &&
-        detected === 'application/zip'
-      )
+      !compatibleMime(session.declared_mime, detected)
     ) {
       throw fail('MIME_MISMATCH', {
         context: { declared: session.declared_mime, detected },
@@ -2497,8 +2625,12 @@ function isMostlyText(bytes: Uint8Array): boolean {
 
 function compatibleMime(declared: string, detected: string): boolean {
   if (
-    declared ===
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' &&
+    (declared ===
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      declared ===
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      declared ===
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation') &&
     detected === 'application/zip'
   ) {
     return true;
