@@ -1,4 +1,5 @@
 import type { Job } from 'bullmq';
+import type { ResolvedConfig } from '../config/load.js';
 import { resolveConfig } from '../config/load.js';
 import type { FilesOptions } from '../config/schema.js';
 import { fail, isFileSdkError } from '../errors/error.js';
@@ -72,7 +73,7 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
     queueName,
     concurrency: config.processing.concurrency,
     lockDurationMs: Math.max(1000, config.queue.leaseSeconds * 1000),
-    processor: async (job) => executeJob(sql, job, config),
+    processor: async (job) => executeJob(sql, runnableFromBull(job), config),
   });
   const beat = setInterval(
     () => heartbeatSupervisor(config, process.pid, config.queue.leaseSeconds),
@@ -99,10 +100,35 @@ export async function runWorker(run: WorkerRunOptions = {}): Promise<void> {
   }
 }
 
+export interface RunnableJob {
+  id?: string;
+  data: ProcessingJobData;
+  opts: { attempts?: number };
+  attemptsMade?: number;
+}
+
+/** Run one processing job on an open metadata connection. Sync tests use this instead of BullMQ. */
+export function executeProcessingJob(
+  sql: Sql,
+  job: RunnableJob,
+  config: ResolvedConfig,
+): Promise<Record<string, unknown>> {
+  return executeJob(sql, job, config);
+}
+
+function runnableFromBull(job: Job<ProcessingJobData>): RunnableJob {
+  return {
+    ...(job.id ? { id: job.id } : {}),
+    data: job.data,
+    opts: { ...(job.opts.attempts ? { attempts: job.opts.attempts } : {}) },
+    attemptsMade: job.attemptsMade,
+  };
+}
+
 async function executeJob(
   sql: Sql,
-  job: Job<ProcessingJobData>,
-  config: ReturnType<typeof resolveConfig>,
+  job: RunnableJob,
+  config: ResolvedConfig,
 ): Promise<Record<string, unknown>> {
   const data = job.data;
   if (data.schemaVersion > JOB_SCHEMA_VERSION)

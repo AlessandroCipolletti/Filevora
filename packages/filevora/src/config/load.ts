@@ -55,7 +55,7 @@ export interface ResolvedConfig {
     backoffBaseMs: number;
   };
   processing: {
-    mode: 'worker' | 'inline' | 'distributed';
+    mode: 'worker' | 'inline' | 'distributed' | 'sync';
     spawn: 'on-demand' | 'never';
     concurrency: number;
     tempDir: string;
@@ -518,6 +518,12 @@ export function resolveConfig(
       message:
         'Cloud processing is reserved and not available in this package.',
       context: { mode: 'cloud' },
+    });
+  }
+  if (input.processing?.mode === 'sync' && sdkEnv !== 'test') {
+    throw fail('INVALID_CONFIG', {
+      message:
+        'processing.mode "sync" runs jobs in the caller and is only available when env is test. Use filevora/testing.',
     });
   }
 

@@ -96,7 +96,9 @@ export const filesOptionsSchema = z
       .optional(),
     processing: z
       .object({
-        mode: z.enum(['worker', 'inline', 'distributed', 'cloud']).optional(),
+        mode: z
+          .enum(['worker', 'inline', 'distributed', 'cloud', 'sync'])
+          .optional(),
         spawn: z.enum(['on-demand', 'never']).optional(),
         concurrency: z.number().int().min(1).max(32).optional(),
         tempDir: z.string().min(1).optional(),
@@ -250,7 +252,7 @@ const envShape = {
   FILES_JOB_TIMEOUT_SECONDS: byteString.optional(),
   FILES_JOB_BACKOFF_BASE_MS: byteString.optional(),
   FILES_PROCESSING_MODE: z
-    .enum(['worker', 'inline', 'distributed', 'cloud'])
+    .enum(['worker', 'inline', 'distributed', 'cloud', 'sync'])
     .optional(),
   FILES_WORKER_AUTOSPAWN: boolString.optional(),
   FILES_WORKER_CONCURRENCY: byteString.optional(),

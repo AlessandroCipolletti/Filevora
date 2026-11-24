@@ -10,7 +10,10 @@ import {
 } from '../dist/client/index.js';
 import type { ProcessingUpdate } from '../dist/client/progress-stream.js';
 import { openSqlite } from '../dist/metadata/sqlite.js';
-import { recordProcessingProgress } from '../dist/queue/processing-queue.js';
+import {
+  recordProcessingProgress,
+  redisUrlFor,
+} from '../dist/queue/processing-queue.js';
 import { estimateRemainingMs } from '../dist/progress/estimate.js';
 import { createFilesHandler } from '../dist/http/index.js';
 import { createFiles } from '../dist/server/index.js';
@@ -196,6 +199,7 @@ test('image progress is one quiet event and video progress includes eta', async 
       `UPDATE filevora_assets SET detected_mime = 'video/mp4', processing_state = 'processing' WHERE id = ?`,
       [videoFile.id],
     );
+    await redisUrlFor({ env: 'test' });
     await recordProcessingProgress(videoFile.id, 0.4, Date.now() - 10_000);
     await sql.close();
     const live: ProcessingUpdate[] = [];

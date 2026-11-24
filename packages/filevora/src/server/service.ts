@@ -66,6 +66,7 @@ import type {
   UploadSession,
   Visibility,
 } from '../types/index.js';
+import { executeProcessingJob } from '../worker/run.js';
 import { ensureEmbeddedWorker } from '../worker/supervisor.js';
 import { toAssetInfo } from './asset-info.js';
 
@@ -373,10 +374,10 @@ export class FileService {
           : 'preset';
     const now = nowIso();
     const id = type === 'preset' ? `preset_${fileId}` : createId('job');
-    await enqueueProcessingJob({
-      env: this.config.env,
-      redisUrl: this.config.queue.redisUrl,
-      id,
+    const jobId =
+      this.config.processing.mode === 'sync' ? `inline_${fileId}` : id;
+    await this.dispatchJob({
+      id: jobId,
       fileId,
       tenantId: ctx.principal.tenantId,
       type,
@@ -386,22 +387,21 @@ export class FileService {
         ...(input.transforms ? { transforms: input.transforms } : {}),
       },
       maxAttempts: this.config.queue.maxAttempts,
-      backoffMs: this.config.queue.backoffBaseMs,
-      scope: this.config.storage.root,
     });
-    await (
-      await this.db()
-    ).run(
-      `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ?`,
-      [now, fileId],
-    );
-    this.ensureWorker();
+    if (this.config.processing.mode !== 'sync') {
+      await (
+        await this.db()
+      ).run(
+        `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ?`,
+        [now, fileId],
+      );
+    }
     return {
-      id,
+      id: jobId,
       fileId,
       tenantId: ctx.principal.tenantId,
       type,
-      state: 'queued',
+      state: this.config.processing.mode === 'sync' ? 'succeeded' : 'queued',
       attempts: 0,
       maxAttempts: this.config.queue.maxAttempts,
       schemaVersion: 1,
@@ -454,7 +454,10 @@ export class FileService {
     const replace = config.replace !== false;
     const targetId = replace ? assetId : createId('file');
     const now = nowIso();
-    const jobId = createId('job');
+    const jobId =
+      this.config.processing.mode === 'sync'
+        ? `inline_${targetId}`
+        : createId('job');
     const metadata = {
       ...(located.row ? safeMeta(located.row.metadata_json) : {}),
       filevoraJobId: jobId,
@@ -490,15 +493,15 @@ export class FileService {
         [JSON.stringify(metadata), now, targetId],
       );
     }
-    await removeProcessingJob({
-      env: this.config.env,
-      redisUrl: this.config.queue.redisUrl,
-      id: `preset_${assetId}`,
-      scope: this.config.storage.root,
-    });
-    await enqueueProcessingJob({
-      env: this.config.env,
-      redisUrl: this.config.queue.redisUrl,
+    if (this.config.processing.mode !== 'sync') {
+      await removeProcessingJob({
+        env: this.config.env,
+        redisUrl: this.config.queue.redisUrl,
+        id: `preset_${assetId}`,
+        scope: this.config.storage.root,
+      });
+    }
+    await this.dispatchJob({
       id: jobId,
       fileId: targetId,
       tenantId: ctx.principal.tenantId,
@@ -511,10 +514,7 @@ export class FileService {
         operations: config.operations,
       },
       maxAttempts: 1,
-      backoffMs: this.config.queue.backoffBaseMs,
-      scope: this.config.storage.root,
     });
-    this.ensureWorker();
     return {
       launched: true,
       jobId,
@@ -1888,24 +1888,68 @@ export class FileService {
     ctx: RequestContext,
   ): Promise<void> {
     if (!/^(image|video|audio)\//.test(mime)) return;
-    await enqueueProcessingJob({
-      env: this.config.env,
-      redisUrl: this.config.queue.redisUrl,
-      id: `preset_${fileId}`,
+    const sync = this.config.processing.mode === 'sync';
+    await this.dispatchJob({
+      id: sync ? `inline_${fileId}` : `preset_${fileId}`,
       fileId,
       tenantId: ctx.principal.tenantId,
       type: 'preset',
       payload: { schemaVersion: 1 },
       maxAttempts: this.config.queue.maxAttempts,
-      backoffMs: this.config.queue.backoffBaseMs,
-      scope: this.config.storage.root,
     });
+    if (sync) return;
     await (
       await this.db()
     ).run(
       `UPDATE files SET processing_state = 'queued', updated_at = ? WHERE id = ? AND processing_state = 'none'`,
       [nowIso(), fileId],
     );
+  }
+
+  /** BullMQ in every mode except test `sync`, which finishes the job before returning. */
+  private async dispatchJob(input: {
+    id: string;
+    fileId: string;
+    tenantId: string;
+    type: string;
+    payload: Record<string, unknown>;
+    maxAttempts: number;
+  }): Promise<void> {
+    if (this.config.processing.mode === 'sync') {
+      try {
+        await executeProcessingJob(
+          await this.db(),
+          {
+            id: input.id,
+            data: {
+              fileId: input.fileId,
+              tenantId: input.tenantId,
+              type: input.type,
+              payload: input.payload,
+              schemaVersion: 1,
+            },
+            opts: { attempts: input.maxAttempts },
+            attemptsMade: 0,
+          },
+          this.config,
+        );
+      } catch {
+        // The job records the failed asset before throwing.
+      }
+      return;
+    }
+    await enqueueProcessingJob({
+      env: this.config.env,
+      redisUrl: this.config.queue.redisUrl,
+      id: input.id,
+      fileId: input.fileId,
+      tenantId: input.tenantId,
+      type: input.type,
+      payload: input.payload,
+      maxAttempts: input.maxAttempts,
+      backoffMs: this.config.queue.backoffBaseMs,
+      scope: this.config.storage.root,
+    });
     this.ensureWorker();
   }
 

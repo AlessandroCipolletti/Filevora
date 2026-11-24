@@ -116,6 +116,11 @@
 - `createFiles` and `npx filevora migrate` create only `filevora_assets` and `filevora_asset_versions`. Auto-migrate is on unless `FILEVORA_AUTO_MIGRATE=false`.
 - `POST /files/batch` accepts up to 20 ids in lite.
 
+### Test helpers
+
+- `filevora/testing` exports `createTestFiles`, image, PDF, and video fixtures, `uploadBytes`, and `assertProgress`.
+- `processing.mode: "sync"` finishes the job in the caller. It is available only when `env` is `test` and does not open Redis.
+
 ### Upload safety
 
 - Optional malware scan after the original is stored and before encoding. No scanner skips the check. `FILEVORA_MALWARE_SCAN=clamav` uses ClamAV INSTREAM. Infected files return `MALWARE_DETECTED` and are quarantined.

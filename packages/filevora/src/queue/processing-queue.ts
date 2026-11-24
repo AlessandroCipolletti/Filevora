@@ -211,9 +211,8 @@ export async function recordProcessingProgress(
   ratio: number,
   startedAtMs: number,
 ): Promise<void> {
-  const url = await redisUrlFor({
-    env: process.env.FILES_ENV === 'production' ? 'production' : 'test',
-  });
+  const url = process.env.REDIS_URL || process.env.FILES_REDIS_URL;
+  if (!url) return;
   const client = new Redis(url, { maxRetriesPerRequest: null });
   const bounded = Math.min(1, Math.max(0, ratio));
   const eta = estimateRemainingMs(startedAtMs, bounded, Date.now());
