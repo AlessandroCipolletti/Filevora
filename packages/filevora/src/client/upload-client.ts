@@ -592,10 +592,21 @@ export function createUploadClient(options: UploadClientOptions) {
     );
   }
 
+  async function fetchSigned(url: string, init?: RequestInit) {
+    const response = await doFetch(url, init);
+    if (!response.ok) {
+      throw fail('DELIVERY_NOT_FOUND', {
+        message: `The signed URL returned ${response.status}.`,
+      });
+    }
+    return response;
+  }
+
   return {
     endpoint,
     upload,
     uploadDirect,
+    fetchSigned,
     fromUrl,
     transform,
     waitForProcessing,

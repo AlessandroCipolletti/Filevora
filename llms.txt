@@ -19,6 +19,7 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Transform](docs/agents/transform.md) — `POST /files/:assetId/transform` with one config object. `replace` defaults to true. `preset` names a built-in or custom recipe. Progress events share `phase`, `percentage`, `etaMs`, and a terminal `versions` list.
 - [Presets](docs/presets.md) and [docs/agents/presets.md](docs/agents/presets.md) — named image, video, audio, and PDF presets. `POST /pdf/merge` and `POST /files/:id/split` create new PDFs. `FILEVORA_PRESETS` or `presets` in config adds custom ones. Default `web-optimized` is unchanged.
 - [Direct S3 upload](docs/direct-upload.md) and [docs/agents/direct-upload.md](docs/agents/direct-upload.md) — signed single PUT or multipart. Complete verifies the object and starts processing. `uploadDirect` is the client helper. Bucket CORS must expose `ETag`.
+- [Framework helpers](docs/frameworks.md) — `filevora/next`, `filevora/express`, `filevora/fastify`, `filevora/hono`, and optional `filevora/react` hooks (`useUpload`, `useAssetProgress`). No UI components. `filevora/client` stays free of Node builtins.
 - [Access control](docs/access-control.md) and [docs/agents/access-control.md](docs/agents/access-control.md) — `public` or `private` assets, HMAC delivery URLs, key rotation, and URL revocation.
 - [Architecture](docs/architecture.md)
 - [Security](docs/security.md)

@@ -111,6 +111,7 @@ Each line is implemented in this package. Status of what an automated test cover
 - **Init and doctor.** `filevora init` detects Express, Fastify, Hono, Next.js, or Node and writes files only with `--force` when they already exist. The env template sets `FILES_DEFAULT_PRESET`. `filevora doctor` checks config, mode, storage, Redis, the database, ffmpeg, ffprobe, the scanner, webhooks, and that the default preset exists. `health: true` serves that report. [docs/agents/init.md](docs/agents/init.md) · [docs/agents/doctor.md](docs/agents/doctor.md)
 - **Manifest and MCP.** `filevora manifest --json` and `readManifest()` return the versioned capability document. `filevora mcp` exposes lookup, config validation, and doctor over stdio with no extra dependency. [docs/agents/manifest.md](docs/agents/manifest.md)
 - **Storage.** Filesystem, or S3-compatible storage via `FILES_S3_BUCKET`, `FILES_S3_REGION`, `FILES_S3_ENDPOINT`, `FILES_S3_ACCESS_KEY_ID`, and `FILES_S3_SECRET_ACCESS_KEY`. Clients can PUT straight to S3 with a signed single or multipart upload; complete verifies the object and starts processing ([docs/direct-upload.md](docs/direct-upload.md)). `filevora init --profile local-s3` writes a MinIO Compose file and does not start Docker. Postgres tables use `FILES_POSTGRES_SCHEMA` (default `filevora`).
+- **Framework helpers.** `filevora/next`, `filevora/express`, `filevora/fastify`, and `filevora/hono` adapt the HTTP handler. `filevora/react` exports `useUpload` and `useAssetProgress` and renders no UI. `filevora/client` stays free of Node builtins. [docs/frameworks.md](docs/frameworks.md)
 - **Metadata databases.** Lite has none. Stored uses PostgreSQL, MySQL or MariaDB, or SQLite, chosen by the database URL scheme.
 - **Access control.** Assets are `private` or `public` (default `private`). Private downloads use HMAC `/content` URLs or S3 presigned URLs. Public downloads use `/public`. `signUrl` signs a version. `POST /files/:assetId/revoke-urls` invalidates older links. [docs/access-control.md](docs/access-control.md)
 
@@ -161,7 +162,11 @@ Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, 
 
 Browser-safe. It does not import Node, `sharp`, or a cloud SDK.
 
-`createUploadClient({ endpoint })` returns `upload`, `fromUrl`, `transform`, `waitForProcessing`, `watchProcessing`, `history`, and `pending`. `uploadClientOptionsFromEnv` reads `FILEVORA_RESUME_*` and `FILEVORA_PROGRESS_*` in the host and passes them into the client. Resume stores: `createIndexedDbResumeStore`, `createMemoryResumeStore`.
+`createUploadClient({ endpoint })` returns `upload`, `uploadDirect`, `fetchSigned`, `fromUrl`, `transform`, `waitForProcessing`, `watchProcessing`, `history`, and `pending`. `uploadClientOptionsFromEnv` reads `FILEVORA_RESUME_*` and `FILEVORA_PROGRESS_*` in the host and passes them into the client. Resume stores: `createIndexedDbResumeStore`, `createMemoryResumeStore`.
+
+### Framework entries
+
+`filevora/next` (`createNextHandlers`, `uploadFormFile`), `filevora/express` (`expressMiddleware`), `filevora/fastify` (`fastifyPlugin`), `filevora/hono` (`honoHandler`), and `filevora/react` (`useUpload`, `useAssetProgress`). React is an optional peer. None of these render UI. [docs/frameworks.md](docs/frameworks.md)
 
 ### `filevora/http`
 
@@ -221,6 +226,7 @@ Start at [llms.txt](llms.txt). The manifest is the source of truth for routes, e
 - [docs/agents/retention.md](docs/agents/retention.md)
 - [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md)
 - [docs/agents/verification.md](docs/agents/verification.md)
+- [Framework helpers](docs/frameworks.md) — Next, Express, Fastify, Hono, and React hooks with no UI
 - [Presets](docs/presets.md) — built-in image and video presets and custom recipes
 - [docs/agents/presets.md](docs/agents/presets.md)
 - [docs/access-control.md](docs/access-control.md)
@@ -249,6 +255,6 @@ pnpm run ci       # typecheck, lint, knip, circular, manifest check
 pnpm test
 ```
 
-Use `pnpm run ci`, not bare `pnpm ci`. Public imports are `filevora/server`, `filevora/client`, `filevora/http`, `filevora/worker`, `filevora/types`, `filevora/testing`, and `filevora/manifest`. Contributor rules are in [AGENTS.md](AGENTS.md).
+Use `pnpm run ci`, not bare `pnpm ci`. Public imports are `filevora/server`, `filevora/client`, `filevora/http`, `filevora/next`, `filevora/express`, `filevora/fastify`, `filevora/hono`, `filevora/react`, `filevora/worker`, `filevora/types`, `filevora/testing`, and `filevora/manifest`. Contributor rules are in [AGENTS.md](AGENTS.md).
 
 License: MIT.

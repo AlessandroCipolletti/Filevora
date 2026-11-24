@@ -2,6 +2,12 @@
 
 ## 0.1.0
 
+### Framework helpers
+
+- `filevora/next`, `filevora/express`, `filevora/fastify`, and `filevora/hono` adapt the existing request handler. They do not render UI.
+- `filevora/react` exports `useUpload` and `useAssetProgress`. React is an optional peer dependency. The hooks keep no markup.
+- `uploadDirect`, `waitForProcessing`, and `fetchSigned` stay on `filevora/client`, which does not import Node builtins.
+
 ### Direct S3 upload
 
 - `POST /uploads/direct` signs a single PUT or a multipart part list. The client uploads to S3. `POST /uploads/direct/:sessionId/complete` heads the object, checks size and sniffed type, applies the EXIF policy, runs the malware scanner, and queues the same preset, progress, and webhook path as a normal upload.
