@@ -179,7 +179,11 @@ test('filesystem upload survives restart and stays inside the tenant', async () 
       },
     );
     const afterDelete = await second.handler(new Request(contentUrl));
-    assert.equal(afterDelete.status, 404);
+    assert.equal(afterDelete.status, 403);
+    assert.equal(
+      ((await afterDelete.json()) as { code: string }).code,
+      'DELIVERY_NOT_FOUND',
+    );
     await second.files.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
