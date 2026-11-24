@@ -64,7 +64,8 @@ test('an unreachable Redis URL fails instead of retrying forever', () => {
     {
       cwd: packageRoot,
       encoding: 'utf8',
-      timeout: 12_000,
+      timeout: 8_000,
+      killSignal: 'SIGKILL',
       env: { ...process.env, REDIS_URL: 'redis://127.0.0.1:1' },
     },
   );

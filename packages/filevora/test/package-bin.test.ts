@@ -36,7 +36,7 @@ test('the bin runs the CLI and CommonJS can load the entries', () => {
   const worker = spawnSync(
     process.execPath,
     [path.join(packageRoot, 'bin/filevora.js'), 'worker'],
-    { encoding: 'utf8', env },
+    { encoding: 'utf8', env, timeout: 8_000, killSignal: 'SIGKILL' },
   );
   assert.equal(worker.status, 1);
   assert.match(`${worker.stdout}${worker.stderr}`, /REDIS_URL/);
