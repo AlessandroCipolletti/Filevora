@@ -88,7 +88,25 @@ test('the MCP server lists read-only tools', async () => {
   const names = (
     (listed?.result as { tools: Array<{ name: string }> }).tools ?? []
   ).map((tool) => tool.name);
-  assert.deepEqual(names, ['manifest_lookup', 'validate_config', 'doctor']);
+  assert.deepEqual(names, [
+    'manifest_lookup',
+    'validate_config',
+    'doctor',
+    'describe_asset',
+  ]);
+  const describe = await handleMcpMessage({
+    jsonrpc: '2.0',
+    id: 4,
+    method: 'tools/call',
+    params: {
+      name: 'describe_asset',
+      arguments: { env: { FILES_ENV: 'test' } },
+    },
+  });
+  const describeText = (
+    describe?.result as { content: Array<{ text: string }> }
+  ).content[0]?.text;
+  assert.equal(JSON.parse(describeText ?? '{}').ready, false);
   const lookup = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 2,
