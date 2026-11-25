@@ -86,6 +86,7 @@
     "assetDescriptions": "tested",
     "assetListFilters": "tested",
     "semanticSearch": "tested",
+    "libraryMethods": "tested",
     "ocr": "unsupported"
   },
   "notes": [
@@ -107,6 +108,7 @@
     "Gemini descriptions are stored mode only. FILEVORA_GEMINI_API_KEY, FILEVORA_DESCRIBE_ASSETS (default false), and describe on create. POST /files/:id/describe retriggers. GET /files filters tags and description text only when a key is set. Content is sent to Google only when a description runs. See docs/descriptions.md and docs/list.md.",
     "GET /files filters by type, date, size, mime, filename, duration, dimensions, visibility, preset, and processing status in lite and stored mode. tags, tagsAll, q, descriptionStatus, and hasDescription need stored mode and FILEVORA_GEMINI_API_KEY. document means PDF, text, CSV, and Office. There is no separate search endpoint.",
     "Private assets are served with HMAC delivery URLs or S3 presigned URLs. Public assets use /public. FILEVORA_SIGNING_SECRET is a comma-separated key list. A missing asset card is private. See docs/access-control.md.",
+    "Every feature is an in-process method on the Files instance from filevora/server (README section Library methods). Each HTTP route calls that method, so validation and error codes match. POST /files/batch is getMany, the progress SSE stream is watchProgress, GET /health is doctor. ctx.policy carries UploadPolicy limits for createUploadSession. verifyWebhookSignature checks received webhooks.",
     "The package is ESM. Node 22.13 and newer can require() the same entry points. filevora worker reads REDIS_URL or FILEVORA_CONFIG_PATH and does not start redis-memory-server."
   ],
   "catalog": {
@@ -160,18 +162,36 @@
           "AssetTransform",
           "AssetTransformInput",
           "AssetTransformOperation",
+          "CleanupReport",
           "CreateSessionInput",
           "DeliveryClaims",
+          "DirectUploadGrant",
+          "DoctorReport",
+          "Explainer",
+          "FileSdkError",
           "Files",
           "FilesOptions",
+          "ListQueryInput",
+          "OpenedContent",
           "PresetSummary",
+          "ProgressEvent",
+          "ProgressVersion",
           "RequestContext",
           "ResolvedConfig",
+          "TransformLaunch",
+          "TransformRequest",
+          "WatchProgressOptions",
+          "WebhookEventName",
+          "WebhookRequest",
           "assetTransformSchema",
           "createFiles",
+          "explainError",
+          "isFileSdkError",
           "listPresets",
+          "redactConfig",
           "signDeliveryToken",
-          "verifyDeliveryToken"
+          "verifyDeliveryToken",
+          "verifyWebhookSignature"
         ]
       },
       {
@@ -435,12 +455,12 @@
         ],
         "request": {
           "body": {
-            "ids": "string[]"
+            "assetIds": "string[] (lite: at most 20)"
           }
         },
         "response": {
           "status": 200,
-          "body": "FileRecord[]"
+          "body": "{ assets: FileRecord[] }"
         }
       },
       {

@@ -2,6 +2,14 @@
 
 ## 0.1.0
 
+### Library methods
+
+- Every feature is a typed in-process method on `createFiles()` from `filevora/server`. The README section "Library methods" lists each one with its options, errors, and an example. The HTTP handler calls these methods, so validation and error codes match.
+- New `files.getMany(assetIds, ctx)` (used by `POST /files/batch`), `files.watchProgress(fileId, ctx, opts)` (the async iterator behind the SSE progress stream), `files.doctor()` (used by `GET /health`), `files.migrate()`, and `files.listPresets()`. New `verifyWebhookSignature` for received webhooks.
+- `ctx.policy` (`UploadPolicy`) narrows `createUploadSession` limits and sets the owner, as the HTTP `policy` callback does. Missing session fields, a missing import `url`, and an invalid visibility now throw `INVALID_CONFIG` from the methods, not only from HTTP.
+- `filevora/server` also exports `FileSdkError`, `isFileSdkError`, `redactConfig`, `explainError`, and the types `TransformRequest`, `TransformLaunch`, `DirectUploadGrant`, `OpenedContent`, `WatchProgressOptions`, `ListQueryInput`, `ProgressEvent`, `CleanupReport`, `DoctorReport`, and `WebhookRequest`.
+- The manifest entry for `POST /files/batch` now matches the handler: body `{ assetIds }`, response `{ assets }`.
+
 ### Semantic search
 
 - `POST /files/search` finds assets by meaning. It takes a natural-language `query` in any language, the `GET /files` structured filters, `minScore` (default 0.55, uncalibrated), `maxResults` (default 100, cap across pages), `limit`, and `cursor`. Each hit has a `score`. Ordering is score descending, then id descending, and the cursor is tied to the query.

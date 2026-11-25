@@ -27,7 +27,16 @@ export function createFiles(options: FilesOptions = {}): Files {
   return new FileService(resolveConfig(options, process.env));
 }
 
-export type { CreateSessionInput, RequestContext } from './service.js';
+export type {
+  CreateSessionInput,
+  DirectUploadGrant,
+  OpenedContent,
+  RequestContext,
+  TransformLaunch,
+  TransformRequest,
+  WatchProgressOptions,
+} from './service.js';
+export type { ListQueryInput } from './list-query.js';
 export {
   assetTransformSchema,
   type AssetTransform,
@@ -35,9 +44,20 @@ export {
   type AssetTransformOperation,
 } from '../transform/schema.js';
 export type { FilesOptions, ResolvedConfig };
+export { redactConfig } from '../config/load.js';
+export { FileSdkError, isFileSdkError } from '../errors/error.js';
 export { listPresets, type PresetSummary } from '../presets/catalog.js';
 export {
   signDeliveryToken,
   verifyDeliveryToken,
   type DeliveryClaims,
 } from '../security/delivery.js';
+export {
+  verifyWebhookSignature,
+  type WebhookEventName,
+} from '../webhooks/deliver.js';
+export type { WebhookRequest } from '../webhooks/target.js';
+export { explainError, type Explainer } from '../diagnostics/explain.js';
+export type { DoctorReport } from '../diagnostics/doctor.js';
+export type { CleanupReport } from '../retention/cleanup.js';
+export type { ProgressEvent, ProgressVersion } from '../progress/event.js';

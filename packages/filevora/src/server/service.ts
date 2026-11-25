@@ -104,18 +104,77 @@ import type {
   ProcessingJob,
   StorageDriver,
   UploadPartRecord,
+  UploadPolicy,
   UploadSession,
   Visibility,
 } from '../types/index.js';
+import type { AssetTransformInput } from '../transform/schema.js';
+import type { DoctorReport } from '../diagnostics/doctor.js';
+import { listPresets, type PresetSummary } from '../presets/catalog.js';
 import { executeProcessingJob } from '../worker/run.js';
-import { ensureEmbeddedWorker } from '../worker/supervisor.js';
+import {
+  ensureEmbeddedWorker,
+  filesOptionsFromResolved,
+} from '../worker/supervisor.js';
 import { toAssetInfo } from './asset-info.js';
 
 export interface RequestContext {
   principal: Principal;
   /** Server policy owner. Ignored when absent. Never taken from the browser body. */
   ownerId?: string;
+  /** Server-owned upload limits. They narrow the config limits and never widen them. */
+  policy?: UploadPolicy;
 }
+
+/** Body of `transform`. Validated at runtime with the same rules as `POST /files/:fileId/transform`. */
+export interface TransformRequest {
+  preset?: string;
+  replace?: boolean;
+  operations?: AssetTransformInput['operations'];
+  webhook?: WebhookRequest;
+}
+
+export interface TransformLaunch {
+  launched: true;
+  jobId: string;
+  assetId: string;
+  sourceAssetId: string;
+  replace: boolean;
+}
+
+export interface DirectUploadGrant {
+  mode: 'single' | 'multipart';
+  sessionId: string;
+  fileId: string;
+  key: string;
+  expiresAt: string;
+  url?: string;
+  headers?: Record<string, string>;
+  uploadId?: string;
+  partSize?: number;
+  parts?: Array<{ partNumber: number; url: string; expiresAt: string }>;
+}
+
+/** Bytes of one delivered version. `body` is a stream, or a `Uint8Array` for a range read. */
+export interface OpenedContent {
+  record: FileRecord;
+  body: Uint8Array | ReadableStream<Uint8Array>;
+  start: number;
+  end: number;
+  total: number;
+  contentType: string;
+  fileName: string;
+}
+
+export interface WatchProgressOptions {
+  /** Prefix for version URLs on the terminal event, for example `https://app.test/api/files`. */
+  baseUrl?: string;
+  /** Delay between snapshots. Default 100. */
+  intervalMs?: number;
+  signal?: AbortSignal;
+}
+
+const LITE_BATCH_CAP = 20;
 
 export interface CreateSessionInput {
   filename: string;
@@ -499,18 +558,8 @@ export class FileService {
       describe?: boolean;
     },
     ctx: RequestContext,
-  ): Promise<{
-    mode: 'single' | 'multipart';
-    sessionId: string;
-    fileId: string;
-    key: string;
-    expiresAt: string;
-    url?: string;
-    headers?: Record<string, string>;
-    uploadId?: string;
-    partSize?: number;
-    parts?: Array<{ partNumber: number; url: string; expiresAt: string }>;
-  }> {
+  ): Promise<DirectUploadGrant> {
+    assertUploadFields(input);
     if (this.config.storage.driver !== 's3') {
       throw fail('INVALID_CONFIG', {
         message:
@@ -929,15 +978,9 @@ export class FileService {
    */
   async transform(
     assetId: string,
-    input: unknown,
+    input: TransformRequest,
     ctx: RequestContext,
-  ): Promise<{
-    launched: true;
-    jobId: string;
-    assetId: string;
-    sourceAssetId: string;
-    replace: boolean;
-  }> {
+  ): Promise<TransformLaunch> {
     const raw = isRecord(input) ? input : {};
     const webhook = webhookRequest(raw.webhook);
     const body = withoutWebhook(raw);
@@ -1355,6 +1398,34 @@ export class FileService {
     };
   }
 
+  /**
+   * Yield each changed progress snapshot until the terminal one. Quiet
+   * (image and document) jobs yield only the terminal event. This is the
+   * stream `GET /files/:fileId/progress` sends as SSE.
+   */
+  async *watchProgress(
+    fileId: string,
+    ctx: RequestContext,
+    opts: WatchProgressOptions = {},
+  ): AsyncGenerator<ProgressEvent, void, undefined> {
+    const intervalMs = opts.intervalMs ?? 100;
+    let previous = '';
+    while (!opts.signal?.aborted) {
+      const snapshot = await this.processingSnapshot(
+        fileId,
+        ctx,
+        opts.baseUrl ? { baseUrl: opts.baseUrl } : {},
+      );
+      const line = JSON.stringify(snapshot);
+      if ((!snapshot.quiet || snapshot.terminal) && line !== previous) {
+        previous = line;
+        yield snapshot;
+      }
+      if (snapshot.terminal) return;
+      await pause(intervalMs, opts.signal);
+    }
+  }
+
   async getJob(jobId: string, ctx: RequestContext): Promise<ProcessingJob> {
     const job = await readProcessingJob({
       env: this.config.env,
@@ -1404,22 +1475,51 @@ export class FileService {
     return started.pid;
   }
 
+  /** The `filevora doctor` report for this instance's config. `GET /health` serves it. */
+  async doctor(): Promise<DoctorReport> {
+    const { runDoctor } = await import('../diagnostics/doctor.js');
+    return runDoctor(filesOptionsFromResolved(this.config));
+  }
+
+  /** Create the Filevora tables in the host database, like `filevora migrate`. Stored mode only. */
+  async migrate(): Promise<{ ok: true; mode: 'stored' }> {
+    const { migrateHost } = await import('../metadata/migrate-host.js');
+    await migrateHost(this.config);
+    return { ok: true, mode: 'stored' };
+  }
+
+  /** Built-in presets plus the custom presets in this instance's config. */
+  listPresets(): PresetSummary[] {
+    return listPresets(this.config.presets);
+  }
+
   async createUploadSession(
     input: CreateSessionInput,
     ctx: RequestContext,
   ): Promise<UploadSession> {
-    const sql = await this.db();
-    const filename = sanitizeFilename(input.filename);
+    assertUploadFields(input);
+    const policy = ctx.policy ?? {};
+    const maxFileBytes = Math.min(
+      this.config.defaults.maxFileBytes,
+      policy.maxFileBytes ?? Number.POSITIVE_INFINITY,
+    );
     const mimeType = input.mimeType.toLowerCase();
     if (
       !Number.isInteger(input.bytes) ||
       input.bytes < 1 ||
-      input.bytes > this.config.defaults.maxFileBytes
+      input.bytes > maxFileBytes
     ) {
       throw fail('FILE_TOO_LARGE');
     }
-    if (!mimeAllowed(mimeType, this.config.defaults.allowedMimeTypes))
+    if (
+      (policy.allowedMimeTypes &&
+        !mimeAllowed(mimeType, policy.allowedMimeTypes)) ||
+      !mimeAllowed(mimeType, this.config.defaults.allowedMimeTypes)
+    )
       throw fail('UNSUPPORTED_MIME');
+    const sql = await this.db();
+    const filename = sanitizeFilename(input.filename);
+    const ownerId = ctx.ownerId || policy.ownerId;
     if (input.checksum && !/^[a-f0-9]{64}$/i.test(input.checksum)) {
       throw fail('CHECKSUM_MISMATCH', {
         message: 'checksum must be a SHA-256 hex digest.',
@@ -1476,9 +1576,7 @@ export class FileService {
         [
           fileId,
           ctx.principal.tenantId,
-          ctx.ownerId && ctx.ownerId.length > 0
-            ? ctx.ownerId
-            : ctx.principal.id,
+          ownerId || ctx.principal.id,
           filename,
           mimeType,
           input.bytes,
@@ -1568,6 +1666,9 @@ export class FileService {
     },
     ctx: RequestContext,
   ): Promise<FileRecord> {
+    if (typeof input.url !== 'string' || !input.url) {
+      throw fail('INVALID_CONFIG', { message: 'url is required.' });
+    }
     await checkRemoteUrl(input.url, this.config.remote, 'request');
     const preset = input.preset ?? this.config.defaults.preset;
     assertKnownPreset(preset, this.config.presets);
@@ -2099,6 +2200,36 @@ export class FileService {
     return record;
   }
 
+  /**
+   * Read many assets in request order. Missing or deleted ids are skipped.
+   * Lite mode accepts at most 20 ids. More than 20 ids return summary
+   * `asset` blocks instead of detailed ones.
+   */
+  async getMany(
+    assetIds: string[],
+    ctx: RequestContext,
+  ): Promise<FileRecord[]> {
+    const ids = Array.isArray(assetIds) ? assetIds : [];
+    if (this.config.metadata.mode === 'lite' && ids.length > LITE_BATCH_CAP) {
+      throw fail('FEATURE_REQUIRES_STORED_MODE', {
+        message: `Lite batch get is capped at ${LITE_BATCH_CAP} asset ids.`,
+        context: { mode: 'lite', cap: LITE_BATCH_CAP },
+      });
+    }
+    const detailed = ids.length <= LITE_BATCH_CAP;
+    const assets: FileRecord[] = [];
+    for (const id of ids) {
+      if (typeof id !== 'string') continue;
+      try {
+        assets.push(await this.get(id, ctx, { detailed }));
+      } catch (error) {
+        if (!isFileSdkError(error) || error.code !== 'ASSET_NOT_FOUND')
+          throw error;
+      }
+    }
+    return assets;
+  }
+
   async listAssetIds(
     query: { limit?: number; cursor?: string },
     ctx: RequestContext,
@@ -2407,15 +2538,7 @@ export class FileService {
     token: string,
     range?: { start: number; end?: number },
     ip?: string,
-  ): Promise<{
-    record: FileRecord;
-    body: Uint8Array | ReadableStream<Uint8Array>;
-    start: number;
-    end: number;
-    total: number;
-    contentType: string;
-    fileName: string;
-  }> {
+  ): Promise<OpenedContent> {
     const claims = verifyDeliveryToken(token, this.signingKeys());
     if (claims.ip && claims.ip !== ip) {
       throw fail('DELIVERY_IP_DENIED', {
@@ -2455,15 +2578,7 @@ export class FileService {
     assetId: string,
     version: string,
     range?: { start: number; end?: number },
-  ): Promise<{
-    record: FileRecord;
-    body: Uint8Array | ReadableStream<Uint8Array>;
-    start: number;
-    end: number;
-    total: number;
-    contentType: string;
-    fileName: string;
-  }> {
+  ): Promise<OpenedContent> {
     const sql = await this.db();
     const row = await sql.get<FileRow>(
       'SELECT * FROM files WHERE id = ? AND deleted_at IS NULL',
@@ -2540,6 +2655,11 @@ export class FileService {
     visibility: Visibility,
     ctx: RequestContext,
   ): Promise<FileRecord> {
+    if (visibility !== 'public' && visibility !== 'private') {
+      throw fail('INVALID_CONFIG', {
+        message: 'visibility must be public or private.',
+      });
+    }
     await this.get(assetId, ctx);
     const next = this.resolveVisibility(visibility);
     await (
@@ -3136,6 +3256,37 @@ function publicMetadata(raw: string): Record<string, string> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertUploadFields(input: {
+  filename: unknown;
+  mimeType: unknown;
+  bytes: unknown;
+}): void {
+  if (
+    typeof input?.filename !== 'string' ||
+    !input.filename ||
+    typeof input.mimeType !== 'string' ||
+    !input.mimeType ||
+    typeof input.bytes !== 'number' ||
+    !Number.isFinite(input.bytes)
+  ) {
+    throw fail('INVALID_CONFIG', {
+      message: 'filename, mimeType, and bytes are required.',
+    });
+  }
+}
+
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+  });
 }
 
 function webhookRequest(value: unknown): WebhookRequest | undefined {

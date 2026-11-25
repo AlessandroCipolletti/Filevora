@@ -128,8 +128,8 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
     operation: 'file.read',
     modes: ['lite', 'stored'],
     auth: 'principal',
-    request: { body: { ids: 'string[]' } },
-    response: { status: 200, body: 'FileRecord[]' },
+    request: { body: { assetIds: 'string[] (lite: at most 20)' } },
+    response: { status: 200, body: '{ assets: FileRecord[] }' },
   },
   {
     method: 'GET',

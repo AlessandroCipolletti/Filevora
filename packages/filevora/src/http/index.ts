@@ -1,6 +1,5 @@
 import { createRequestId, fail, isFileSdkError } from '../errors/error.js';
-import { mimeAllowed } from '../mime.js';
-import type { Files } from '../server/index.js';
+import type { Files, TransformRequest } from '../server/index.js';
 import { parseListSearchParams } from '../server/list-query.js';
 import { HTTP_ROUTES, matchRoute, type MatchedRoute } from './route-table.js';
 import type {
@@ -9,6 +8,7 @@ import type {
   Principal,
   SearchFilesInput,
   UploadPolicy,
+  Visibility,
 } from '../types/index.js';
 
 export { handleNodeRequest } from './node.js';
@@ -76,12 +76,7 @@ export function createFilesHandler(
             ? (options.health.path ?? '/health')
             : '';
       if (healthPath && request.method === 'GET' && pathname === healthPath) {
-        const { runDoctor } = await import('../diagnostics/doctor.js');
-        const { filesOptionsFromResolved } =
-          await import('../worker/supervisor.js');
-        const report = await runDoctor(
-          filesOptionsFromResolved(options.files.config),
-        );
+        const report = await options.files.doctor();
         return json(report, report.ok ? 200 : 503, requestId);
       }
       const content = HTTP_ROUTES.find((route) => route.name === 'content');
@@ -166,15 +161,9 @@ async function dispatch(
   }
   if (route.name === 'direct-upload') {
     const body = asRecord(await readJson(request));
-    const filename = stringField(body, 'filename');
-    const mimeType = stringField(body, 'mimeType');
-    const bytes = body.bytes;
-    if (!filename || !mimeType || typeof bytes !== 'number') {
-      throw fail('INVALID_CONFIG', {
-        message: 'filename, mimeType, and bytes are required.',
-        requestId,
-      });
-    }
+    const filename = stringField(body, 'filename') ?? '';
+    const mimeType = stringField(body, 'mimeType') ?? '';
+    const bytes = numberField(body, 'bytes') ?? Number.NaN;
     const mode =
       body.mode === 'single' || body.mode === 'multipart'
         ? body.mode
@@ -273,7 +262,11 @@ async function dispatch(
   if (route.name === 'transform' && route.fileId) {
     const body = await readJson(request);
     return json(
-      await options.files.transform(route.fileId, body, ctx),
+      await options.files.transform(
+        route.fileId,
+        body as TransformRequest,
+        ctx,
+      ),
       202,
       requestId,
     );
@@ -281,13 +274,7 @@ async function dispatch(
   if (route.name === 'from-url') {
     const body = await readJson(request);
     const record = asRecord(body);
-    const url = stringField(record, 'url');
-    if (!url) {
-      throw fail('INVALID_CONFIG', {
-        message: 'url is required.',
-        requestId,
-      });
-    }
+    const url = stringField(record, 'url') ?? '';
     const webhook = webhookFrom(record.webhook);
     const preset = stringField(record, 'preset');
     const visibility =
@@ -314,25 +301,16 @@ async function dispatch(
   if (route.name === 'create-session') {
     const body = await readJson(request);
     const record = asRecord(body);
-    const filename = stringField(record, 'filename');
-    const mimeType = stringField(record, 'mimeType');
-    const bytes = numberField(record, 'bytes');
-    if (!filename || !mimeType || bytes === undefined) {
+    const filename = stringField(record, 'filename') ?? '';
+    const mimeType = stringField(record, 'mimeType') ?? '';
+    const bytes = numberField(record, 'bytes') ?? Number.NaN;
+    if (!filename || !mimeType || Number.isNaN(bytes)) {
       throw fail('INVALID_CONFIG', {
         message: 'filename, mimeType, and bytes are required.',
         requestId,
       });
     }
     const policy = await options.policy({ principal, request });
-    const maxFileBytes = Math.min(
-      options.files.config.defaults.maxFileBytes,
-      policy.maxFileBytes ?? Number.POSITIVE_INFINITY,
-    );
-    const allowed =
-      policy.allowedMimeTypes ?? options.files.config.defaults.allowedMimeTypes;
-    if (bytes > maxFileBytes) throw fail('FILE_TOO_LARGE', { requestId });
-    if (!mimeAllowed(mimeType.toLowerCase(), allowed))
-      throw fail('UNSUPPORTED_MIME', { requestId });
     const session = await options.files.createUploadSession(
       {
         filename,
@@ -358,7 +336,7 @@ async function dispatch(
           ? { webhook: webhookFrom(record.webhook) }
           : {}),
       },
-      { principal, ...(policy.ownerId ? { ownerId: policy.ownerId } : {}) },
+      { principal, policy },
     );
     const prefix = `${origin}${basePath}`;
     return json(
@@ -449,27 +427,14 @@ async function dispatch(
   }
   if (route.name === 'batch') {
     const body = (await request.json().catch(() => ({}))) as {
-      assetIds?: string[];
+      assetIds?: unknown;
     };
-    const ids = Array.isArray(body.assetIds) ? body.assetIds : [];
-    if (options.files.config.metadata.mode === 'lite' && ids.length > 20) {
-      throw fail('FEATURE_REQUIRES_STORED_MODE', {
-        message: 'Lite batch get is capped at 20 asset ids.',
-        context: { mode: 'lite', cap: 20 },
-      });
-    }
-    const assets = [];
-    for (const id of ids) {
-      try {
-        assets.push(
-          await options.files.get(id, ctx, { detailed: ids.length <= 20 }),
-        );
-      } catch (error) {
-        if (!isFileSdkError(error) || error.code !== 'ASSET_NOT_FOUND')
-          throw error;
-      }
-    }
-    return json({ assets }, 200, requestId);
+    const ids = Array.isArray(body.assetIds) ? (body.assetIds as string[]) : [];
+    return json(
+      { assets: await options.files.getMany(ids, ctx) },
+      200,
+      requestId,
+    );
   }
   if (route.name === 'get' && route.fileId) {
     const detailed =
@@ -500,25 +465,19 @@ async function dispatch(
     }
     const fileId = route.fileId;
     const encoder = new TextEncoder();
+    const stop = new AbortController();
     let closed = false;
     const stream = new ReadableStream({
       async start(controller) {
-        let previous = '';
         try {
-          for (;;) {
-            const snapshot = await options.files.processingSnapshot(
-              fileId,
-              ctx,
-              { baseUrl: `${origin}${basePath}` },
+          for await (const snapshot of options.files.watchProgress(
+            fileId,
+            ctx,
+            { baseUrl: `${origin}${basePath}`, signal: stop.signal },
+          )) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(snapshot)}\n\n`),
             );
-            const line = JSON.stringify(snapshot);
-            const emit = !snapshot.quiet || snapshot.terminal;
-            if (emit && line !== previous) {
-              controller.enqueue(encoder.encode(`data: ${line}\n\n`));
-              previous = line;
-            }
-            if (snapshot.terminal) break;
-            await new Promise((resolve) => setTimeout(resolve, 100));
           }
         } catch (error) {
           const message =
@@ -534,6 +493,7 @@ async function dispatch(
       },
       cancel() {
         closed = true;
+        stop.abort();
       },
     });
     return new Response(stream, {
@@ -559,15 +519,12 @@ async function dispatch(
   if (route.name === 'visibility' && route.fileId) {
     const body = await readJson(request);
     const record = asRecord(body);
-    const visibility = record.visibility;
-    if (visibility !== 'public' && visibility !== 'private') {
-      throw fail('INVALID_CONFIG', {
-        message: 'visibility must be public or private.',
-        requestId,
-      });
-    }
     return json(
-      await options.files.setVisibility(route.fileId, visibility, ctx),
+      await options.files.setVisibility(
+        route.fileId,
+        record.visibility as Visibility,
+        ctx,
+      ),
       200,
       requestId,
     );

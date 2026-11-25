@@ -11,6 +11,7 @@ The package is not on npm yet. Install it from this repository. Node `>=22.13`.
 - [Quick start](#quick-start)
 - [Lite and stored](#lite-and-stored)
 - [Features](#features)
+- [Library methods](#library-methods)
 - [HTTP API](#http-api)
 - [SDK](#sdk)
 - [CLI](#cli)
@@ -118,35 +119,259 @@ Each line is implemented in this package. Status of what an automated test cover
 
 `provider: "managed"` throws `FEATURE_NOT_AVAILABLE`. This package does not bill, issue accounts, or render a UI.
 
+## Library methods
+
+Every feature is a typed method you can call in process from `filevora/server`. You do not need the HTTP handler or `filevora/client`. Each HTTP route calls the method listed next to it in the [HTTP API](#http-api) table, so validation, limits, and error codes are the same.
+
+```ts
+import { createFiles, isFileSdkError } from 'filevora/server';
+
+const files = createFiles({
+  storage: { driver: 'filesystem', root: './.files/objects' },
+});
+const ctx = { principal: { id: 'user-1', tenantId: 'acme' } };
+```
+
+Instance methods take a `ctx` (`RequestContext`) as their last argument. `ctx.principal` is the caller your app has already authenticated, and its `tenantId` scopes every read and write. You can also set `ctx.policy` (`UploadPolicy`: `maxFileBytes`, `allowedMimeTypes`, `ownerId`) to narrow upload limits. Filevora does not check permissions here; your app decides what the principal may do before it calls a method.
+
+Failures throw a `FileSdkError` with a stable `code` (see [docs/errors](docs/errors)). `isFileSdkError(error)` narrows it. Methods that need stored mode throw `FEATURE_REQUIRES_STORED_MODE` or `DESCRIPTION_REQUIRES_DATABASE` in lite mode.
+
+```ts
+try {
+  await files.get('file_missing', ctx);
+} catch (error) {
+  if (isFileSdkError(error) && error.code === 'ASSET_NOT_FOUND') {
+    // 404 in your app
+  }
+}
+```
+
+### Upload
+
+**`createUploadSession(input, ctx): Promise<UploadSession>`** starts a resumable upload. `input` is `{ filename, mimeType, bytes, checksum?, idempotencyKey?, preset?, metadata?, visibility?, webhook?, describe? }`. Parts are `session.partSize` bytes, and the last part holds the rest. Errors: `INVALID_CONFIG` (missing fields), `FILE_TOO_LARGE`, `UNSUPPORTED_MIME`, `CHECKSUM_MISMATCH` (not a SHA-256 hex digest), `IDEMPOTENCY_CONFLICT`, `QUOTA_EXCEEDED`, `TRANSFORM_REJECTED` (unknown preset), `FORBIDDEN` (public files disabled).
+
+**`writePart(sessionId, partNumber, body, ctx): Promise<{ partNumber, etag, bytes }>`** stores one part. `body` is a `Uint8Array`. Errors: `UPLOAD_PART_MISSING` (part number outside the session), `UPLOAD_SIZE_MISMATCH`, `UPLOAD_SESSION_EXPIRED`, `NOT_FOUND`.
+
+**`completeUpload(sessionId, { parts?, checksum? }, ctx): Promise<FileRecord>`** assembles and sniffs the original, then queues the preset. Errors: `UPLOAD_PART_MISSING`, `UPLOAD_SIZE_MISMATCH`, `MIME_MISMATCH`, `UNSUPPORTED_MIME`, `CHECKSUM_MISMATCH`, `FILE_TOO_LARGE`.
+
+```ts
+const bytes = new Uint8Array(await readFile('photo.png'));
+const session = await files.createUploadSession(
+  { filename: 'photo.png', mimeType: 'image/png', bytes: bytes.byteLength, preset: 'avatar' },
+  { ...ctx, policy: { maxFileBytes: 5_000_000 } },
+);
+for (let part = 1; part <= session.partCount; part += 1) {
+  const start = (part - 1) * session.partSize;
+  await files.writePart(session.id, part, bytes.subarray(start, start + session.partSize), ctx);
+}
+const file = await files.completeUpload(session.id, {}, ctx);
+```
+
+**`getUploadSession(sessionId, ctx): Promise<UploadSession>`** reads a session. **`abortUpload(sessionId, ctx): Promise<void>`** aborts it and removes stored parts; a verified session throws `INVALID_CONFIG`. **`partUploadUrls(sessionId, ctx): Promise<Record<string, string>>`** returns presigned part URLs for an S3 multipart session, and `{}` on filesystem storage.
+
+```ts
+const current = await files.getUploadSession(session.id, ctx);
+if (current.status !== 'verified') await files.abortUpload(session.id, ctx);
+```
+
+**`createDirectUpload(input, ctx): Promise<DirectUploadGrant>`** signs a single PUT or multipart part URLs straight to S3. `input` is `{ filename, mimeType, bytes, mode?: 'single' | 'multipart', preset?, describe? }`. Filesystem storage throws `INVALID_CONFIG`. **`completeDirectUpload(sessionId, { parts?, describe? }, ctx): Promise<FileRecord>`** heads the object, checks the size and sniffed type, applies the EXIF policy and the scanner, and queues processing. Errors: `UPLOAD_PART_MISSING`, `UPLOAD_SIZE_MISMATCH`, `MIME_MISMATCH`, `UNSUPPORTED_MIME`. See [docs/direct-upload.md](docs/direct-upload.md).
+
+```ts
+const grant = await files.createDirectUpload({ filename: 'clip.mp4', mimeType: 'video/mp4', bytes: size }, ctx);
+await fetch(grant.url!, { method: 'PUT', headers: grant.headers, body });
+const file = await files.completeDirectUpload(grant.sessionId, {}, ctx);
+```
+
+**`createFromUrl({ url, preset?, visibility?, webhook?, describe? }, ctx): Promise<FileRecord>`** returns the asset before the download finishes, then downloads, sniffs, and queues the preset. Errors: `INVALID_CONFIG` (no `url`), `REMOTE_URL_SCHEME`, `REMOTE_URL_CREDENTIALS`, `REMOTE_URL_PORT`, `REMOTE_URL_HOST`, `REMOTE_URL_BLOCKED`.
+
+```ts
+const imported = await files.createFromUrl({ url: 'https://example.com/logo.png', preset: 'thumbnail' }, ctx);
+```
+
+### Read and list
+
+**`get(fileId, ctx, { detailed? }): Promise<FileRecord>`** reads one asset. `detailed` defaults to `true` (the HTTP route defaults to `false` in lite mode). Error: `ASSET_NOT_FOUND`.
+
+**`getMany(assetIds, ctx): Promise<FileRecord[]>`** reads many assets in request order and skips missing or deleted ids. More than 20 ids return summary `asset` blocks. Lite mode throws `FEATURE_REQUIRES_STORED_MODE` above 20 ids.
+
+```ts
+const one = await files.get(file.id, ctx);
+const many = await files.getMany([file.id, imported.id], ctx);
+```
+
+**`list(query, ctx): Promise<Page<FileRecord>>`** lists the tenant's assets. `query` (`ListQueryInput`) takes `type`, `createdFrom`/`createdTo`, `updatedFrom`/`updatedTo`, `mime`, `filename`, `sizeMin`/`sizeMax`, `durationMin`/`durationMax`, `widthMin`/`heightMin`, `status`, `visibility`, `preset`, `sort`, `order`, `limit`, and `cursor`. `tags`, `tagsAll`, `tagCategory`, `q`, `descriptionStatus`, and `hasDescription` need stored mode and a Gemini key. Error: `LIST_QUERY_INVALID`. See [docs/list.md](docs/list.md).
+
+**`listAssetIds({ limit?, cursor? }, ctx): Promise<{ assetIds, nextCursor }>`** returns ids only. Stored mode only.
+
+```ts
+const page = await files.list({ type: 'image', sort: 'created', order: 'desc', limit: 20 }, ctx);
+const next = page.nextCursor ? await files.list({ type: 'image', cursor: page.nextCursor }, ctx) : null;
+```
+
+**`search(input, ctx): Promise<SearchFilesPage>`** runs semantic search over described assets. `input` (`SearchFilesInput`) is `{ query, minScore?, maxResults?, limit?, cursor? }` plus the list filters. Each hit has a `score`. Errors: `DESCRIPTION_REQUIRES_DATABASE`, `DESCRIPTION_NOT_CONFIGURED`, `SEARCH_QUERY_INVALID`, `EMBEDDING_UNAVAILABLE`. See [docs/search.md](docs/search.md).
+
+```ts
+const hits = await files.search({ query: 'a red bicycle at night', type: 'image', limit: 10 }, ctx);
+```
+
+**`delete(fileId, ctx): Promise<void>`** soft-deletes the asset, its versions, and its search vector. Error: `ASSET_NOT_FOUND`.
+
+```ts
+await files.delete(file.id, ctx);
+```
+
+### Processing
+
+**`transform(assetId, request, ctx): Promise<TransformLaunch>`** queues a transform and returns `{ launched, jobId, assetId, sourceAssetId, replace }`. `request` (`TransformRequest`) is `{ operations?, preset?, replace?, webhook? }`. `replace` defaults to `true`; `false` creates a new asset id. Errors: `TRANSFORM_REJECTED` (names the field, the detected type, and the valid operations), `ASSET_NOT_FOUND`. See [docs/agents/transform.md](docs/agents/transform.md).
+
+```ts
+await files.transform(file.id, { operations: [{ op: 'image.resize', width: 640 }] }, ctx);
+await files.transform(file.id, { preset: 'og-image', replace: false }, ctx);
+```
+
+**`mergePdfs(assetIds, ctx, describe?)`** merges 2 to 20 PDFs into a new asset and returns `{ assetId, jobId, sourceAssetIds }`. **`splitPdf(assetId, ranges, ctx, describe?)`** writes one new PDF per page range (1 to 20 ranges) and returns `{ sourceAssetId, assetIds, jobId }`. Error: `TRANSFORM_REJECTED` (not a PDF, or a count out of range).
+
+```ts
+const merged = await files.mergePdfs([pdfA.id, pdfB.id], ctx);
+const split = await files.splitPdf(merged.assetId, [[1, 2], [3]], ctx);
+```
+
+**`describeAsset(fileId, ctx): Promise<FileRecord>`** queues or refreshes a Gemini description, which also writes the search vector. Stored mode only. Errors: `DESCRIPTION_REQUIRES_DATABASE`, `DESCRIPTION_NOT_CONFIGURED`. See [docs/descriptions.md](docs/descriptions.md).
+
+```ts
+const pending = await files.describeAsset(file.id, ctx);
+```
+
+**`normalize(fileId, { kind, schema?, invalidRows?, sheet? }, ctx)`** reads a PDF (text, page count, page-1 preview) or a CSV or XLSX table (`kind: 'tabular'`, optional column `schema`), and stores the result as the `normalized` JSON version. Error: `UNSUPPORTED_MIME`.
+
+```ts
+const table = await files.normalize(csv.id, { kind: 'tabular', schema: { columns: { email: { type: 'email', required: true } } } }, ctx);
+```
+
+**`listPresets(): PresetSummary[]`** lists built-in presets plus the custom presets in this instance's config. The module-level `listPresets(custom?)` does the same without an instance.
+
+```ts
+const names = files.listPresets().map((preset) => preset.name);
+```
+
+### Progress and jobs
+
+**`processingSnapshot(fileId, ctx, { baseUrl? }): Promise<ProgressEvent>`** returns one progress event (`phase`, `state`, `percentage`, `etaMs`, `terminal`). With `baseUrl`, a terminal success includes `versions` with URLs.
+
+**`watchProgress(fileId, ctx, { baseUrl?, intervalMs?, signal? }): AsyncGenerator<ProgressEvent>`** yields each changed snapshot until the terminal one. This is the stream `GET /files/:fileId/progress` sends as SSE. Image and document jobs yield only the terminal event. Abort `signal` to stop early. Error: `ASSET_NOT_FOUND`.
+
+```ts
+for await (const event of files.watchProgress(file.id, ctx, { baseUrl: 'https://app.example/api/files' })) {
+  console.log(event.phase, event.state, event.percentage);
+}
+```
+
+**`getJob(jobId, ctx): Promise<ProcessingJob>`** and **`cancelJob(jobId, ctx): Promise<ProcessingJob>`** read or cancel a queued job by the `jobId` that `transform`, `mergePdfs`, and `splitPdf` return. Error: `NOT_FOUND`. **`process(fileId, {}, ctx)`** queues the asset's preset again.
+
+```ts
+const job = await files.getJob(launch.jobId, ctx);
+if (job.state === 'queued') await files.cancelJob(job.id, ctx);
+```
+
+### Delivery and access control
+
+**`getDeliveryUrls(fileId, { baseUrl, expiresInSeconds? }, ctx): Promise<DeliveryResult>`** signs URLs for the original and every ready version. Public assets get `/public` URLs. Private S3 originals get presigned URLs. Errors: `NOT_FOUND` (upload not verified), `INVALID_CONFIG` (TTL outside 30 to 86400 seconds).
+
+**`signUrl(assetId, { version?, expiresIn?, download?, ip?, baseUrl? }, ctx): Promise<{ url, expiresAt }>`** signs one `/content` URL. `ip` binds it to a client address. `download` sets the download file name.
+
+```ts
+const delivery = await files.getDeliveryUrls(file.id, { baseUrl: 'https://app.example/api/files' }, ctx);
+const link = await files.signUrl(file.id, { version: 'thumbnail', expiresIn: 300 }, ctx);
+```
+
+**`setVisibility(assetId, 'public' | 'private', ctx): Promise<FileRecord>`** changes visibility. Errors: `INVALID_CONFIG` (other values), `FORBIDDEN` (public files disabled). **`revokeUrls(assetId, ctx): Promise<{ assetId, revoked: true }>`** rotates the asset salt so every earlier signed URL fails with `DELIVERY_REVOKED`.
+
+```ts
+await files.setVisibility(file.id, 'public', ctx);
+await files.revokeUrls(file.id, ctx);
+```
+
+**`openOriginal(token, range?, ip?): Promise<OpenedContent>`** reads the bytes behind a signed `/content` token. No principal is needed. **`openPublic(assetId, version, range?): Promise<OpenedContent>`** reads a public version. `range` is `{ start, end? }`, and a range read returns a `Uint8Array` body; otherwise `body` is a stream. Errors: `DELIVERY_MALFORMED`, `DELIVERY_BAD_SIGNATURE`, `DELIVERY_EXPIRED`, `DELIVERY_REVOKED`, `DELIVERY_IP_DENIED`, `DELIVERY_NOT_FOUND`, `DELIVERY_PRIVATE`.
+
+```ts
+const token = new URL(link.url).pathname.split('/content/')[1]!;
+const opened = await files.openOriginal(decodeURIComponent(token));
+const head = await files.openPublic(file.id, '_original', { start: 0, end: 1023 });
+```
+
+Module functions: `signDeliveryToken(secret, claims)` and `verifyDeliveryToken(token, keys)` sign and check tokens without an instance.
+
+### Retention and operations
+
+**`retentionSweep({ dryRun? }, ctx): Promise<CleanupReport>`** applies `FILES_RETENTION_*` for `ctx.principal.tenantId` and removes old orphans. Pinned assets are kept. **`touch(fileId, ctx): Promise<void>`** records that your app used the asset, which resets its unused-retention clock. See [docs/agents/retention.md](docs/agents/retention.md).
+
+```ts
+const plan = await files.retentionSweep({ dryRun: true }, ctx);
+await files.touch(file.id, ctx);
+```
+
+**`doctor(): Promise<DoctorReport>`** runs the `filevora doctor` checks for this instance's config. `GET /health` serves the same report. **`migrate(): Promise<{ ok: true, mode: 'stored' }>`** creates the Filevora tables in the host database like `filevora migrate`. Lite mode throws `FEATURE_REQUIRES_STORED_MODE`.
+
+```ts
+const report = await files.doctor();
+if (!report.ok) console.error(report.checks.filter((check) => check.status === 'fail'));
+```
+
+**`ensureWorker(): number`** starts the embedded worker child when the config allows it and returns its pid. **`close(): Promise<void>`** stops the child, closes the database and storage, and releases the queue connection.
+
+**`verifyWebhookSignature({ secret, body, timestamp, signature, toleranceSeconds? }): boolean`** checks a received webhook. Pass the raw body and the `X-Filevora-Timestamp` and `X-Filevora-Signature` headers. The default tolerance is 300 seconds.
+
+```ts
+import { verifyWebhookSignature } from 'filevora/server';
+
+const ok = verifyWebhookSignature({
+  secret: process.env.FILEVORA_WEBHOOK_SECRET!,
+  body: rawBody,
+  timestamp: request.headers.get('x-filevora-timestamp'),
+  signature: request.headers.get('x-filevora-signature'),
+});
+```
+
+**`explainError(error, explainer?)`** returns the redacted error report plus an optional `suggestion` from your own explainer. **`redactConfig(files.config)`** returns the resolved config with secrets removed, like `filevora config validate`. `readManifest()` from `filevora/manifest` returns the capability manifest.
+
+```ts
+console.log(redactConfig(files.config));
+```
+
 ## HTTP API
 
 Routes come from `HTTP_ROUTES`. The host principal is required on every route except `GET /content/:token` and `GET /public/:assetId/:version`. Paths are relative to `basePath` (for example `/api/files`).
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `POST` | `/sessions` | Start a resumable upload. Returns the session and part URLs. |
-| `GET` | `/sessions/:sessionId` | Read an upload session. |
-| `PUT` | `/sessions/:sessionId/parts/:partNumber` | Write one raw part. |
-| `POST` | `/sessions/:sessionId/complete` | Assemble the original and queue processing. Returns the file record. |
-| `POST` | `/sessions/:sessionId/abort` | Abort the session. |
-| `GET` | `/assets` | List asset ids. Stored mode only. |
-| `POST` | `/retention/cleanup` | Run retention. Body `{ dryRun?: boolean }`. |
-| `POST` | `/assets/from-url` | Import an http(s) URL. Optional `preset`. Returns the file record before the download finishes. |
-| `POST` | `/files/batch` | Read many files by id. |
-| `GET` | `/files` | List files for the tenant. Filters: type, dates, tags, `q`, mime, filename, size, duration, dimensions, status, visibility, preset. See [docs/list.md](docs/list.md). |
-| `GET` | `/files/:fileId` | Read one file. |
-| `DELETE` | `/files/:fileId` | Soft-delete the asset and its versions. |
-| `GET` | `/files/:fileId/versions` | Signed URLs for every ready version of a private asset. Public assets use `/public` URLs. |
-| `POST` | `/files/:fileId/describe` | Queue a Gemini description for an existing asset. Stored mode and `FILEVORA_GEMINI_API_KEY` are required. |
-| `POST` | `/files/:fileId/transform` | Queue a transform. Body may be `operations` or `preset` (single-output presets accept extra `operations` after the preset). Returns `{ launched, jobId, assetId, sourceAssetId, replace }`. |
-| `GET` | `/files/:fileId/progress` | Progress event as `text/event-stream` or JSON. |
-| `POST` | `/files/:fileId/delivery` | Sign delivery URLs. Optional `expiresInSeconds`. |
-| `GET` | `/content/:token` | Download bytes for a signed token. No principal. 403 with a `DELIVERY_*` code when the token is bad. |
-| `GET` | `/public/:assetId/:version` | Download a public asset with no signature. Private assets return `DELIVERY_PRIVATE`. |
-| `PUT` | `/files/:fileId/visibility` | Set `public` or `private`. |
-| `POST` | `/files/:fileId/revoke-urls` | Rotate the asset salt so older signed URLs fail. |
+| Method | Path | Description | Library method |
+| --- | --- | --- | --- |
+| `POST` | `/sessions` | Start a resumable upload. Returns the session and part URLs. | `createUploadSession`, `partUploadUrls` |
+| `GET` | `/sessions/:sessionId` | Read an upload session. | `getUploadSession` |
+| `PUT` | `/sessions/:sessionId/parts/:partNumber` | Write one raw part. | `writePart` |
+| `POST` | `/sessions/:sessionId/complete` | Assemble the original and queue processing. Returns the file record. | `completeUpload` |
+| `POST` | `/sessions/:sessionId/abort` | Abort the session. | `abortUpload` |
+| `GET` | `/assets` | List asset ids. Stored mode only. | `listAssetIds` |
+| `POST` | `/retention/cleanup` | Run retention. Body `{ dryRun?: boolean }`. | `retentionSweep` |
+| `POST` | `/assets/from-url` | Import an http(s) URL. Optional `preset`. Returns the file record before the download finishes. | `createFromUrl` |
+| `POST` | `/files/batch` | Read many files by id. Body `{ assetIds }`. Returns `{ assets }`. | `getMany` |
+| `GET` | `/files` | List files for the tenant. Filters: type, dates, tags, `q`, mime, filename, size, duration, dimensions, status, visibility, preset. See [docs/list.md](docs/list.md). | `list` |
+| `POST` | `/files/search` | Semantic search. Stored mode and `FILEVORA_GEMINI_API_KEY`. See [docs/search.md](docs/search.md). | `search` |
+| `GET` | `/files/:fileId` | Read one file. | `get` |
+| `DELETE` | `/files/:fileId` | Soft-delete the asset and its versions. | `delete` |
+| `GET` | `/files/:fileId/versions` | Signed URLs for every ready version of a private asset. Public assets use `/public` URLs. | `getDeliveryUrls` |
+| `POST` | `/uploads/direct` | Sign a direct S3 upload. | `createDirectUpload` |
+| `POST` | `/uploads/direct/:sessionId/complete` | Verify a direct S3 upload and queue processing. | `completeDirectUpload` |
+| `POST` | `/pdf/merge` | Merge PDFs into a new asset. | `mergePdfs` |
+| `POST` | `/files/:fileId/split` | Split a PDF by page ranges. | `splitPdf` |
+| `POST` | `/files/:fileId/describe` | Queue a Gemini description for an existing asset. Stored mode and `FILEVORA_GEMINI_API_KEY` are required. | `describeAsset` |
+| `POST` | `/files/:fileId/transform` | Queue a transform. Body may be `operations` or `preset` (single-output presets accept extra `operations` after the preset). Returns `{ launched, jobId, assetId, sourceAssetId, replace }`. | `transform` |
+| `GET` | `/files/:fileId/progress` | Progress event as `text/event-stream` or JSON. | `watchProgress`, `processingSnapshot` |
+| `POST` | `/files/:fileId/delivery` | Sign delivery URLs. Optional `expiresInSeconds`. | `getDeliveryUrls` |
+| `GET` | `/content/:token` | Download bytes for a signed token. No principal. 403 with a `DELIVERY_*` code when the token is bad. | `openOriginal` |
+| `GET` | `/public/:assetId/:version` | Download a public asset with no signature. Private assets return `DELIVERY_PRIVATE`. | `openPublic` |
+| `PUT` | `/files/:fileId/visibility` | Set `public` or `private`. | `setVisibility` |
+| `POST` | `/files/:fileId/revoke-urls` | Rotate the asset salt so older signed URLs fail. | `revokeUrls` |
 
-`GET /health` is not in that table. It exists only when the handler is created with `health: true` (or `{ path }`). It returns the doctor report with no authentication. HTTP 200 when required checks pass, 503 when one fails.
+`GET /health` is not in that table. It exists only when the handler is created with `health: true` (or `{ path }`). It returns the doctor report (`files.doctor()`) with no authentication. HTTP 200 when required checks pass, 503 when one fails.
 
 Request and response shapes, which mode each route allows, and every error code are in the manifest (`catalog.endpoints`, `catalog.errors`).
 
@@ -156,9 +381,9 @@ Public entry points match `package.json` `exports` and `catalog.exports` in the 
 
 ### `filevora/server`
 
-`createFiles(options?)` returns a `Files` instance: sessions, URL import, transform, get, list, delete, delivery URLs, `signUrl`, `setVisibility`, `revokeUrls`, progress snapshots, retention, and normalize. `listPresets()` lists built-in and custom preset names. `verifyDeliveryToken` checks an HMAC token. Construction does not spawn a worker.
+`createFiles(options?)` returns a `Files` instance with one method per feature. Every method is listed in [Library methods](#library-methods). `listPresets()` lists built-in and custom preset names. `verifyDeliveryToken` checks an HMAC token and `verifyWebhookSignature` checks a received webhook. Construction does not spawn a worker.
 
-Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, `RequestContext`, `listPresets`, `PresetSummary`, `signDeliveryToken`, `verifyDeliveryToken`, `DeliveryClaims`, `assetTransformSchema`, `AssetTransform`, `AssetTransformInput`, `AssetTransformOperation`.
+Also exported: `Files`, `FilesOptions`, `ResolvedConfig`, `CreateSessionInput`, `RequestContext`, `TransformRequest`, `TransformLaunch`, `DirectUploadGrant`, `OpenedContent`, `WatchProgressOptions`, `ListQueryInput`, `ProgressEvent`, `ProgressVersion`, `CleanupReport`, `DoctorReport`, `WebhookRequest`, `WebhookEventName`, `FileSdkError`, `isFileSdkError`, `redactConfig`, `explainError`, `Explainer`, `listPresets`, `PresetSummary`, `signDeliveryToken`, `verifyDeliveryToken`, `DeliveryClaims`, `assetTransformSchema`, `AssetTransform`, `AssetTransformInput`, `AssetTransformOperation`.
 
 ### `filevora/client`
 

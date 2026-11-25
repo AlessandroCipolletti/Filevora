@@ -12,7 +12,7 @@ Events:
 
 The JSON body is the same object as the terminal SSE event (`assetId`, `phase`, `state`, `percentage`, `terminal`, and `versions` with URLs). The event name is the `X-Filevora-Event` header.
 
-Each request is signed. `X-Filevora-Timestamp` is unix seconds. `X-Filevora-Signature` is `sha256=` plus HMAC-SHA256 of `timestamp + "." + rawBody` using the webhook secret.
+Each request is signed. `X-Filevora-Timestamp` is unix seconds. `X-Filevora-Signature` is `sha256=` plus HMAC-SHA256 of `timestamp + "." + rawBody` using the webhook secret. `verifyWebhookSignature({ secret, body, timestamp, signature })` from `filevora/server` checks both headers against the raw body and rejects timestamps more than 300 seconds away (`toleranceSeconds`).
 
 Delivery is a BullMQ job on the processing queue. It retries with the queue's exponential backoff. A 4xx response is not retried. A 5xx response is.
 

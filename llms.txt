@@ -3,6 +3,7 @@
 Navigation index for coding agents. This is not a capability claim. Trust `docs/agents/capabilities.json` and the tests.
 
 - [README](README.md)
+- [Library methods](README.md#library-methods) — every feature as a typed in-process method on `createFiles()` from `filevora/server`, with the same validation and error codes as the HTTP route that calls it. `getMany` (batch get), `watchProgress` (the SSE stream as an async iterator), `doctor`, `migrate`, `listPresets`, and `verifyWebhookSignature` for received webhooks. `ctx.policy` narrows upload limits.
 - [Install](docs/agents/install.md)
 - [Decision guide](docs/agents/decision-guide.md)
 - [Troubleshooting](docs/agents/troubleshooting.md)

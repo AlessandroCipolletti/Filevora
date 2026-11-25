@@ -10,7 +10,7 @@ import { createUploadClient } from '../dist/client/index.js';
 import { FileSdkError } from '../dist/errors/error.js';
 import { createFilesHandler } from '../dist/http/index.js';
 import { tenantPath } from '../dist/ids.js';
-import { createFiles } from '../dist/server/index.js';
+import { createFiles, type TransformRequest } from '../dist/server/index.js';
 import { runWorker } from '../dist/worker/index.js';
 import { workerConfigOptions } from '../dist/worker/supervisor.js';
 
@@ -50,7 +50,7 @@ function transformOf(
   assetId: string,
   config: unknown,
 ) {
-  return files.transform(assetId, config, { principal });
+  return files.transform(assetId, config as TransformRequest, { principal });
 }
 
 function code(error: unknown): FileSdkError {
