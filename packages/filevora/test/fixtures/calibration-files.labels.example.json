@@ -1,0 +1,24 @@
+{
+  "assets": [
+    {
+      "file": "beach.jpg",
+      "short": "A sunny beach.",
+      "long": "A wide sandy beach with palm trees and a blue sea under a clear sky.",
+      "tags": [
+        ["subject", "beach"],
+        ["emotion", "calm"]
+      ]
+    },
+    {
+      "file": "invoice.pdf",
+      "short": "A supplier invoice.",
+      "long": "A two page invoice with a table of line items and a total due.",
+      "tags": [["subject", "invoice"]]
+    }
+  ],
+  "queries": [
+    { "text": "holiday by the sea", "relevant": ["beach.jpg"] },
+    { "text": "how much do we owe the supplier", "relevant": ["invoice.pdf"] },
+    { "text": "a snowy mountain", "relevant": [] }
+  ]
+}

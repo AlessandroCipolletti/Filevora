@@ -65,10 +65,42 @@ export function mockEmbeddingValues(text: string): number[] {
 }
 
 export interface EmbedCall {
+  /** RETRIEVAL_QUERY for the `task: search result` prefix, RETRIEVAL_DOCUMENT otherwise. */
   task: string | undefined;
+  /** The file name from the `title: ... | text:` prefix of a text-only document. */
+  title: string | undefined;
+  /** The text part without its task prefix. */
+  text: string;
+  /** The text part exactly as sent. */
+  rawText: string;
+  dimensions: number | undefined;
+  file: { mime: string; bytes: number } | undefined;
+  body: Record<string, unknown>;
+}
+
+const QUERY_PREFIX = 'task: search result | query: ';
+
+function parseEmbedText(raw: string): {
+  task: string;
   title: string | undefined;
   text: string;
-  dimensions: number | undefined;
+} {
+  if (raw.startsWith(QUERY_PREFIX)) {
+    return {
+      task: 'RETRIEVAL_QUERY',
+      title: undefined,
+      text: raw.slice(QUERY_PREFIX.length),
+    };
+  }
+  const match = /^title: (.*?) \| text: ([\s\S]*)$/.exec(raw);
+  if (match) {
+    return {
+      task: 'RETRIEVAL_DOCUMENT',
+      title: match[1],
+      text: match[2] ?? '',
+    };
+  }
+  return { task: 'RETRIEVAL_DOCUMENT', title: undefined, text: raw };
 }
 
 export interface MockGemini {
@@ -77,6 +109,9 @@ export interface MockGemini {
   describeCalls: string[];
   /** When set, embedContent fails with this status. */
   embedFailure: { status: number } | undefined;
+  /** Fails only requests that carry a file, so the description-only retry succeeds. */
+  embedFailureFor:
+    ((mime: string | undefined) => { status: number } | undefined) | undefined;
 }
 
 /** Describe responses echo the uploaded text file, so file content is the description. */
@@ -85,6 +120,7 @@ export function createMockGemini(): MockGemini {
     embedCalls: [],
     describeCalls: [],
     embedFailure: undefined,
+    embedFailureFor: undefined,
     fetchImpl: async (input, init) => {
       const url = String(input);
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<
@@ -92,20 +128,39 @@ export function createMockGemini(): MockGemini {
         unknown
       >;
       if (url.includes(':embedContent')) {
-        const content = body.content as { parts: Array<{ text: string }> };
-        const text = content.parts[0]?.text ?? '';
+        const content = body.content as {
+          parts: Array<{
+            text?: string;
+            inline_data?: { mime_type: string; data: string };
+          }>;
+        };
+        const rawText = content.parts.find((part) => part.text)?.text ?? '';
+        const inline = content.parts.find(
+          (part) => part.inline_data,
+        )?.inline_data;
+        const parsed = parseEmbedText(rawText);
+        const text = parsed.text;
         state.embedCalls.push({
-          task: body.taskType as string | undefined,
-          title: body.title as string | undefined,
+          task: parsed.task,
+          title: parsed.title,
           text,
-          dimensions: body.outputDimensionality as number | undefined,
+          rawText,
+          dimensions: body.output_dimensionality as number | undefined,
+          file: inline
+            ? {
+                mime: inline.mime_type,
+                bytes: Buffer.from(inline.data, 'base64').byteLength,
+              }
+            : undefined,
+          body,
         });
-        if (state.embedFailure) {
+        const failure = state.embedFailureFor?.(inline?.mime_type);
+        if (state.embedFailure || failure) {
           return new Response('quota exhausted test-key', {
-            status: state.embedFailure.status,
+            status: (state.embedFailure ?? failure)?.status ?? 500,
           });
         }
-        const wanted = (body.outputDimensionality as number) ?? DIMENSIONS;
+        const wanted = (body.output_dimensionality as number) ?? DIMENSIONS;
         return new Response(
           JSON.stringify({
             embedding: { values: mockEmbeddingValues(text).slice(0, wanted) },

@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS filevora_asset_embeddings (
   model ${label} NOT NULL,
   dimensions ${int} NOT NULL,
   embedding ${vector} NOT NULL,
+  source ${label} NOT NULL,
   content_hash ${short} NOT NULL,
   embedded_at ${short} NOT NULL
 )`.trim();

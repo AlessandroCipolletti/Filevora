@@ -114,42 +114,66 @@ export function buildCanonicalEmbeddingText(input: CanonicalEmbeddingInput): {
   };
 }
 
-/** Accept `gemini-embedding-001` or the resource form `models/gemini-embedding-001`. */
+/** Accept `gemini-embedding-2` or the resource form `models/gemini-embedding-2`. */
 function modelId(config: EmbedConfig): string {
   return config.embeddingModel.trim().replace(/^models\//, '');
 }
 
-function embedRequestBody(
+/** Text parts are clipped well below the 8192-token request limit shared with the file. */
+export const EMBED_TEXT_MAX_CHARS = 8000;
+
+export interface EmbedFile {
+  bytes: Uint8Array;
+  mime: string;
+}
+
+export type EmbeddingSource = 'file+description' | 'description';
+
+export interface EmbedInput {
+  text: string;
+  task: EmbedTask;
+  title?: string;
+  file?: EmbedFile;
+}
+
+/**
+ * gemini-embedding-2 has no taskType field. Text-only requests carry the task as a prefix;
+ * with a file, the description and the file bytes are two parts of one content and embed together.
+ */
+export function embedRequestBody(
   config: EmbedConfig,
-  input: { text: string; task: EmbedTask; title?: string },
+  input: EmbedInput,
 ): Record<string, unknown> {
-  const model = modelId(config);
-  const base = {
-    model: `models/${model}`,
-    outputDimensionality: config.embeddingDimensions,
-  };
-  // gemini-embedding-2 has no taskType field; the task goes into the text.
-  if (/^gemini-embedding-2/.test(model)) {
-    const text =
-      input.task === 'RETRIEVAL_QUERY'
-        ? `task: search result | query: ${input.text}`
-        : `title: ${input.title || 'none'} | text: ${input.text}`;
-    return { ...base, content: { parts: [{ text }] } };
-  }
+  const text = input.text.slice(0, EMBED_TEXT_MAX_CHARS);
+  const parts: Array<Record<string, unknown>> = input.file
+    ? [
+        { text },
+        {
+          inline_data: {
+            mime_type: input.file.mime,
+            data: Buffer.from(input.file.bytes).toString('base64'),
+          },
+        },
+      ]
+    : [
+        {
+          text:
+            input.task === 'RETRIEVAL_QUERY'
+              ? `task: search result | query: ${text}`
+              : `title: ${input.title || 'none'} | text: ${text}`,
+        },
+      ];
   return {
-    ...base,
-    content: { parts: [{ text: input.text }] },
-    taskType: input.task,
-    ...(input.task === 'RETRIEVAL_DOCUMENT' && input.title
-      ? { title: input.title }
-      : {}),
+    model: `models/${modelId(config)}`,
+    content: { parts },
+    output_dimensionality: config.embeddingDimensions,
   };
 }
 
-/** Embed one text with Gemini and return a unit-length little-endian float32 vector. */
+/** Embed one text, or a description together with its file, and return a unit-length float32 vector. */
 export async function embedText(
   config: EmbedConfig,
-  input: { text: string; task: EmbedTask; title?: string },
+  input: EmbedInput,
 ): Promise<Uint8Array> {
   const fetchImpl = config.fetchImpl ?? fetch;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId(config))}:embedContent`;
@@ -162,7 +186,7 @@ export async function embedText(
           'x-goog-api-key': config.apiKey,
         },
         body: JSON.stringify(embedRequestBody(config, input)),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(input.file ? 90_000 : 30_000),
       }),
     );
     const body = (await response.json()) as {
@@ -220,4 +244,40 @@ function embeddingHttpFailure(error: GeminiHttpError, apiKey: string) {
       ...(googleReason ? { geminiReason: googleReason } : {}),
     },
   });
+}
+
+/** Google rejected the payload itself (unreadable or oversized media), not the key or the quota. */
+function mediaRejected(error: unknown): boolean {
+  if (!isFileSdkError(error)) return false;
+  const status = error.context?.geminiHttpStatus;
+  const reason = error.context?.geminiReason;
+  return (status === 400 || status === 413) && reason !== 'API_KEY_INVALID';
+}
+
+/**
+ * Embed a described asset. With a file the vector covers file and description; when Google
+ * refuses the file the description alone is embedded, and the returned source says which happened.
+ */
+export async function embedDocument(
+  config: EmbedConfig,
+  input: { text: string; title?: string; file?: EmbedFile },
+  log: (message: string) => void = () => undefined,
+): Promise<{ vector: Uint8Array; source: EmbeddingSource }> {
+  const base = {
+    text: input.text,
+    task: 'RETRIEVAL_DOCUMENT' as const,
+    ...(input.title ? { title: input.title } : {}),
+  };
+  if (input.file) {
+    try {
+      const vector = await embedText(config, { ...base, file: input.file });
+      return { vector, source: 'file+description' };
+    } catch (error) {
+      if (!mediaRejected(error)) throw error;
+      log(
+        `Google rejected the ${input.file.mime} file (${redactString(error instanceof Error ? error.message : 'unknown')}); embedding the description only.`,
+      );
+    }
+  }
+  return { vector: await embedText(config, base), source: 'description' };
 }

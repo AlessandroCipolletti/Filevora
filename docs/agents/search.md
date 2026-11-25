@@ -11,6 +11,7 @@ Body: `query` (required, 1 to 2000 characters, any language), the `GET /files` s
 - Every item has `score` and `file`. Items are sorted by `score` descending.
 - Read `nextCursor`. When it is not null, send it back as `cursor` with the same `query`, `minScore`, `maxResults`, and filters. Anything else is `SEARCH_QUERY_INVALID`.
 - If `meta.capped` is true there were more matches than `maxResults`. Narrow with filters or raise `minScore` or `maxResults`.
+- The vector of an asset covers its description and, when it fits `gemini-embedding-2` limits, a rendition of the file itself (JPEG image, MP4 video, MP3 or WAV audio, PDF up to 6 pages). Other assets are embedded from the description only. The row's `source` is `file+description` or `description`. See the table in [docs/search.md](../search.md).
 - An asset appears only after its description has finished and been embedded. A recently uploaded asset may be missing. After a model or dimension change, run `POST /files/:id/describe` again.
 
 SDK: `client.search('animali che giocano')` or `client.search({ query, type: 'image', minScore: 0.6 })`.

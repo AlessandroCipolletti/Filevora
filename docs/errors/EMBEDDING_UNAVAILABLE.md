@@ -1,6 +1,6 @@
 # EMBEDDING_UNAVAILABLE
 
-A text could not be turned into a vector. Filevora calls the Gemini embedding model (`FILEVORA_EMBEDDING_MODEL`, default `gemini-embedding-001`) once for each new search query, and once for each description when it finishes.
+A text could not be turned into a vector. Filevora calls the Gemini embedding model (`FILEVORA_EMBEDDING_MODEL`, default `gemini-embedding-2`) once for each new search query, and once for each description when it finishes (the file rendition is sent with the description). A file that Google rejects with 400 or 413 is not an error: the description is embedded alone.
 
 Category: `processing`. HTTP 503. Retryable: depends on the cause. Read `retryable` on the error.
 

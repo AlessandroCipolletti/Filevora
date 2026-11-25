@@ -130,7 +130,7 @@ async function publishImageFromPath(
   return names;
 }
 
-async function loadSharp() {
+export async function loadSharp() {
   try {
     const imported = await import('sharp');
     return imported.default;

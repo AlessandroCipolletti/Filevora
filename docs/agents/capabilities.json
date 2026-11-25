@@ -2019,7 +2019,7 @@
       {
         "key": "FILEVORA_EMBEDDING_MODEL",
         "type": "string",
-        "default": "gemini-embedding-001",
+        "default": "gemini-embedding-2",
         "appliesTo": "both"
       },
       {
@@ -2598,7 +2598,7 @@
         "httpStatus": 503,
         "category": "processing",
         "retryable": true,
-        "cause": "Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, returned a 5xx or an unusable vector (retryable), or Google rejected it with 400, 401, 402, or 403 (retryable: false). context.geminiHttpStatus, geminiStatus, geminiMessage, and geminiReason carry Google's answer.",
+        "cause": "Search turns the query, and indexing turns a description with its file rendition, into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, returned a 5xx or an unusable vector (retryable), or Google rejected it with 400, 401, 402, or 403 (retryable: false). context.geminiHttpStatus, geminiStatus, geminiMessage, and geminiReason carry Google's answer.",
         "fix": "For 429, 5xx, a timeout, or a bad vector: retry the search after a short delay. If it keeps failing, check the Gemini quota."
       },
       {

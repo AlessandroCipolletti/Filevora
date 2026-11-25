@@ -15,3 +15,6 @@ packages/filevora/README.md
 examples/**/.next/
 examples/**/dist/
 graphify-out/
+
+# Real sample files for live search calibration (never committed)
+packages/filevora/test/calibration-files/

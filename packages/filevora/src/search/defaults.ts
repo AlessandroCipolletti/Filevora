@@ -1,4 +1,4 @@
-export const DEFAULT_EMBEDDING_MODEL = 'gemini-embedding-001';
+export const DEFAULT_EMBEDDING_MODEL = 'gemini-embedding-2';
 export const DEFAULT_EMBEDDING_DIMENSIONS = 768;
 /** Uncalibrated placeholder. See docs/search.md before relying on it. */
 export const DEFAULT_SEARCH_MIN_SCORE = 0.55;

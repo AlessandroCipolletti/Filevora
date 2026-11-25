@@ -122,7 +122,7 @@ const ENV_DEFAULTS: Record<string, string | number | boolean | null> = {
   FILEVORA_GEMINI_API_KEY: null,
   FILEVORA_DESCRIBE_ASSETS: false,
   FILEVORA_GEMINI_MODEL: 'gemini-3.5-flash-lite',
-  FILEVORA_EMBEDDING_MODEL: 'gemini-embedding-001',
+  FILEVORA_EMBEDDING_MODEL: 'gemini-embedding-2',
   FILEVORA_EMBEDDING_DIMENSIONS: 768,
   FILEVORA_SEARCH_MIN_SCORE: 0.55,
   FILEVORA_SEARCH_MAX_RESULTS: 100,

@@ -19,10 +19,15 @@ import {
 } from '../dist/search/cursor.js';
 import {
   buildCanonicalEmbeddingText,
+  embedDocument,
   embedText,
   normalizeToFloat32Bytes,
   toFloat32,
 } from '../dist/search/embed.js';
+import {
+  EMBED_FILE_LIMITS,
+  prepareEmbeddingFile,
+} from '../dist/search/embed-file.js';
 import { QueryVectorCache } from '../dist/search/query-cache.js';
 import { dot, rankEmbeddings } from '../dist/search/rank.js';
 import { parseListQuery } from '../dist/server/list-query.js';
@@ -84,12 +89,13 @@ function embeddingRows(dir: string) {
   try {
     return db
       .prepare(
-        'SELECT asset_id, model, dimensions, content_hash, length(embedding) AS bytes FROM filevora_asset_embeddings ORDER BY asset_id',
+        'SELECT asset_id, model, dimensions, source, content_hash, length(embedding) AS bytes FROM filevora_asset_embeddings ORDER BY asset_id',
       )
       .all() as Array<{
       asset_id: string;
       model: string;
       dimensions: number;
+      source: string;
       content_hash: string;
       bytes: number;
     }>;
@@ -202,7 +208,7 @@ test('embedText surfaces Google errors and only retries 429 and 5xx', async () =
       await embedText(
         {
           apiKey,
-          embeddingModel: 'gemini-embedding-001',
+          embeddingModel: 'gemini-embedding-2',
           embeddingDimensions: DIMENSIONS,
           retryDelayMs: 0,
           fetchImpl,
@@ -238,7 +244,7 @@ test('embedText surfaces Google errors and only retries 429 and 5xx', async () =
   }
 });
 
-test('embedText sends the documented gemini-embedding-001 request', async () => {
+test('embedText sends the documented gemini-embedding-2 request', async () => {
   const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     requests.push({
@@ -251,8 +257,8 @@ test('embedText sends the documented gemini-embedding-001 request', async () => 
     );
   };
   for (const embeddingModel of [
-    'gemini-embedding-001',
-    'models/gemini-embedding-001',
+    'gemini-embedding-2',
+    'models/gemini-embedding-2',
   ]) {
     requests.length = 0;
     await embedText(
@@ -267,16 +273,94 @@ test('embedText sends the documented gemini-embedding-001 request', async () => 
     );
     assert.equal(
       requests[0]?.url,
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent',
     );
     assert.deepEqual(requests[0]?.body, {
-      model: 'models/gemini-embedding-001',
-      outputDimensionality: DIMENSIONS,
-      content: { parts: [{ text: 'A dog.' }] },
-      taskType: 'RETRIEVAL_DOCUMENT',
-      title: 'dog.txt',
+      model: 'models/gemini-embedding-2',
+      content: { parts: [{ text: 'title: dog.txt | text: A dog.' }] },
+      output_dimensionality: DIMENSIONS,
     });
   }
+});
+
+test('a file and its description go in one request as two parts', async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    return new Response(
+      JSON.stringify({ embedding: { values: mockEmbeddingValues('x') } }),
+      { status: 200 },
+    );
+  };
+  const config = {
+    apiKey: 'k',
+    embeddingModel: 'gemini-embedding-2',
+    embeddingDimensions: DIMENSIONS,
+    retryDelayMs: 0,
+    fetchImpl,
+  };
+  const result = await embedDocument(config, {
+    text: 'A dog on a beach.',
+    title: 'dog.jpg',
+    file: { bytes: new Uint8Array([1, 2, 3]), mime: 'image/jpeg' },
+  });
+  assert.equal(result.source, 'file+description');
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0], {
+    model: 'models/gemini-embedding-2',
+    content: {
+      parts: [
+        { text: 'A dog on a beach.' },
+        { inline_data: { mime_type: 'image/jpeg', data: 'AQID' } },
+      ],
+    },
+    output_dimensionality: DIMENSIONS,
+  });
+  assert.equal('taskType' in requests[0]!, false);
+});
+
+test('embedDocument falls back to the description when Google rejects the file', async () => {
+  const requests: Array<{ parts: number }> = [];
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as {
+      content: { parts: unknown[] };
+    };
+    requests.push({ parts: body.content.parts.length });
+    if (body.content.parts.length > 1) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 400,
+            status: 'INVALID_ARGUMENT',
+            message: 'bad media',
+          },
+        }),
+        { status: 400 },
+      );
+    }
+    return new Response(
+      JSON.stringify({ embedding: { values: mockEmbeddingValues('x') } }),
+      { status: 200 },
+    );
+  };
+  const result = await embedDocument(
+    {
+      apiKey: 'k',
+      embeddingModel: 'gemini-embedding-2',
+      embeddingDimensions: DIMENSIONS,
+      retryDelayMs: 0,
+      fetchImpl,
+    },
+    {
+      text: 'A clip.',
+      file: { bytes: new Uint8Array([1]), mime: 'video/mp4' },
+    },
+    (message) => logs.push(message),
+  );
+  assert.equal(result.source, 'description');
+  assert.deepEqual(requests, [{ parts: 2 }, { parts: 1 }]);
+  assert.match(logs[0] ?? '', /rejected the video\/mp4 file/);
 });
 
 test('dot matches a plain loop for any length', () => {
@@ -380,7 +464,7 @@ test('embedText sends the documented request and never puts the key in the body'
   };
   const config = {
     apiKey: 'secret-key',
-    embeddingModel: 'gemini-embedding-001',
+    embeddingModel: 'gemini-embedding-2',
     embeddingDimensions: 4,
     retryDelayMs: 0,
     fetchImpl,
@@ -396,17 +480,20 @@ test('embedText sends the documented request and never puts the key in the body'
     { text: 'cani', task: 'RETRIEVAL_QUERY' },
   );
   const documentBody = JSON.parse(requests[0]!.body);
-  assert.match(requests[0]!.url, /models\/gemini-embedding-001:embedContent$/);
-  assert.equal(documentBody.taskType, 'RETRIEVAL_DOCUMENT');
-  assert.equal(documentBody.title, 'dog.png');
-  assert.equal(documentBody.outputDimensionality, 4);
-  assert.equal(documentBody.model, 'models/gemini-embedding-001');
+  assert.match(requests[0]!.url, /models\/gemini-embedding-2:embedContent$/);
+  assert.equal('taskType' in documentBody, false);
+  assert.equal('title' in documentBody, false);
+  assert.equal(documentBody.output_dimensionality, 4);
+  assert.equal(documentBody.model, 'models/gemini-embedding-2');
+  assert.equal(
+    documentBody.content.parts[0].text,
+    'title: dog.png | text: A dog.',
+  );
   const queryBody = JSON.parse(requests[1]!.body);
-  assert.equal(queryBody.taskType, 'RETRIEVAL_QUERY');
-  assert.equal('title' in queryBody, false);
-  const v2 = JSON.parse(requests[2]!.body);
-  assert.equal('taskType' in v2, false);
-  assert.match(v2.content.parts[0].text, /^task: search result \| query: cani/);
+  assert.equal(
+    queryBody.content.parts[0].text,
+    'task: search result | query: cani',
+  );
   for (const request of requests) {
     assert.equal(request.body.includes('secret-key'), false);
     assert.deepEqual(request.headers, {
@@ -427,7 +514,7 @@ test('the schema, config and env defaults expose the search settings', () => {
     /embedding BYTEA NOT NULL/,
   );
   const defaults = resolveConfig({}, {});
-  assert.equal(defaults.gemini.embeddingModel, 'gemini-embedding-001');
+  assert.equal(defaults.gemini.embeddingModel, 'gemini-embedding-2');
   assert.equal(defaults.gemini.embeddingDimensions, 768);
   assert.equal(defaults.gemini.searchMinScore, 0.55);
   assert.equal(defaults.gemini.searchMaxResults, 100);
@@ -473,7 +560,7 @@ withFiles(
     const rows = embeddingRows(dir);
     assert.equal(rows.length, 4);
     for (const row of rows) {
-      assert.equal(row.model, 'gemini-embedding-001');
+      assert.equal(row.model, 'gemini-embedding-2');
       assert.equal(row.dimensions, 768);
       assert.equal(row.bytes, 768 * 4);
       assert.equal(row.content_hash.length, 64);
@@ -495,7 +582,7 @@ withFiles(
     assert.ok(!ids.includes(invoice.id) && !ids.includes(beach.id));
     assert.equal(found.nextCursor, null);
     assert.deepEqual(found.meta, {
-      model: 'gemini-embedding-001',
+      model: 'gemini-embedding-2',
       dimensions: 768,
       minScore: 0.55,
       maxResults: 100,
@@ -1095,7 +1182,7 @@ withFiles('chunked scanning ranks the same as one pass', async ({ files }) => {
   const bytes = await embedText(
     {
       apiKey: 'test-key',
-      embeddingModel: 'gemini-embedding-001',
+      embeddingModel: 'gemini-embedding-2',
       embeddingDimensions: 768,
       retryDelayMs: 0,
       fetchImpl: createMockGemini().fetchImpl,
@@ -1105,7 +1192,7 @@ withFiles('chunked scanning ranks the same as one pass', async ({ files }) => {
   const base = {
     sql,
     tenantId: principal.tenantId,
-    model: 'gemini-embedding-001',
+    model: 'gemini-embedding-2',
     dimensions: 768,
     queryVector: toFloat32(bytes),
     filters: parseListQuery({}, resolveConfig({}, {})),
@@ -1165,4 +1252,263 @@ test('retention that removes bytes also removes the embedding', async () => {
     await files.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+async function uploadBinary(
+  files: ReturnType<typeof createFiles>,
+  filename: string,
+  mimeType: string,
+  body: Uint8Array,
+) {
+  const session = await files.createUploadSession(
+    { filename, mimeType, bytes: body.byteLength, describe: true },
+    { principal },
+  );
+  const chunk = 64 * 1024;
+  for (let at = 0, part = 1; at < body.byteLength; at += chunk, part += 1) {
+    await files.writePart(session.id, part, body.subarray(at, at + chunk), {
+      principal,
+    });
+  }
+  return files.completeUpload(session.id, {}, { principal });
+}
+
+async function bigPng(width: number, height: number) {
+  const sharp = (await import('sharp')).default;
+  return new Uint8Array(
+    await sharp({
+      create: {
+        width,
+        height,
+        channels: 3,
+        background: { r: 200, g: 120, b: 40 },
+      },
+    })
+      .png()
+      .toBuffer(),
+  );
+}
+
+async function pdfWithPages(pages: number) {
+  const { PDFDocument } = await import('pdf-lib');
+  const pdf = await PDFDocument.create();
+  for (let i = 0; i < pages; i += 1) pdf.addPage();
+  return new Uint8Array(await pdf.save());
+}
+
+withFiles(
+  'an image is embedded as a JPEG rendition together with its description',
+  async ({ dir, gemini, files }) => {
+    const image = await uploadBinary(
+      files,
+      'hill.png',
+      'image/png',
+      await bigPng(3000, 2000),
+    );
+    assert.equal(image.description?.status, 'done');
+    const calls = gemini.embedCalls.filter(
+      (call) => call.task !== 'RETRIEVAL_QUERY',
+    );
+    assert.equal(calls.length, 1);
+    const call = calls[0]!;
+    assert.equal(call.file?.mime, 'image/jpeg');
+    assert.ok(call.file!.bytes > 0);
+    const parts = (
+      call.body.content as {
+        parts: Array<{
+          text?: string;
+          inline_data?: { data: string };
+        }>;
+      }
+    ).parts;
+    assert.equal(parts.length, 2);
+    assert.match(parts[0]!.text ?? '', /calm landscape/);
+    assert.equal('taskType' in call.body, false);
+    const sharp = (await import('sharp')).default;
+    const meta = await sharp(
+      Buffer.from(parts[1]!.inline_data!.data, 'base64'),
+    ).metadata();
+    assert.equal(meta.format, 'jpeg');
+    assert.equal(
+      Math.max(meta.width ?? 0, meta.height ?? 0),
+      EMBED_FILE_LIMITS.imageLongEdge,
+    );
+    assert.deepEqual(
+      embeddingRows(dir).map((row) => [row.source, row.model]),
+      [['file+description', 'gemini-embedding-2']],
+    );
+    const found = await files.search({ query: 'landscape' }, { principal });
+    assert.equal(found.meta.model, 'gemini-embedding-2');
+  },
+);
+
+withFiles(
+  'a text file is embedded from its description only',
+  async ({ dir, gemini, files }) => {
+    await uploadText(files, 'dog.txt', 'A dog plays in the park.');
+    const call = gemini.embedCalls.find(
+      (entry) => entry.task !== 'RETRIEVAL_QUERY',
+    );
+    assert.equal(call?.file, undefined);
+    assert.equal((call?.body.content as { parts: unknown[] }).parts.length, 1);
+    assert.deepEqual(
+      embeddingRows(dir).map((row) => row.source),
+      ['description'],
+    );
+  },
+);
+
+withFiles(
+  'a PDF within the page limit is sent as is, a longer one falls back',
+  async ({ dir, gemini, files }) => {
+    const short = await uploadBinary(
+      files,
+      'short.pdf',
+      'application/pdf',
+      await pdfWithPages(2),
+    );
+    const long = await uploadBinary(
+      files,
+      'long.pdf',
+      'application/pdf',
+      await pdfWithPages(EMBED_FILE_LIMITS.pdfPages + 1),
+    );
+    const bySource = new Map(
+      embeddingRows(dir).map((row) => [row.asset_id, row.source]),
+    );
+    assert.equal(bySource.get(short.id), 'file+description');
+    assert.equal(bySource.get(long.id), 'description');
+    const files2 = gemini.embedCalls
+      .filter((call) => call.file)
+      .map((call) => call.file?.mime);
+    assert.deepEqual(files2, ['application/pdf']);
+  },
+);
+
+withFiles(
+  'a file Google rejects is embedded as its description and logged',
+  async ({ dir, gemini, files }) => {
+    gemini.embedFailureFor = (mime) => (mime ? { status: 400 } : undefined);
+    const image = await uploadBinary(
+      files,
+      'hill.png',
+      'image/png',
+      await bigPng(64, 64),
+    );
+    assert.equal(image.description?.status, 'done');
+    assert.equal(gemini.embedCalls.length, 2);
+    assert.deepEqual(
+      embeddingRows(dir).map((row) => row.source),
+      ['description'],
+    );
+  },
+);
+
+test('prepareEmbeddingFile renders images and explains every fallback', async () => {
+  const sharp = (await import('sharp')).default;
+  const base = { ffprobePath: 'ffprobe-does-not-exist', maxPixels: 40_000_000 };
+  const webp = new Uint8Array(
+    await sharp({
+      create: {
+        width: 2000,
+        height: 500,
+        channels: 3,
+        background: '#336699',
+      },
+    })
+      .webp()
+      .toBuffer(),
+  );
+  const jpeg = await prepareEmbeddingFile({
+    ...base,
+    bytes: webp,
+    mime: 'image/webp',
+  });
+  assert.ok('file' in jpeg);
+  assert.equal(jpeg.file.mime, 'image/jpeg');
+  assert.equal((await sharp(jpeg.file.bytes).metadata()).width, 1024);
+
+  const transparent = new Uint8Array(
+    await sharp({
+      create: {
+        width: 40,
+        height: 40,
+        channels: 4,
+        background: { r: 255, g: 0, b: 0, alpha: 0.4 },
+      },
+    })
+      .png()
+      .toBuffer(),
+  );
+  const png = await prepareEmbeddingFile({
+    ...base,
+    bytes: transparent,
+    mime: 'image/png',
+  });
+  assert.ok('file' in png);
+  assert.equal(png.file.mime, 'image/png');
+
+  const broken = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array([1, 2, 3]),
+    mime: 'image/heic',
+  });
+  assert.ok('reason' in broken);
+  assert.match(broken.reason, /^image rendition failed/);
+
+  const text = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array(1),
+    mime: 'text/plain',
+  });
+  assert.ok('reason' in text);
+
+  const m4a = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array(1),
+    mime: 'audio/mp4',
+  });
+  assert.ok('reason' in m4a);
+  assert.match(m4a.reason, /not MP3 or WAV/);
+
+  const longAudio = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array(10),
+    mime: 'audio/mpeg',
+    durationMs: 181_000,
+  });
+  assert.ok('reason' in longAudio);
+  assert.match(longAudio.reason, /limit is 180 s/);
+
+  const longVideo = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array(10),
+    mime: 'video/mp4',
+    durationMs: 121_000,
+  });
+  assert.ok('reason' in longVideo);
+
+  const okVideo = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array(10),
+    mime: 'video/mp4',
+    durationMs: 60_000,
+  });
+  assert.ok('file' in okVideo);
+  assert.equal(okVideo.file.mime, 'video/mp4');
+
+  const bigAudio = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array(EMBED_FILE_LIMITS.maxFileBytes + 1),
+    mime: 'audio/wav',
+    durationMs: 10_000,
+  });
+  assert.ok('reason' in bigAudio);
+
+  const unprobeable = await prepareEmbeddingFile({
+    ...base,
+    bytes: new Uint8Array(10),
+    mime: 'audio/wav',
+  });
+  assert.ok('reason' in unprobeable, 'an original with no ffprobe falls back');
 });

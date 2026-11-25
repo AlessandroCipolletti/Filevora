@@ -935,7 +935,7 @@ export const ERROR_CATALOG = {
       'The Gemini embedding call failed. Retry 429, 5xx, and timeouts with backoff; a 400 to 403 is a key, billing, or permission problem and is not retryable.',
     resolution: resolution(
       'docs/errors/EMBEDDING_UNAVAILABLE.md',
-      "Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, returned a 5xx or an unusable vector (retryable), or Google rejected it with 400, 401, 402, or 403 (retryable: false). context.geminiHttpStatus, geminiStatus, geminiMessage, and geminiReason carry Google's answer.",
+      "Search turns the query, and indexing turns a description with its file rendition, into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, returned a 5xx or an unusable vector (retryable), or Google rejected it with 400, 401, 402, or 403 (retryable: false). context.geminiHttpStatus, geminiStatus, geminiMessage, and geminiReason carry Google's answer.",
       [
         action(
           'retry_search',

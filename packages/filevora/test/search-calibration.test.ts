@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import { DEFAULT_SEARCH_MIN_SCORE } from '../dist/search/defaults.js';
 import {
   buildCanonicalEmbeddingText,
+  embedDocument,
   embedText,
   toFloat32,
 } from '../dist/search/embed.js';
+import { prepareEmbeddingFile } from '../dist/search/embed-file.js';
 import { dot } from '../dist/search/rank.js';
 import { createMockGemini } from './search-helpers.ts';
 
@@ -20,6 +23,7 @@ interface Fixture {
     short: string;
     long: string;
     tags: Array<[string, string]>;
+    file?: { bytes: Uint8Array; mime: string };
   }>;
   queries: Array<{ text: string; relevant: string[] }>;
 }
@@ -39,6 +43,7 @@ async function report(
   subject: Fixture = fixture,
 ) {
   const documents = new Map<string, Float32Array>();
+  const sources: string[] = [];
   for (const asset of subject.assets) {
     const canonical = buildCanonicalEmbeddingText({
       assetType: asset.assetType,
@@ -48,16 +53,17 @@ async function report(
       descriptionLong: asset.long,
       tags: asset.tags.map(([category, tag]) => ({ category, tag })),
     });
-    documents.set(
-      asset.id,
-      toFloat32(
-        await embedText(config, {
-          text: canonical.text,
-          title: canonical.title,
-          task: 'RETRIEVAL_DOCUMENT',
-        }),
-      ),
+    const embedded = await embedDocument(
+      config,
+      {
+        text: canonical.text,
+        title: canonical.title,
+        ...(asset.file ? { file: asset.file } : {}),
+      },
+      (message) => console.log(`  ${asset.id}: ${message}`),
     );
+    sources.push(embedded.source);
+    documents.set(asset.id, toFloat32(embedded.vector));
   }
   const scores: Array<{ relevant: string[]; scored: Array<[string, number]> }> =
     [];
@@ -73,7 +79,7 @@ async function report(
       ]),
     });
   }
-  return THRESHOLDS.map((threshold) => {
+  const rows = THRESHOLDS.map((threshold) => {
     let truePositive = 0;
     let returned = 0;
     let relevant = 0;
@@ -91,15 +97,23 @@ async function report(
       recall: relevant === 0 ? 1 : truePositive / relevant,
     };
   });
+  return Object.assign(rows, { sources });
 }
 
 function table(rows: Awaited<ReturnType<typeof report>>) {
-  return rows
-    .map(
-      (row) =>
-        `minScore ${row.threshold.toFixed(2)}  precision ${row.precision.toFixed(2)}  recall ${row.recall.toFixed(2)}`,
-    )
-    .join('\n');
+  const withFile = rows.sources.filter(
+    (source) => source === 'file+description',
+  ).length;
+  const sources = `Embedded as file+description: ${withFile} of ${rows.sources.length}; description only: ${rows.sources.length - withFile}.\n`;
+  return (
+    sources +
+    rows
+      .map(
+        (row) =>
+          `minScore ${row.threshold.toFixed(2)}  precision ${row.precision.toFixed(2)}  recall ${row.recall.toFixed(2)}`,
+      )
+      .join('\n')
+  );
 }
 
 // The mock only models three concept clusters (animals, invoices, beach or sunset).
@@ -141,7 +155,7 @@ test('calibration fixture is well formed', () => {
 test('calibration harness on the MOCK embedding model (does not validate the 0.55 default)', async () => {
   const mock = {
     apiKey: 'test-key',
-    embeddingModel: 'gemini-embedding-001',
+    embeddingModel: 'gemini-embedding-2',
     embeddingDimensions: 768,
     retryDelayMs: 0,
     fetchImpl: createMockGemini().fetchImpl,
@@ -173,12 +187,132 @@ test(
   async () => {
     const rows = await report({
       apiKey: liveKey as string,
-      embeddingModel: 'gemini-embedding-001',
+      embeddingModel: 'gemini-embedding-2',
       embeddingDimensions: 768,
       retryDelayMs: 500,
     });
     console.log(
-      `Calibration fixture: ${fixture.label}\nEmbeddings: LIVE gemini-embedding-001 @ 768.\n${table(rows)}`,
+      `Calibration fixture: ${fixture.label}\nEmbeddings: LIVE gemini-embedding-2 @ 768 (descriptions only).\n${table(rows)}`,
+    );
+  },
+);
+
+interface FilesLabels {
+  assets: Array<{
+    file: string;
+    short: string;
+    long: string;
+    name?: string;
+    tags?: Array<[string, string]>;
+  }>;
+  queries: Array<{ text: string; relevant: string[] }>;
+}
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.heic': 'image/heic',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+};
+
+function assetTypeOf(mime: string): string {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
+/** Reads real files and a labels.json from a folder, rendering each file like production does. */
+async function loadFilesFixture(dir: string): Promise<Fixture> {
+  const labels = JSON.parse(
+    readFileSync(path.join(dir, 'labels.json'), 'utf8'),
+  ) as FilesLabels;
+  const assets: Fixture['assets'] = [];
+  for (const entry of labels.assets) {
+    const mime =
+      MIME_BY_EXTENSION[path.extname(entry.file).toLowerCase()] ??
+      'application/octet-stream';
+    const prepared = await prepareEmbeddingFile({
+      bytes: new Uint8Array(readFileSync(path.join(dir, entry.file))),
+      mime,
+      ffprobePath: process.env.FILEVORA_FFPROBE_PATH ?? 'ffprobe',
+      maxPixels: 40_000_000,
+    });
+    console.log(
+      'file' in prepared
+        ? `  ${entry.file}: rendition ${prepared.rendition} (${prepared.file.bytes.byteLength} bytes)`
+        : `  ${entry.file}: description only (${prepared.reason})`,
+    );
+    assets.push({
+      id: entry.file,
+      assetType: assetTypeOf(mime),
+      mime,
+      name: entry.name ?? entry.file,
+      short: entry.short,
+      long: entry.long,
+      tags: entry.tags ?? [],
+      ...('file' in prepared ? { file: prepared.file } : {}),
+    });
+  }
+  return {
+    label: `real files from FILEVORA_CALIBRATION_FILES_DIR (${assets.length} assets)`,
+    assets,
+    queries: labels.queries,
+  };
+}
+
+test('the example labels file matches the loader format', () => {
+  const example = JSON.parse(
+    readFileSync(
+      new URL(
+        './fixtures/calibration-files.labels.example.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ) as FilesLabels;
+  const files = example.assets.map((asset) => asset.file);
+  assert.equal(new Set(files).size, files.length);
+  for (const query of example.queries) {
+    for (const file of query.relevant) assert.ok(files.includes(file));
+  }
+});
+
+const filesDir = process.env.FILEVORA_CALIBRATION_FILES_DIR;
+
+test(
+  'calibration with real files and descriptions',
+  {
+    skip:
+      liveKey && filesDir && existsSync(path.join(filesDir, 'labels.json'))
+        ? false
+        : 'Set FILEVORA_CALIBRATION_GEMINI_KEY and FILEVORA_CALIBRATION_FILES_DIR (a folder with labels.json).',
+  },
+  async () => {
+    const subject = await loadFilesFixture(filesDir as string);
+    const rows = await report(
+      {
+        apiKey: liveKey as string,
+        embeddingModel: 'gemini-embedding-2',
+        embeddingDimensions: 768,
+        retryDelayMs: 500,
+      },
+      subject,
+    );
+    console.log(
+      `Calibration: ${subject.label}\nEmbeddings: LIVE gemini-embedding-2 @ 768, files plus descriptions.\n${table(rows)}`,
     );
   },
 );

@@ -208,7 +208,7 @@ const page = await files.list({ type: 'image', sort: 'created', order: 'desc', l
 const next = page.nextCursor ? await files.list({ type: 'image', cursor: page.nextCursor }, ctx) : null;
 ```
 
-**`search(input, ctx): Promise<SearchFilesPage>`** runs semantic search over described assets. `input` (`SearchFilesInput`) is `{ query, minScore?, maxResults?, limit?, cursor? }` plus the list filters. Each hit has a `score`. Errors: `DESCRIPTION_REQUIRES_DATABASE`, `DESCRIPTION_NOT_CONFIGURED`, `SEARCH_QUERY_INVALID`, `EMBEDDING_UNAVAILABLE`. See [docs/search.md](docs/search.md).
+**`search(input, ctx): Promise<SearchFilesPage>`** runs semantic search over described assets. Each asset is embedded with `gemini-embedding-2` from its description plus a rendition of the file itself where Google accepts one (see the table in [docs/search.md](docs/search.md)), and the text prompt is embedded with the same model at query time. `input` (`SearchFilesInput`) is `{ query, minScore?, maxResults?, limit?, cursor? }` plus the list filters. Each hit has a `score`. Errors: `DESCRIPTION_REQUIRES_DATABASE`, `DESCRIPTION_NOT_CONFIGURED`, `SEARCH_QUERY_INVALID`, `EMBEDDING_UNAVAILABLE`. See [docs/search.md](docs/search.md).
 
 ```ts
 const hits = await files.search({ query: 'a red bicycle at night', type: 'image', limit: 10 }, ctx);
