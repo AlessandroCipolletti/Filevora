@@ -18,8 +18,11 @@
     "manifest": "node --experimental-strip-types scripts/generate-manifest.ts",
     "manifest:check": "node --experimental-strip-types scripts/generate-manifest.ts --check",
     "ci": "pnpm typecheck && pnpm lint && pnpm knip && pnpm circular && pnpm manifest:check",
-    "test": "pnpm build && pnpm --filter filevora test",
-    "verify": "pnpm run ci && pnpm --filter filevora test",
+    "test": "pnpm build && pnpm --filter filevora test && pnpm test:scripts",
+    "test:scripts": "node --experimental-strip-types --test --test-reporter=spec \"scripts/*.test.ts\"",
+    "release": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/release.ts",
+    "release:dry": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/release.ts --dry-run",
+    "verify": "pnpm run ci && pnpm --filter filevora test && pnpm test:scripts",
     "prepare": "husky"
   },
   "devDependencies": {

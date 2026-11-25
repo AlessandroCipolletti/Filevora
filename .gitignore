@@ -7,11 +7,14 @@ dist/
 .env
 .env.*
 !.env.example
+.env.release.local
+!.env.release.local.example
 coverage/
 .DS_Store
 .pnpm-store/
 *.log
 packages/filevora/README.md
+packages/filevora/LICENSE
 examples/**/.next/
 examples/**/dist/
 graphify-out/

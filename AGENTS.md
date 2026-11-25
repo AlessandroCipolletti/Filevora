@@ -62,4 +62,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M0–M11 are in the tree. Follow-up work added GitHub Actions, gated networked S3 and Postgres tests, PDF page previews, and a conditional FFmpeg WebP poster. The package has not been published. Alessandro still needs to confirm the npm name `filevora` before any publish.
+M0–M11 are in the tree. Follow-up work added GitHub Actions, gated networked S3 and Postgres tests, PDF page previews, and a conditional FFmpeg WebP poster. The package has not been published. Alessandro still needs to confirm the npm name `filevora` before any publish. Publishing is one maintainer command, `pnpm release` (see `docs/releasing.md`). Agents must never run it, and never read or write `.env.release.local`.

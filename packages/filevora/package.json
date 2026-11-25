@@ -35,8 +35,12 @@
     "dist",
     "bin",
     "capabilities.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "exports": {
     "./server": {
@@ -114,7 +118,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && vite build && cp ../../README.md ./README.md",
+    "build": "rm -rf dist && vite build && cp ../../README.md ./README.md && cp ../../LICENSE ./LICENSE",
     "dev": "vite build --watch",
     "dev:client": "vite",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
