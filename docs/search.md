@@ -91,7 +91,7 @@ FILEVORA_CALIBRATION_GEMINI_KEY=... FILEVORA_CALIBRATION_FILES_DIR=test/calibrat
   node --experimental-strip-types --test test/search-calibration.test.ts
 ```
 
-Each file goes through the same renditions as above and is embedded with its description. The table also prints how many assets were embedded as `file+description` and which fell back, with the reason. `ffprobe` must be on the path for audio and video files that are not already renditions.
+Each file goes through the same renditions as above and is embedded with its description. The table also prints how many assets were embedded as `file+description` and which fell back, with the reason. `ffprobe` must be on the path (or set `FILES_FFPROBE_PATH`) for audio and video files, because the harness has no stored renditions.
 
 ## Indexing lifecycle
 

@@ -247,7 +247,7 @@ async function loadFilesFixture(dir: string): Promise<Fixture> {
     const prepared = await prepareEmbeddingFile({
       bytes: new Uint8Array(readFileSync(path.join(dir, entry.file))),
       mime,
-      ffprobePath: process.env.FILEVORA_FFPROBE_PATH ?? 'ffprobe',
+      ffprobePath: process.env.FILES_FFPROBE_PATH ?? 'ffprobe',
       maxPixels: 40_000_000,
     });
     console.log(
