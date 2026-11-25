@@ -2598,8 +2598,8 @@
         "httpStatus": 503,
         "category": "processing",
         "retryable": true,
-        "cause": "Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, or returned an unusable vector.",
-        "fix": "Retry the search after a short delay. If it keeps failing, check FILEVORA_GEMINI_API_KEY, FILEVORA_EMBEDDING_MODEL, and the Gemini quota."
+        "cause": "Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, returned a 5xx or an unusable vector (retryable), or Google rejected it with 400, 401, 402, or 403 (retryable: false). context.geminiHttpStatus, geminiStatus, geminiMessage, and geminiReason carry Google's answer.",
+        "fix": "For 429, 5xx, a timeout, or a bad vector: retry the search after a short delay. If it keeps failing, check the Gemini quota."
       },
       {
         "code": "DELIVERY_NOT_FOUND",

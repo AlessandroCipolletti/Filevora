@@ -149,19 +149,67 @@ async function deleteFile(
   }).catch(() => undefined);
 }
 
+/** A non-2xx Gemini response, with the fields of Google's JSON error body when present. */
+export class GeminiHttpError extends Error {
+  readonly httpStatus: number;
+  readonly googleStatus?: string;
+  readonly googleMessage?: string;
+  readonly googleReason?: string;
+
+  constructor(init: {
+    httpStatus: number;
+    googleStatus?: string;
+    googleMessage?: string;
+    googleReason?: string;
+  }) {
+    super(`Gemini returned ${init.httpStatus}.`);
+    this.name = 'GeminiHttpError';
+    this.httpStatus = init.httpStatus;
+    if (init.googleStatus) this.googleStatus = init.googleStatus;
+    if (init.googleMessage) this.googleMessage = init.googleMessage;
+    if (init.googleReason) this.googleReason = init.googleReason;
+  }
+}
+
+/** Retries 429 and 5xx with backoff; any other non-2xx stops at once. */
 export async function withRetry(
   input: { retryDelayMs?: number },
   send: () => Promise<Response>,
 ): Promise<Response> {
-  let last = 'Gemini did not respond.';
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; ; attempt += 1) {
     const response = await send();
     if (response.ok) return response;
-    last = `Gemini returned ${response.status}.`;
-    if (response.status !== 429 && response.status < 500) break;
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === 2) {
+      throw await geminiHttpError(response);
+    }
     await delay(input.retryDelayMs ?? 200 * 2 ** attempt);
   }
-  throw new Error(redactString(last));
+}
+
+async function geminiHttpError(response: Response): Promise<GeminiHttpError> {
+  let body: unknown;
+  try {
+    body = JSON.parse(await response.text());
+  } catch {
+    body = undefined;
+  }
+  const error = (body as { error?: Record<string, unknown> } | undefined)
+    ?.error;
+  const details = Array.isArray(error?.details) ? error.details : [];
+  const reason = details
+    .map((entry) => (entry as { reason?: unknown } | null)?.reason)
+    .find((value): value is string => typeof value === 'string');
+  return new GeminiHttpError({
+    httpStatus: response.status,
+    ...(typeof error?.status === 'string'
+      ? { googleStatus: redactString(error.status) }
+      : {}),
+    ...(typeof error?.message === 'string'
+      ? { googleMessage: redactString(error.message) }
+      : {}),
+    ...(reason ? { googleReason: redactString(reason) } : {}),
+  });
 }
 
 function delay(ms: number): Promise<void> {

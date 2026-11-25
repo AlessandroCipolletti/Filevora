@@ -136,6 +136,149 @@ test('normalizeToFloat32Bytes returns a unit little-endian vector and rejects ba
   }
 });
 
+test('embedText surfaces Google errors and only retries 429 and 5xx', async () => {
+  const apiKey = 'AIzaSyTestKeyThatMustNeverLeak0123456789';
+  const cases = [
+    {
+      status: 400,
+      body: {
+        error: {
+          code: 400,
+          message: `API key not valid. Please pass a valid API key. ${apiKey}`,
+          status: 'INVALID_ARGUMENT',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'API_KEY_INVALID',
+            },
+          ],
+        },
+      },
+      retryable: false,
+      calls: 1,
+      hint: /FILEVORA_GEMINI_API_KEY/,
+    },
+    {
+      status: 402,
+      body: {
+        error: {
+          code: 402,
+          message: 'Your prepayment credits are depleted.',
+          status: 'PAYMENT_REQUIRED',
+        },
+      },
+      retryable: false,
+      calls: 1,
+      hint: /billing/i,
+    },
+    {
+      status: 429,
+      body: {
+        error: {
+          code: 429,
+          message: 'Resource has been exhausted (e.g. check quota).',
+          status: 'RESOURCE_EXHAUSTED',
+        },
+      },
+      retryable: true,
+      calls: 3,
+      hint: /Retry with backoff/,
+    },
+  ];
+  for (const entry of cases) {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      requests.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return new Response(JSON.stringify(entry.body), {
+        status: entry.status,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    let caught: unknown;
+    try {
+      await embedText(
+        {
+          apiKey,
+          embeddingModel: 'gemini-embedding-001',
+          embeddingDimensions: DIMENSIONS,
+          retryDelayMs: 0,
+          fetchImpl,
+        },
+        { text: 'dogs', task: 'RETRIEVAL_QUERY' },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    assert.ok(caught instanceof FileSdkError, String(caught));
+    assert.equal(caught.code, 'EMBEDDING_UNAVAILABLE');
+    assert.equal(
+      caught.retryable,
+      entry.retryable,
+      `retryable ${entry.status}`,
+    );
+    assert.equal(requests.length, entry.calls, `attempts ${entry.status}`);
+    assert.match(
+      caught.message,
+      new RegExp(`${entry.status} ${entry.body.error.status}`),
+    );
+    assert.match(caught.message, entry.hint);
+    assert.equal(caught.context?.geminiHttpStatus, entry.status);
+    assert.equal(caught.context?.geminiStatus, entry.body.error.status);
+    assert.match(
+      String(caught.context?.geminiMessage),
+      new RegExp(entry.body.error.message.slice(0, 12)),
+    );
+    const serialized = JSON.stringify(caught.toJSON()) + caught.message;
+    assert.equal(serialized.includes(apiKey), false, 'key never leaks');
+    assert.equal(serialized.includes('generativelanguage'), false, 'no URL');
+    assert.equal(requests[0]?.url.includes(apiKey), false);
+  }
+});
+
+test('embedText sends the documented gemini-embedding-001 request', async () => {
+  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    requests.push({
+      url: String(input),
+      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    });
+    return new Response(
+      JSON.stringify({ embedding: { values: mockEmbeddingValues('x') } }),
+      { status: 200 },
+    );
+  };
+  for (const embeddingModel of [
+    'gemini-embedding-001',
+    'models/gemini-embedding-001',
+  ]) {
+    requests.length = 0;
+    await embedText(
+      {
+        apiKey: 'k',
+        embeddingModel,
+        embeddingDimensions: DIMENSIONS,
+        retryDelayMs: 0,
+        fetchImpl,
+      },
+      { text: 'A dog.', task: 'RETRIEVAL_DOCUMENT', title: 'dog.txt' },
+    );
+    assert.equal(
+      requests[0]?.url,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent',
+    );
+    assert.deepEqual(requests[0]?.body, {
+      model: 'models/gemini-embedding-001',
+      outputDimensionality: DIMENSIONS,
+      content: { parts: [{ text: 'A dog.' }] },
+      taskType: 'RETRIEVAL_DOCUMENT',
+      title: 'dog.txt',
+    });
+  }
+});
+
 test('dot matches a plain loop for any length', () => {
   for (const length of [1, 3, 4, 7, 768]) {
     const left = Float32Array.from({ length }, (_, i) => Math.sin(i + 1));

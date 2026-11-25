@@ -932,14 +932,26 @@ export const ERROR_CATALOG = {
     category: 'processing',
     retryable: true,
     message:
-      'The search query could not be embedded. Retry with backoff; the Gemini embedding call failed or was rate limited.',
+      'The Gemini embedding call failed. Retry 429, 5xx, and timeouts with backoff; a 400 to 403 is a key, billing, or permission problem and is not retryable.',
     resolution: resolution(
       'docs/errors/EMBEDDING_UNAVAILABLE.md',
-      'Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, or returned an unusable vector.',
+      "Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, returned a 5xx or an unusable vector (retryable), or Google rejected it with 400, 401, 402, or 403 (retryable: false). context.geminiHttpStatus, geminiStatus, geminiMessage, and geminiReason carry Google's answer.",
       [
         action(
           'retry_search',
-          'Retry the search after a short delay. If it keeps failing, check FILEVORA_GEMINI_API_KEY, FILEVORA_EMBEDDING_MODEL, and the Gemini quota.',
+          'For 429, 5xx, a timeout, or a bad vector: retry the search after a short delay. If it keeps failing, check the Gemini quota.',
+        ),
+        action(
+          'fix_gemini_key',
+          'For 400 (usually reason API_KEY_INVALID) or 401: set a valid FILEVORA_GEMINI_API_KEY. If geminiMessage names a field instead, check FILEVORA_EMBEDDING_MODEL and FILEVORA_EMBEDDING_DIMENSIONS.',
+        ),
+        action(
+          'enable_gemini_billing',
+          'For 402: enable billing or add credit for the Google project that owns the key.',
+        ),
+        action(
+          'enable_gemini_api',
+          'For 403: enable the Generative Language API for the key project, lift any key restriction that blocks it, and check FILEVORA_EMBEDDING_MODEL.',
         ),
       ],
       doctor,

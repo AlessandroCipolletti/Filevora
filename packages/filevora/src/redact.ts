@@ -1,7 +1,7 @@
 const SECRET_KEY =
   /key|secret|token|password|authorization|credential|postgres|connectionstring|cookie/i;
 const SECRET_VALUE =
-  /(?:sk-[A-Za-z0-9_-]{8,}|AKIA[0-9A-Z]{16}|Bearer\s+[A-Za-z0-9._~+/-]+=*|postgres(?:ql)?:\/\/[^:\s]+:[^@\s]+@)/gi;
+  /(?:sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|Bearer\s+[A-Za-z0-9._~+/-]+=*|postgres(?:ql)?:\/\/[^:\s]+:[^@\s]+@)/gi;
 
 const MAX_STRING = 180;
 const MAX_DEPTH = 6;

@@ -1,5 +1,5 @@
 import type { ResolvedConfig } from '../config/load.js';
-import { withRetry } from '../descriptions/gemini.js';
+import { GeminiHttpError, withRetry } from '../descriptions/gemini.js';
 import { fail, isFileSdkError } from '../errors/error.js';
 import { sha256 } from '../ids.js';
 import { redactString } from '../redact.js';
@@ -114,16 +114,22 @@ export function buildCanonicalEmbeddingText(input: CanonicalEmbeddingInput): {
   };
 }
 
+/** Accept `gemini-embedding-001` or the resource form `models/gemini-embedding-001`. */
+function modelId(config: EmbedConfig): string {
+  return config.embeddingModel.trim().replace(/^models\//, '');
+}
+
 function embedRequestBody(
   config: EmbedConfig,
   input: { text: string; task: EmbedTask; title?: string },
 ): Record<string, unknown> {
+  const model = modelId(config);
   const base = {
-    model: `models/${config.embeddingModel}`,
+    model: `models/${model}`,
     outputDimensionality: config.embeddingDimensions,
   };
   // gemini-embedding-2 has no taskType field; the task goes into the text.
-  if (/^gemini-embedding-2/.test(config.embeddingModel)) {
+  if (/^gemini-embedding-2/.test(model)) {
     const text =
       input.task === 'RETRIEVAL_QUERY'
         ? `task: search result | query: ${input.text}`
@@ -146,7 +152,7 @@ export async function embedText(
   input: { text: string; task: EmbedTask; title?: string },
 ): Promise<Uint8Array> {
   const fetchImpl = config.fetchImpl ?? fetch;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.embeddingModel)}:embedContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId(config))}:embedContent`;
   try {
     const response = await withRetry(config, () =>
       fetchImpl(url, {
@@ -172,9 +178,46 @@ export async function embedText(
     );
   } catch (error) {
     if (isFileSdkError(error)) throw error;
+    if (error instanceof GeminiHttpError) {
+      throw embeddingHttpFailure(error, config.apiKey);
+    }
     const detail = error instanceof Error ? error.message : 'Unknown failure.';
     throw fail('EMBEDDING_UNAVAILABLE', {
       message: `The embedding call failed: ${redactString(detail)} Retry with backoff.`,
     });
   }
+}
+
+const PERMANENT_HINTS: Record<number, string> = {
+  400: 'Google rejected the request. This is usually an invalid or missing API key (reason API_KEY_INVALID): check FILEVORA_GEMINI_API_KEY. If Google names a field instead, check FILEVORA_EMBEDDING_MODEL and FILEVORA_EMBEDDING_DIMENSIONS.',
+  401: 'The API key is missing or invalid. Check FILEVORA_GEMINI_API_KEY.',
+  402: 'Billing is not enabled or the account has no credit. Enable billing or add credit for the Gemini API project that owns FILEVORA_GEMINI_API_KEY.',
+  403: 'The key has no permission for this model, or the Generative Language API is not enabled for its project. Enable the API, lift any key restriction, or check FILEVORA_EMBEDDING_MODEL.',
+};
+
+function embeddingHttpFailure(error: GeminiHttpError, apiKey: string) {
+  const scrub = (value: string | undefined) =>
+    value && apiKey ? value.split(apiKey).join('[redacted]') : value;
+  const googleMessage = scrub(error.googleMessage);
+  const googleStatus = scrub(error.googleStatus);
+  const googleReason = scrub(error.googleReason);
+  const hint = PERMANENT_HINTS[error.httpStatus];
+  const retryable = error.httpStatus === 429 || error.httpStatus >= 500;
+  const label = [error.httpStatus, googleStatus].filter(Boolean).join(' ');
+  const cause = googleMessage ? `: ${googleMessage}` : '.';
+  const advice = hint
+    ? `${hint} Do not retry until this is fixed.`
+    : retryable
+      ? 'Retry with backoff.'
+      : 'Check FILEVORA_EMBEDDING_MODEL. Do not retry unchanged.';
+  return fail('EMBEDDING_UNAVAILABLE', {
+    message: `Gemini embedding failed with ${label}${cause} ${advice}`,
+    retryable,
+    context: {
+      geminiHttpStatus: error.httpStatus,
+      ...(googleStatus ? { geminiStatus: googleStatus } : {}),
+      ...(googleMessage ? { geminiMessage: googleMessage } : {}),
+      ...(googleReason ? { geminiReason: googleReason } : {}),
+    },
+  });
 }

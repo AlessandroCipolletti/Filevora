@@ -85,6 +85,8 @@ export function fail(
     message?: string;
     context?: Record<string, unknown>;
     requestId?: string;
+    /** Overrides the catalog default when one code covers both transient and permanent causes. */
+    retryable?: boolean;
   },
 ): FileSdkError {
   const spec = ERROR_CATALOG[code];
@@ -92,7 +94,7 @@ export function fail(
     code,
     message: extras?.message ?? spec.message,
     category: spec.category,
-    retryable: spec.retryable,
+    retryable: extras?.retryable ?? spec.retryable,
     httpStatus: spec.httpStatus,
     resolution: spec.resolution,
     ...(extras?.requestId ? { requestId: extras.requestId } : {}),

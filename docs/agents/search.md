@@ -2,7 +2,7 @@
 
 Use `POST /files/search` with a natural-language `query` when the user describes what an asset shows or says. Use `GET /files` for exact tags, dates, names, or `q` keywords. Do not invent a `GET` search and do not call `/search/reindex`; there is none.
 
-Requires stored mode (`FILEVORA_DATABASE_URL`) and `FILEVORA_GEMINI_API_KEY`. Lite mode returns `DESCRIPTION_REQUIRES_DATABASE` (422). A missing key returns `DESCRIPTION_NOT_CONFIGURED` (422). Do not retry either unchanged. `EMBEDDING_UNAVAILABLE` (503) is retryable with backoff. `SEARCH_QUERY_INVALID` (400) is a bad input; read the message.
+Requires stored mode (`FILEVORA_DATABASE_URL`) and `FILEVORA_GEMINI_API_KEY`. Lite mode returns `DESCRIPTION_REQUIRES_DATABASE` (422). A missing key returns `DESCRIPTION_NOT_CONFIGURED` (422). Do not retry either unchanged. `EMBEDDING_UNAVAILABLE` (503) follows its `retryable` flag: true for 429, 5xx, and timeouts (retry with backoff), false when Google answered 400, 401, 402, or 403 (key, billing, or permission; read `context.geminiMessage` and do not retry unchanged). `SEARCH_QUERY_INVALID` (400) is a bad input; read the message.
 
 Body: `query` (required, 1 to 2000 characters, any language), the `GET /files` structured filters (`type`, `createdFrom`, `createdTo`, `tags`, `tagsAll`, `mime`, `visibility`, and the rest), `minScore`, `maxResults`, `limit`, `cursor`.
 

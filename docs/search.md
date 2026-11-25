@@ -85,7 +85,7 @@ The Gemini key is `FILEVORA_GEMINI_API_KEY`. `gemini.embeddingModel`, `gemini.em
 | `DESCRIPTION_REQUIRES_DATABASE` | 422 | Lite mode. Set `FILEVORA_DATABASE_URL`. |
 | `DESCRIPTION_NOT_CONFIGURED` | 422 | No `FILEVORA_GEMINI_API_KEY`. |
 | `SEARCH_QUERY_INVALID` | 400 | Bad query, filter, range, or cursor. |
-| `EMBEDDING_UNAVAILABLE` | 503 | The embedding call failed. Retry with backoff. |
+| `EMBEDDING_UNAVAILABLE` | 503 | The embedding call failed. The message and `context` carry Google's status and error text. Retry 429, 5xx, and timeouts with backoff. 400 (usually an invalid key), 401, 402 (billing or credit), and 403 (permission or API not enabled) have `retryable: false`; fix the cause first. See [EMBEDDING_UNAVAILABLE](errors/EMBEDDING_UNAVAILABLE.md). |
 
 ## SDK and MCP
 

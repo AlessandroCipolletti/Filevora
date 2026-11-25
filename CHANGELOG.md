@@ -15,6 +15,7 @@
 - `POST /files/search` finds assets by meaning. It takes a natural-language `query` in any language, the `GET /files` structured filters, `minScore` (default 0.55, uncalibrated), `maxResults` (default 100, cap across pages), `limit`, and `cursor`. Each hit has a `score`. Ordering is score descending, then id descending, and the cursor is tied to the query.
 - Stored mode only. When a description finishes, its text is embedded with `gemini-embedding-001` at 768 dimensions and written to `filevora_asset_embeddings`. `POST /files/:id/describe` replaces it. Delete and retention remove it. There is no bulk reindex: run describe again after changing the model or dimensions.
 - New env vars `FILEVORA_EMBEDDING_MODEL`, `FILEVORA_EMBEDDING_DIMENSIONS`, `FILEVORA_SEARCH_MIN_SCORE`, and `FILEVORA_SEARCH_MAX_RESULTS`. New errors `SEARCH_QUERY_INVALID` and `EMBEDDING_UNAVAILABLE`. `createUploadClient().search` and the live MCP tool `search_assets`.
+- `EMBEDDING_UNAVAILABLE` names Google's answer: the message and `context` (`geminiHttpStatus`, `geminiStatus`, `geminiMessage`, `geminiReason`) carry the HTTP status and Google's error text, never the key. Google 400, 401, 402, and 403 are `retryable: false` with a fix for the key, billing, or permission; 429 and 5xx stay retryable. `FILEVORA_EMBEDDING_MODEL` also accepts the `models/…` resource form. Error context and logs redact Google API keys (`AIza…`).
 
 ### List filters
 
