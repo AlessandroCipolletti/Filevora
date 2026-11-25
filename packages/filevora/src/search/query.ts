@@ -4,11 +4,11 @@ import {
   type ListQueryInput,
   type ParsedListQuery,
 } from '../server/list-query.js';
-import type { SearchFilesInput } from '../types/index.js';
+import type { SemanticSearchFilesInput } from '../types/index.js';
 import { queryFingerprint, scoreToMicros } from './cursor.js';
 import {
-  SEARCH_MAX_RESULTS_CEILING,
-  SEARCH_QUERY_MAX_CHARS,
+  SEMANTIC_SEARCH_MAX_RESULTS_CEILING,
+  SEMANTIC_SEARCH_QUERY_MAX_CHARS,
 } from './defaults.js';
 
 export interface ParsedSearch {
@@ -46,12 +46,12 @@ const FILTER_KEYS = [
 ] as const;
 
 function invalid(message: string): never {
-  throw fail('SEARCH_QUERY_INVALID', { message });
+  throw fail('SEMANTIC_SEARCH_QUERY_INVALID', { message });
 }
 
 /** Validate a search body with the same filter rules as GET /files. */
 export function parseSearchInput(
-  input: SearchFilesInput,
+  input: SemanticSearchFilesInput,
   defaults: {
     minScore: number;
     maxResults: number;
@@ -63,9 +63,9 @@ export function parseSearchInput(
   if (typeof input.query !== 'string')
     invalid('query is required and must be a string.');
   const query = input.query.trim().replace(/\s+/g, ' ');
-  if (query.length < 1 || query.length > SEARCH_QUERY_MAX_CHARS) {
+  if (query.length < 1 || query.length > SEMANTIC_SEARCH_QUERY_MAX_CHARS) {
     invalid(
-      `query must be 1 to ${SEARCH_QUERY_MAX_CHARS} characters after trimming.`,
+      `query must be 1 to ${SEMANTIC_SEARCH_QUERY_MAX_CHARS} characters after trimming.`,
     );
   }
   const minScore = input.minScore ?? defaults.minScore;
@@ -82,10 +82,10 @@ export function parseSearchInput(
     typeof maxResults !== 'number' ||
     !Number.isInteger(maxResults) ||
     maxResults < 1 ||
-    maxResults > SEARCH_MAX_RESULTS_CEILING
+    maxResults > SEMANTIC_SEARCH_MAX_RESULTS_CEILING
   ) {
     invalid(
-      `maxResults must be an integer from 1 to ${SEARCH_MAX_RESULTS_CEILING}.`,
+      `maxResults must be an integer from 1 to ${SEMANTIC_SEARCH_MAX_RESULTS_CEILING}.`,
     );
   }
   if (input.cursor !== undefined && typeof input.cursor !== 'string') {

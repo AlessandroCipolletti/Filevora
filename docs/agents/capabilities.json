@@ -122,9 +122,9 @@
           "ProcessingUpdate",
           "ResumeRecord",
           "ResumeStore",
-          "SearchFileHit",
-          "SearchFilesInput",
-          "SearchFilesPage",
+          "SemanticSearchFileHit",
+          "SemanticSearchFilesInput",
+          "SemanticSearchFilesPage",
           "UploadClient",
           "UploadClientOptions",
           "UploadHistory",
@@ -247,9 +247,9 @@
           "PutObjectInput",
           "RetentionReport",
           "RowError",
-          "SearchFileHit",
-          "SearchFilesInput",
-          "SearchFilesPage",
+          "SemanticSearchFileHit",
+          "SemanticSearchFilesInput",
+          "SemanticSearchFilesPage",
           "SignDownloadInput",
           "SignPartInput",
           "SignedPart",
@@ -510,7 +510,7 @@
       },
       {
         "method": "POST",
-        "path": "/files/search",
+        "path": "/files/semantic-search",
         "operation": "file.list",
         "auth": "principal",
         "modes": [
@@ -1320,12 +1320,12 @@
         "appliesTo": "both"
       },
       {
-        "key": "gemini.searchMinScore",
+        "key": "gemini.semanticSearchMinScore",
         "type": "number",
         "appliesTo": "both"
       },
       {
-        "key": "gemini.searchMaxResults",
+        "key": "gemini.semanticSearchMaxResults",
         "type": "number",
         "appliesTo": "both"
       },
@@ -2126,13 +2126,13 @@
         "appliesTo": "both"
       },
       {
-        "key": "FILEVORA_SEARCH_MAX_RESULTS",
+        "key": "FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS",
         "type": "string",
         "default": 100,
         "appliesTo": "both"
       },
       {
-        "key": "FILEVORA_SEARCH_MIN_SCORE",
+        "key": "FILEVORA_SEMANTIC_SEARCH_MIN_SCORE",
         "type": "string",
         "default": 0.65,
         "appliesTo": "both"
@@ -2586,11 +2586,11 @@
         "fix": "Read the parameter named in the error. type is image, video, document, or audio. sort is created, updated, size, or filename. order is asc or desc."
       },
       {
-        "code": "SEARCH_QUERY_INVALID",
+        "code": "SEMANTIC_SEARCH_QUERY_INVALID",
         "httpStatus": 400,
         "category": "config",
         "retryable": false,
-        "cause": "POST /files/search rejects an empty or oversized query, a minScore outside 0 to 1, a maxResults outside 1 to 1000, an invalid filter, or a cursor that belongs to another query.",
+        "cause": "POST /files/semantic-search rejects an empty or oversized query, a minScore outside 0 to 1, a maxResults outside 1 to 1000, an invalid filter, or a cursor that belongs to another query.",
         "fix": "Read the field named in the error. query is 1 to 2000 characters, minScore is 0 to 1, maxResults is 1 to 1000. Keep the query, minScore, maxResults, and every filter unchanged when you pass nextCursor, or omit cursor to start over."
       },
       {

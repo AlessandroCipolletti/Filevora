@@ -6,7 +6,7 @@ import type {
   FileOperation,
   FileRecord,
   Principal,
-  SearchFilesInput,
+  SemanticSearchFilesInput,
   UploadPolicy,
   Visibility,
 } from '../types/index.js';
@@ -415,10 +415,12 @@ async function dispatch(
     );
     return json(page, 200, requestId);
   }
-  if (route.name === 'search') {
+  if (route.name === 'semanticSearch') {
     return json(
-      await options.files.search(
-        asRecord(await readJson(request)) as unknown as SearchFilesInput,
+      await options.files.semanticSearch(
+        asRecord(
+          await readJson(request),
+        ) as unknown as SemanticSearchFilesInput,
         ctx,
       ),
       200,

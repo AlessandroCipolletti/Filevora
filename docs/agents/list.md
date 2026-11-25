@@ -1,6 +1,6 @@
 # List filters for agents
 
-Use `GET /files` for exact filters. For meaning-based search use `POST /files/search` (see [search.md](search.md)). `GET /files` has no vector search. `q` is a case-insensitive `LIKE` over `description_short` and `description_long`. Every word must match. `%` and `_` in `q` or `filename` are literal.
+Use `GET /files` for exact filters. For meaning-based search use `POST /files/semantic-search` (see [search.md](search.md)). `GET /files` has no vector search. `q` is a case-insensitive `LIKE` over `description_short` and `description_long`. Every word must match. `%` and `_` in `q` or `filename` are literal.
 
 Default sort is `created` descending, then `id` descending. Keep `sort`, `order`, and the filters when you pass `nextCursor` back as `cursor`. `limit` defaults to 20 and cannot exceed 100.
 

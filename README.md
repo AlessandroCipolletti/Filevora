@@ -208,10 +208,10 @@ const page = await files.list({ type: 'image', sort: 'created', order: 'desc', l
 const next = page.nextCursor ? await files.list({ type: 'image', cursor: page.nextCursor }, ctx) : null;
 ```
 
-**`search(input, ctx): Promise<SearchFilesPage>`** runs semantic search over described assets. Each asset is embedded with `gemini-embedding-2` from its description plus a rendition of the file itself where Google accepts one (see the table in [docs/search.md](docs/search.md)), and the text prompt is embedded with the same model at query time. `input` (`SearchFilesInput`) is `{ query, minScore?, maxResults?, limit?, cursor? }` plus the list filters. Each hit has a `score`. Errors: `DESCRIPTION_REQUIRES_DATABASE`, `DESCRIPTION_NOT_CONFIGURED`, `SEARCH_QUERY_INVALID`, `EMBEDDING_UNAVAILABLE`. See [docs/search.md](docs/search.md).
+**`semanticSearch(input, ctx): Promise<SemanticSearchFilesPage>`** runs semantic search over described assets. Each asset is embedded with `gemini-embedding-2` from its description plus a rendition of the file itself where Google accepts one (see the table in [docs/search.md](docs/search.md)), and the text prompt is embedded with the same model at query time. `input` (`SemanticSearchFilesInput`) is `{ query, minScore?, maxResults?, limit?, cursor? }` plus the list filters. Each hit has a `score`. Errors: `DESCRIPTION_REQUIRES_DATABASE`, `DESCRIPTION_NOT_CONFIGURED`, `SEMANTIC_SEARCH_QUERY_INVALID`, `EMBEDDING_UNAVAILABLE`. See [docs/search.md](docs/search.md).
 
 ```ts
-const hits = await files.search({ query: 'a red bicycle at night', type: 'image', limit: 10 }, ctx);
+const hits = await files.semanticSearch({ query: 'a red bicycle at night', type: 'image', limit: 10 }, ctx);
 ```
 
 **`delete(fileId, ctx): Promise<void>`** soft-deletes the asset, its versions, and its search vector. Error: `ASSET_NOT_FOUND`.
@@ -354,7 +354,7 @@ Routes come from `HTTP_ROUTES`. The host principal is required on every route ex
 | `POST` | `/assets/from-url` | Import an http(s) URL. Optional `preset`. Returns the file record before the download finishes. | `createFromUrl` |
 | `POST` | `/files/batch` | Read many files by id. Body `{ assetIds }`. Returns `{ assets }`. | `getMany` |
 | `GET` | `/files` | List files for the tenant. Filters: type, dates, tags, `q`, mime, filename, size, duration, dimensions, status, visibility, preset. See [docs/list.md](docs/list.md). | `list` |
-| `POST` | `/files/search` | Semantic search. Stored mode and `FILEVORA_GEMINI_API_KEY`. See [docs/search.md](docs/search.md). | `search` |
+| `POST` | `/files/semantic-search` | Semantic search. Stored mode and `FILEVORA_GEMINI_API_KEY`. See [docs/search.md](docs/search.md). | `semanticSearch` |
 | `GET` | `/files/:fileId` | Read one file. | `get` |
 | `DELETE` | `/files/:fileId` | Soft-delete the asset and its versions. | `delete` |
 | `GET` | `/files/:fileId/versions` | Signed URLs for every ready version of a private asset. Public assets use `/public` URLs. | `getDeliveryUrls` |

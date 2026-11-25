@@ -93,7 +93,7 @@ test('the MCP server lists its tools', async () => {
     'validate_config',
     'doctor',
     'list_files',
-    'search_assets',
+    'semantic_search_assets',
     'describe_asset',
   ]);
   const describe = await handleMcpMessage({

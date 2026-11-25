@@ -8,7 +8,7 @@ import {
   type ListQueryInput,
 } from '../server/list-query.js';
 import { FileService } from '../server/service.js';
-import type { SearchFilesInput } from '../types/index.js';
+import type { SemanticSearchFilesInput } from '../types/index.js';
 
 interface RpcRequest {
   jsonrpc?: string;
@@ -63,7 +63,7 @@ const tools = [
     },
   },
   {
-    name: 'search_assets',
+    name: 'semantic_search_assets',
     description:
       'Semantic search over described assets in natural language, any language. Runs the search live against FILEVORA_DATABASE_URL with FILEVORA_GEMINI_API_KEY from this process env (or env). Returns { items: [{ score, file }], nextCursor, meta }. Use list_files for exact tag, date, or text filters.',
     inputSchema: {
@@ -90,12 +90,12 @@ const tools = [
         minScore: {
           type: 'number',
           description:
-            'Minimum cosine similarity, 0 to 1. Default FILEVORA_SEARCH_MIN_SCORE.',
+            'Minimum cosine similarity, 0 to 1. Default FILEVORA_SEMANTIC_SEARCH_MIN_SCORE.',
         },
         maxResults: {
           type: 'number',
           description:
-            'Hard cap across all pages, 1 to 1000. Default FILEVORA_SEARCH_MAX_RESULTS.',
+            'Hard cap across all pages, 1 to 1000. Default FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS.',
         },
         limit: { type: 'number', description: 'Page size, 1 to 100.' },
         cursor: {
@@ -204,10 +204,10 @@ async function runTool(
       ],
     });
   }
-  if (name === 'search_assets') {
+  if (name === 'semantic_search_assets') {
     const tenantId = typeof args.tenantId === 'string' ? args.tenantId : '';
     if (!tenantId) {
-      throw fail('SEARCH_QUERY_INVALID', {
+      throw fail('SEMANTIC_SEARCH_QUERY_INVALID', {
         message: 'tenantId is required: the tenant whose assets are searched.',
       });
     }
@@ -218,9 +218,12 @@ async function runTool(
       resolveConfig({}, { ...process.env, ...env }),
     );
     try {
-      const page = await files.search(input as unknown as SearchFilesInput, {
-        principal: { id: 'mcp', tenantId },
-      });
+      const page = await files.semanticSearch(
+        input as unknown as SemanticSearchFilesInput,
+        {
+          principal: { id: 'mcp', tenantId },
+        },
+      );
       return JSON.stringify(page);
     } finally {
       await files.close();

@@ -23,7 +23,7 @@ When Google answers with an error, the message names Google's HTTP status and it
 | 402                                                              | false     | Billing is not enabled or the account has no credit. Enable billing or add credit for the Google project that owns the key.                                |
 | 403                                                              | false     | The key has no permission. Enable the Generative Language API for its project, lift any key restriction that blocks it, and check `FILEVORA_EMBEDDING_MODEL`. |
 
-- retry_search: For 429, 5xx, a timeout, or a bad vector, retry after a short delay.
+- retry_semantic_search: For 429, 5xx, a timeout, or a bad vector, retry after a short delay.
 - fix_gemini_key: For 400 or 401, set a valid `FILEVORA_GEMINI_API_KEY`.
 - enable_gemini_billing: For 402, enable billing or add credit.
 - enable_gemini_api: For 403, enable the Generative Language API and check key restrictions.

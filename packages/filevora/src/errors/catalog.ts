@@ -910,18 +910,18 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
-  SEARCH_QUERY_INVALID: {
+  SEMANTIC_SEARCH_QUERY_INVALID: {
     httpStatus: 400,
     category: 'config',
     retryable: false,
     message:
       'A search field is invalid. The error names the field and the constraint it breaks.',
     resolution: resolution(
-      'docs/errors/SEARCH_QUERY_INVALID.md',
-      'POST /files/search rejects an empty or oversized query, a minScore outside 0 to 1, a maxResults outside 1 to 1000, an invalid filter, or a cursor that belongs to another query.',
+      'docs/errors/SEMANTIC_SEARCH_QUERY_INVALID.md',
+      'POST /files/semantic-search rejects an empty or oversized query, a minScore outside 0 to 1, a maxResults outside 1 to 1000, an invalid filter, or a cursor that belongs to another query.',
       [
         action(
-          'fix_search_query',
+          'fix_semantic_search_query',
           'Read the field named in the error. query is 1 to 2000 characters, minScore is 0 to 1, maxResults is 1 to 1000. Keep the query, minScore, maxResults, and every filter unchanged when you pass nextCursor, or omit cursor to start over.',
         ),
       ],
@@ -938,7 +938,7 @@ export const ERROR_CATALOG = {
       "Search turns the query, and indexing turns a description with its file rendition, into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, returned a 5xx or an unusable vector (retryable), or Google rejected it with 400, 401, 402, or 403 (retryable: false). context.geminiHttpStatus, geminiStatus, geminiMessage, and geminiReason carry Google's answer.",
       [
         action(
-          'retry_search',
+          'retry_semantic_search',
           'For 429, 5xx, a timeout, or a bad vector: retry the search after a short delay. If it keeps failing, check the Gemini quota.',
         ),
         action(

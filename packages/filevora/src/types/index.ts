@@ -247,7 +247,7 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
-export interface SearchFilesInput {
+export interface SemanticSearchFilesInput {
   /** Natural-language prompt in any language, 1 to 2000 characters after trimming. */
   query: string;
   type?:
@@ -286,14 +286,14 @@ export interface SearchFilesInput {
   cursor?: string;
 }
 
-export interface SearchFileHit {
+export interface SemanticSearchFileHit {
   /** Cosine similarity rounded to 6 decimals. */
   score: number;
   file: FileRecord;
 }
 
-export interface SearchFilesPage {
-  items: SearchFileHit[];
+export interface SemanticSearchFilesPage {
+  items: SemanticSearchFileHit[];
   nextCursor: string | null;
   meta: {
     model: string;

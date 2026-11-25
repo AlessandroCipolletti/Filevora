@@ -454,7 +454,8 @@ test('search cursors round-trip and reject a different query or tampering', () =
     assert.throws(
       () => decodeSearchCursor(bad, other),
       (error: unknown) =>
-        error instanceof FileSdkError && error.code === 'SEARCH_QUERY_INVALID',
+        error instanceof FileSdkError &&
+        error.code === 'SEMANTIC_SEARCH_QUERY_INVALID',
     );
   }
   assert.equal(scoreToMicros(0.6830004), 683_000);
@@ -528,24 +529,24 @@ test('the schema, config and env defaults expose the search settings', () => {
   const defaults = resolveConfig({}, {});
   assert.equal(defaults.gemini.embeddingModel, 'gemini-embedding-2');
   assert.equal(defaults.gemini.embeddingDimensions, 768);
-  assert.equal(defaults.gemini.searchMinScore, 0.65);
-  assert.equal(defaults.gemini.searchMaxResults, 100);
+  assert.equal(defaults.gemini.semanticSearchMinScore, 0.65);
+  assert.equal(defaults.gemini.semanticSearchMaxResults, 100);
   const tuned = resolveConfig(
     {},
     {
       FILEVORA_EMBEDDING_MODEL: 'gemini-embedding-2',
       FILEVORA_EMBEDDING_DIMENSIONS: '1536',
-      FILEVORA_SEARCH_MIN_SCORE: '0.62',
-      FILEVORA_SEARCH_MAX_RESULTS: '40',
+      FILEVORA_SEMANTIC_SEARCH_MIN_SCORE: '0.62',
+      FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS: '40',
     },
   );
   assert.equal(tuned.gemini.embeddingModel, 'gemini-embedding-2');
   assert.equal(tuned.gemini.embeddingDimensions, 1536);
-  assert.equal(tuned.gemini.searchMinScore, 0.62);
-  assert.equal(tuned.gemini.searchMaxResults, 40);
+  assert.equal(tuned.gemini.semanticSearchMinScore, 0.62);
+  assert.equal(tuned.gemini.semanticSearchMaxResults, 40);
   for (const env of [
-    { FILEVORA_SEARCH_MIN_SCORE: '1.5' },
-    { FILEVORA_SEARCH_MAX_RESULTS: '5000' },
+    { FILEVORA_SEMANTIC_SEARCH_MIN_SCORE: '1.5' },
+    { FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS: '5000' },
     { FILEVORA_EMBEDDING_DIMENSIONS: '16' },
   ]) {
     assert.throws(() => resolveConfig({}, env));
@@ -584,7 +585,7 @@ withFiles(
     assert.ok(documentCalls.every((call) => call.title?.endsWith('.txt')));
     assert.ok(documentCalls.every((call) => call.dimensions === 768));
 
-    const found = await files.search(
+    const found = await files.semanticSearch(
       { query: 'animali che giocano' },
       { principal },
     );
@@ -614,12 +615,12 @@ withFiles(
     assert.equal(queryCalls.length, 1);
     assert.equal(queryCalls[0]?.title, undefined);
 
-    const lowered = await files.search(
+    const lowered = await files.semanticSearch(
       { query: 'animali che giocano', minScore: 0.4 },
       { principal },
     );
     assert.equal(lowered.items.length, 4, 'a lower minScore admits noise');
-    const strict = await files.search(
+    const strict = await files.semanticSearch(
       { query: 'animali che giocano', minScore: 0.99 },
       { principal },
     );
@@ -647,7 +648,7 @@ withFiles(
       db.close();
     }
     const run = (input: Record<string, unknown>) =>
-      files.search({ query: 'animals', ...input }, { principal });
+      files.semanticSearch({ query: 'animals', ...input }, { principal });
     const everyone = await run({});
     assert.equal(everyone.items.length, 2);
     const onlyPublic = await run({ visibility: 'public' });
@@ -664,7 +665,7 @@ withFiles(
     assert.deepEqual(future.items, []);
     const wrongType = await run({ type: 'video' });
     assert.deepEqual(wrongType.items, []);
-    const other = await files.search(
+    const other = await files.semanticSearch(
       { query: 'animals' },
       { principal: { id: 'user-b', tenantId: 'tenant-b' } },
     );
@@ -686,7 +687,7 @@ withFiles(
     let cursor: string | undefined;
     let pages = 0;
     do {
-      const page = await files.search(
+      const page = await files.semanticSearch(
         { query: 'dogs', limit: 7, ...(cursor ? { cursor } : {}) },
         { principal },
       );
@@ -729,7 +730,7 @@ withFiles(
     for (let i = 0; i < 4; i += 1) {
       await uploadText(files, `d${i}.txt`, `A dog number ${i} in the park.`);
     }
-    const first = await files.search(
+    const first = await files.semanticSearch(
       { query: 'dogs', limit: 2 },
       { principal },
     );
@@ -741,19 +742,19 @@ withFiles(
       { query: 'dogs', visibility: 'public' as const },
     ]) {
       const error = await searchError(
-        files.search(
+        files.semanticSearch(
           { ...changed, limit: 2, cursor: first.nextCursor as string },
           { principal },
         ),
       );
-      assert.equal(error.code, 'SEARCH_QUERY_INVALID');
+      assert.equal(error.code, 'SEMANTIC_SEARCH_QUERY_INVALID');
       assert.match(error.message, /cursor does not match/);
     }
     const garbage = await searchError(
-      files.search({ query: 'dogs', cursor: 'abc' }, { principal }),
+      files.semanticSearch({ query: 'dogs', cursor: 'abc' }, { principal }),
     );
-    assert.equal(garbage.code, 'SEARCH_QUERY_INVALID');
-    const ok = await files.search(
+    assert.equal(garbage.code, 'SEMANTIC_SEARCH_QUERY_INVALID');
+    const ok = await files.semanticSearch(
       { query: 'dogs', limit: 2, cursor: first.nextCursor as string },
       { principal },
     );
@@ -769,9 +770,9 @@ withFiles(
     }
     const collected: string[] = [];
     let cursor: string | undefined;
-    let last: Awaited<ReturnType<typeof files.search>> | undefined;
+    let last: Awaited<ReturnType<typeof files.semanticSearch>> | undefined;
     do {
-      last = await files.search(
+      last = await files.semanticSearch(
         {
           query: 'dogs',
           maxResults: 5,
@@ -790,7 +791,7 @@ withFiles(
     assert.equal(last?.meta.capped, true);
     assert.equal(last?.meta.maxResults, 5);
 
-    const bigPage = await files.search(
+    const bigPage = await files.semanticSearch(
       { query: 'dogs', maxResults: 3, limit: 50 },
       { principal },
     );
@@ -798,7 +799,7 @@ withFiles(
     assert.equal(bigPage.nextCursor, null);
     assert.equal(bigPage.meta.capped, true);
 
-    const exact = await files.search(
+    const exact = await files.semanticSearch(
       { query: 'dogs', maxResults: 9, limit: 50 },
       { principal },
     );
@@ -813,12 +814,19 @@ withFiles(
     for (let i = 0; i < 6; i += 1) {
       await uploadText(files, `d${i}.txt`, `A dog number ${i} in the park.`);
     }
-    const defaults = await files.search({ query: 'dogs' }, { principal });
-    assert.equal(defaults.items.length, 4, 'FILEVORA_SEARCH_MAX_RESULTS = 4');
+    const defaults = await files.semanticSearch(
+      { query: 'dogs' },
+      { principal },
+    );
+    assert.equal(
+      defaults.items.length,
+      4,
+      'FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS = 4',
+    );
     assert.equal(defaults.meta.maxResults, 4);
     assert.equal(defaults.meta.minScore, 0.6);
     assert.equal(defaults.meta.capped, true);
-    const widened = await files.search(
+    const widened = await files.semanticSearch(
       { query: 'dogs', maxResults: 6, minScore: 0.4 },
       { principal },
     );
@@ -826,7 +834,7 @@ withFiles(
     assert.equal(widened.meta.maxResults, 6);
     assert.equal(widened.meta.minScore, 0.4);
   },
-  { searchMaxResults: 4, searchMinScore: 0.6 },
+  { semanticSearchMaxResults: 4, semanticSearchMinScore: 0.6 },
 );
 
 withFiles('search input is validated', async ({ files }) => {
@@ -847,12 +855,16 @@ withFiles('search input is validated', async ({ files }) => {
   ];
   for (const input of bad) {
     const error = await searchError(
-      files.search(input as never, { principal }),
+      files.semanticSearch(input as never, { principal }),
     );
-    assert.equal(error.code, 'SEARCH_QUERY_INVALID', JSON.stringify(input));
+    assert.equal(
+      error.code,
+      'SEMANTIC_SEARCH_QUERY_INVALID',
+      JSON.stringify(input),
+    );
     assert.equal(error.httpStatus, 400);
   }
-  const trimmed = await files.search(
+  const trimmed = await files.semanticSearch(
     { query: '  dogs \n  please  ' },
     { principal },
   );
@@ -881,10 +893,13 @@ withFiles(
     } finally {
       db.close();
     }
-    const hidden = await files.search({ query: 'dogs' }, { principal });
+    const hidden = await files.semanticSearch({ query: 'dogs' }, { principal });
     assert.deepEqual(hidden.items, [], 'rows of another dimension are ignored');
     await files.describeAsset(dog.id, { principal });
-    const restored = await files.search({ query: 'dogs' }, { principal });
+    const restored = await files.semanticSearch(
+      { query: 'dogs' },
+      { principal },
+    );
     assert.equal(restored.items.length, 1);
     assert.equal(embeddingRows(dir)[0]?.dimensions, 768);
 
@@ -897,14 +912,20 @@ withFiles(
       false,
     );
     gemini.embedFailure = undefined;
-    const withoutCat = await files.search({ query: 'animals' }, { principal });
+    const withoutCat = await files.semanticSearch(
+      { query: 'animals' },
+      { principal },
+    );
     assert.deepEqual(
       withoutCat.items.map((item) => item.file.id),
       [dog.id],
       'an asset whose embedding failed is left out of search',
     );
     await files.describeAsset(cat.id, { principal });
-    const both = await files.search({ query: 'animals' }, { principal });
+    const both = await files.semanticSearch(
+      { query: 'animals' },
+      { principal },
+    );
     assert.equal(both.items.length, 2);
 
     await files.delete(dog.id, { principal });
@@ -913,7 +934,10 @@ withFiles(
       false,
       'delete removes the embedding',
     );
-    const afterDelete = await files.search({ query: 'animals' }, { principal });
+    const afterDelete = await files.semanticSearch(
+      { query: 'animals' },
+      { principal },
+    );
     assert.deepEqual(
       afterDelete.items.map((item) => item.file.id),
       [cat.id],
@@ -949,14 +973,14 @@ test('a model change leaves old rows unreachable until describe runs again', asy
     const dog = await uploadText(files, 'dog.txt', 'A dog in the park.');
     await files.close();
     files = openSearchFiles(dir, gemini, { embeddingDimensions: 256 });
-    const none = await files.search({ query: 'dogs' }, { principal });
+    const none = await files.semanticSearch({ query: 'dogs' }, { principal });
     assert.deepEqual(none.items, []);
     assert.equal(none.meta.dimensions, 256);
     await files.describeAsset(dog.id, { principal });
     const rows = embeddingRows(dir);
     assert.equal(rows.length, 1);
     assert.equal(rows[0]?.dimensions, 256);
-    const back = await files.search({ query: 'dogs' }, { principal });
+    const back = await files.semanticSearch({ query: 'dogs' }, { principal });
     assert.equal(back.items.length, 1);
     assert.equal(
       gemini.embedCalls.at(-1)?.dimensions,
@@ -973,7 +997,10 @@ test('search talking errors: lite mode, missing key, and embedding outage', asyn
   const lite = createTestFiles();
   try {
     const error = await searchError(
-      lite.files.search({ query: 'dogs' }, { principal: lite.principal }),
+      lite.files.semanticSearch(
+        { query: 'dogs' },
+        { principal: lite.principal },
+      ),
     );
     assert.equal(error.code, 'DESCRIPTION_REQUIRES_DATABASE');
     assert.equal(error.httpStatus, 422);
@@ -990,7 +1017,7 @@ test('search talking errors: lite mode, missing key, and embedding outage', asyn
   });
   try {
     const error = await searchError(
-      keyless.search({ query: 'dogs' }, { principal }),
+      keyless.semanticSearch({ query: 'dogs' }, { principal }),
     );
     assert.equal(error.code, 'DESCRIPTION_NOT_CONFIGURED');
     assert.equal(error.httpStatus, 422);
@@ -1005,7 +1032,7 @@ test('search talking errors: lite mode, missing key, and embedding outage', asyn
     const files = openSearchFiles(path.join(dir, `outage-${status}`), gemini);
     try {
       const error = await searchError(
-        files.search({ query: 'dogs' }, { principal }),
+        files.semanticSearch({ query: 'dogs' }, { principal }),
       );
       assert.equal(error.code, 'EMBEDDING_UNAVAILABLE');
       assert.equal(error.httpStatus, 503);
@@ -1019,7 +1046,7 @@ test('search talking errors: lite mode, missing key, and embedding outage', asyn
 });
 
 withFiles(
-  'POST /files/search works over HTTP and through the client',
+  'POST /files/semantic-search works over HTTP and through the client',
   async ({ files }) => {
     await uploadText(files, 'dog.txt', 'A dog in the park.');
     await uploadText(files, 'invoice.txt', 'Invoice with VAT.');
@@ -1036,7 +1063,7 @@ withFiles(
       },
     });
     const response = await handler(
-      new Request('http://app.local/files/search', {
+      new Request('http://app.local/files/semantic-search', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ query: 'cani', limit: 5 }),
@@ -1055,7 +1082,7 @@ withFiles(
     assert.equal(body.nextCursor, null);
 
     const invalid = await handler(
-      new Request('http://app.local/files/search', {
+      new Request('http://app.local/files/semantic-search', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ query: '' }),
@@ -1064,12 +1091,12 @@ withFiles(
     assert.equal(invalid.status, 400);
     const problem = (await invalid.json()) as { error?: { code?: string } };
     assert.equal(
-      JSON.stringify(problem).includes('SEARCH_QUERY_INVALID'),
+      JSON.stringify(problem).includes('SEMANTIC_SEARCH_QUERY_INVALID'),
       true,
     );
 
     const wrongMethod = await handler(
-      new Request('http://app.local/files/search', { method: 'GET' }),
+      new Request('http://app.local/files/semantic-search', { method: 'GET' }),
     );
     assert.notEqual(wrongMethod.status, 200);
 
@@ -1081,14 +1108,14 @@ withFiles(
         return handler(new Request(String(url), init));
       },
     });
-    const viaClient = await client.search('cani');
+    const viaClient = await client.semanticSearch('cani');
     assert.equal(viaClient.items.length, 1);
-    assert.equal(sent[0]?.url, 'http://app.local/files/search');
+    assert.equal(sent[0]?.url, 'http://app.local/files/semantic-search');
     assert.equal(sent[0]?.init?.method, 'POST');
     assert.deepEqual(JSON.parse(String(sent[0]?.init?.body)), {
       query: 'cani',
     });
-    const withOptions = await client.search({
+    const withOptions = await client.semanticSearch({
       query: 'cani',
       minScore: 0.4,
       maxResults: 10,
@@ -1098,21 +1125,21 @@ withFiles(
   },
 );
 
-test('the MCP search_assets tool is listed and runs live', async () => {
+test('the MCP semantic_search_assets tool is listed and runs live', async () => {
   const listed = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 1,
     method: 'tools/list',
   });
   const tools = (listed?.result as { tools: Array<{ name: string }> }).tools;
-  assert.ok(tools.some((tool) => tool.name === 'search_assets'));
+  assert.ok(tools.some((tool) => tool.name === 'semantic_search_assets'));
 
   const call = async (args: Record<string, unknown>) => {
     const reply = await handleMcpMessage({
       jsonrpc: '2.0',
       id: 2,
       method: 'tools/call',
-      params: { name: 'search_assets', arguments: args },
+      params: { name: 'semantic_search_assets', arguments: args },
     });
     return reply?.result as {
       content: Array<{ text: string }>;
@@ -1349,7 +1376,10 @@ withFiles(
       embeddingRows(dir).map((row) => [row.source, row.model]),
       [['file+description', 'gemini-embedding-2']],
     );
-    const found = await files.search({ query: 'landscape' }, { principal });
+    const found = await files.semanticSearch(
+      { query: 'landscape' },
+      { principal },
+    );
     assert.equal(found.meta.model, 'gemini-embedding-2');
   },
 );

@@ -20,7 +20,7 @@ export type {
 } from './upload-client.js';
 export { createUploadClient } from './upload-client.js';
 export type {
-  SearchFilesInput,
-  SearchFilesPage,
-  SearchFileHit,
+  SemanticSearchFilesInput,
+  SemanticSearchFilesPage,
+  SemanticSearchFileHit,
 } from '../types/index.js';

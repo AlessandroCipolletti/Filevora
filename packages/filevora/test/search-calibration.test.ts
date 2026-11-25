@@ -13,7 +13,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { DEFAULT_GEMINI_MODEL } from '../dist/descriptions/gemini.js';
 import { describeBytes } from '../dist/descriptions/run.js';
-import { DEFAULT_SEARCH_MIN_SCORE } from '../dist/search/defaults.js';
+import { DEFAULT_SEMANTIC_SEARCH_MIN_SCORE } from '../dist/search/defaults.js';
 import {
   buildCanonicalEmbeddingText,
   embedDocument,
@@ -252,7 +252,7 @@ test('calibration harness on the MOCK embedding model (does not validate the def
   }
 
   const rows = await report(mock, MOCK_MODELLED);
-  assert.equal(DEFAULT_SEARCH_MIN_SCORE, 0.65);
+  assert.equal(DEFAULT_SEMANTIC_SEARCH_MIN_SCORE, 0.65);
   const atDefault = rows.find((row) => row.threshold === 0.65);
   assert.ok(atDefault && atDefault.precision === 1 && atDefault.recall === 1);
   assert.equal(atDefault.f1, 1);

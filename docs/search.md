@@ -1,6 +1,6 @@
 # Semantic search
 
-`POST /files/search` finds assets by meaning. Send a natural-language prompt in any language and get a paginated list of matching assets, each with a similarity `score`. It needs stored mode and `FILEVORA_GEMINI_API_KEY`. No new service is required: vectors live in your host database and the ranking runs in your Node process.
+`POST /files/semantic-search` finds assets by meaning. Send a natural-language prompt in any language and get a paginated list of matching assets, each with a similarity `score`. It needs stored mode and `FILEVORA_GEMINI_API_KEY`. No new service is required: vectors live in your host database and the ranking runs in your Node process.
 
 ## How it works
 
@@ -25,7 +25,7 @@ Files over 12 MiB are not sent because the request carries the file as base64 an
 ## Request
 
 ```http
-POST /files/search
+POST /files/semantic-search
 content-type: application/json
 
 { "query": "animali che giocano", "type": "image", "createdFrom": "2026-10-01", "minScore": 0.65, "maxResults": 100, "limit": 20 }
@@ -37,8 +37,8 @@ content-type: application/json
 
 | Field        | Meaning                                                                               | Default                            | Range     |
 | ------------ | ------------------------------------------------------------------------------------- | ---------------------------------- | --------- |
-| `minScore`   | Minimum cosine similarity. Equivalent to a maximum vector distance of `1 - minScore`. | `FILEVORA_SEARCH_MIN_SCORE`, 0.65  | 0 to 1    |
-| `maxResults` | Hard cap on results across all pages.                                                 | `FILEVORA_SEARCH_MAX_RESULTS`, 100 | 1 to 1000 |
+| `minScore`   | Minimum cosine similarity. Equivalent to a maximum vector distance of `1 - minScore`. | `FILEVORA_SEMANTIC_SEARCH_MIN_SCORE`, 0.65  | 0 to 1    |
+| `maxResults` | Hard cap on results across all pages.                                                 | `FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS`, 100 | 1 to 1000 |
 | `limit`      | Page size. Clamped to what is left under `maxResults`.                                | 20                                 | 1 to 100  |
 | `cursor`     | `nextCursor` of the previous page.                                                    | none                               |           |
 
@@ -68,7 +68,7 @@ The response:
 
 `score` is rounded to six decimals. `nextCursor` is `null` on the last page. `meta.capped` is true when more matches exist than `maxResults` allowed, so the list was cut. Raise `maxResults`, raise `minScore`, or add filters.
 
-Keep `query`, `minScore`, `maxResults`, model, and every filter unchanged when you send `nextCursor` back. A cursor from a different search returns `SEARCH_QUERY_INVALID`. Later pages reuse the cached query vector, so they do not call Gemini again.
+Keep `query`, `minScore`, `maxResults`, model, and every filter unchanged when you send `nextCursor` back. A cursor from a different search returns `SEMANTIC_SEARCH_QUERY_INVALID`. Later pages reuse the cached query vector, so they do not call Gemini again.
 
 ### The 0.65 default is provisional
 
@@ -76,7 +76,7 @@ Keep `query`, `minScore`, `maxResults`, model, and every filter unchanged when y
 
 1. Describe a representative sample of your assets.
 2. Run `FILEVORA_CALIBRATION_GEMINI_KEY=... node --experimental-strip-types --test test/search-calibration.test.ts` from `packages/filevora`. It prints precision, recall, and F1 for `minScore` 0.50 to 0.80 in 0.01 steps, and the top results per query, over `test/fixtures/search-calibration.json`.
-3. To calibrate with real files instead of descriptions alone, put your own files and a labels file in a folder and set `FILEVORA_CALIBRATION_FILES_DIR` (see below). Then set `FILEVORA_SEARCH_MIN_SCORE`.
+3. To calibrate with real files instead of descriptions alone, put your own files and a labels file in a folder and set `FILEVORA_CALIBRATION_FILES_DIR` (see below). Then set `FILEVORA_SEMANTIC_SEARCH_MIN_SCORE`.
 
 The fixture in this repository is hand-written: 37 assets (documents, photos, screenshots, slides, spreadsheets, audio, video, with a few near-duplicates) and 25 labeled queries, 3 of which have no relevant asset. The labels were assigned by the author, so treat any threshold from it as a rough guide only. The offline run uses a mock embedding model that only models a few concepts, so it only proves the harness works.
 
@@ -137,10 +137,10 @@ Search is exact, not approximate. Every vector that passes the SQL filters is sc
 | ------------------------------- | -------------------- |
 | `FILEVORA_EMBEDDING_MODEL`      | `gemini-embedding-2` |
 | `FILEVORA_EMBEDDING_DIMENSIONS` | `768` (128 to 3072)  |
-| `FILEVORA_SEARCH_MIN_SCORE`     | `0.65` (provisional) |
-| `FILEVORA_SEARCH_MAX_RESULTS`   | `100`                |
+| `FILEVORA_SEMANTIC_SEARCH_MIN_SCORE`     | `0.65` (provisional) |
+| `FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS`   | `100`                |
 
-The Gemini key is `FILEVORA_GEMINI_API_KEY`. `gemini.embeddingModel`, `gemini.embeddingDimensions`, `gemini.searchMinScore`, and `gemini.searchMaxResults` are the matching `createFiles` options.
+The Gemini key is `FILEVORA_GEMINI_API_KEY`. `gemini.embeddingModel`, `gemini.embeddingDimensions`, `gemini.semanticSearchMinScore`, and `gemini.semanticSearchMaxResults` are the matching `createFiles` options.
 
 ## Errors
 
@@ -148,9 +148,9 @@ The Gemini key is `FILEVORA_GEMINI_API_KEY`. `gemini.embeddingModel`, `gemini.em
 | ------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DESCRIPTION_REQUIRES_DATABASE` | 422    | Lite mode. Set `FILEVORA_DATABASE_URL`.                                                                                                                                                                                                                                                                                                               |
 | `DESCRIPTION_NOT_CONFIGURED`    | 422    | No `FILEVORA_GEMINI_API_KEY`.                                                                                                                                                                                                                                                                                                                         |
-| `SEARCH_QUERY_INVALID`          | 400    | Bad query, filter, range, or cursor.                                                                                                                                                                                                                                                                                                                  |
+| `SEMANTIC_SEARCH_QUERY_INVALID`          | 400    | Bad query, filter, range, or cursor.                                                                                                                                                                                                                                                                                                                  |
 | `EMBEDDING_UNAVAILABLE`         | 503    | The embedding call failed. The message and `context` carry Google's status and error text. Retry 429, 5xx, and timeouts with backoff. 400 (usually an invalid key), 401, 402 (billing or credit), and 403 (permission or API not enabled) have `retryable: false`; fix the cause first. See [EMBEDDING_UNAVAILABLE](errors/EMBEDDING_UNAVAILABLE.md). |
 
 ## SDK and MCP
 
-`createUploadClient().search('animali che giocano')` or `.search({ query, minScore, maxResults, limit, cursor })`. The `filevora mcp` tool `search_assets` runs the search live against `FILEVORA_DATABASE_URL` and `FILEVORA_GEMINI_API_KEY` from the MCP process environment (or its `env` argument). It requires `tenantId`, because the MCP process has no signed-in user.
+`createUploadClient().semanticSearch('animali che giocano')` or `.semanticSearch({ query, minScore, maxResults, limit, cursor })`. The `filevora mcp` tool `semantic_search_assets` runs the search live against `FILEVORA_DATABASE_URL` and `FILEVORA_GEMINI_API_KEY` from the MCP process environment (or its `env` argument). It requires `tenantId`, because the MCP process has no signed-in user.

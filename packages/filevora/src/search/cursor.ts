@@ -55,7 +55,9 @@ export function decodeSearchCursor(
   try {
     parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
   } catch {
-    throw fail('SEARCH_QUERY_INVALID', { message: CURSOR_MISMATCH_MESSAGE });
+    throw fail('SEMANTIC_SEARCH_QUERY_INVALID', {
+      message: CURSOR_MISMATCH_MESSAGE,
+    });
   }
   const payload = parsed as Partial<SearchCursorPayload> | null;
   if (
@@ -67,7 +69,9 @@ export function decodeSearchCursor(
     (payload.n ?? 0) < 0 ||
     payload.qh !== fingerprint
   ) {
-    throw fail('SEARCH_QUERY_INVALID', { message: CURSOR_MISMATCH_MESSAGE });
+    throw fail('SEMANTIC_SEARCH_QUERY_INVALID', {
+      message: CURSOR_MISMATCH_MESSAGE,
+    });
   }
   return payload as SearchCursorPayload;
 }

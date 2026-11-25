@@ -99,8 +99,8 @@ import type {
   FileVariant,
   Page,
   Principal,
-  SearchFilesInput,
-  SearchFilesPage,
+  SemanticSearchFilesInput,
+  SemanticSearchFilesPage,
   ProcessingJob,
   StorageDriver,
   UploadPartRecord,
@@ -2270,10 +2270,10 @@ export class FileService {
   private readonly queryVectors = new QueryVectorCache();
 
   /** Semantic search over described assets. Stored mode and a Gemini key are required. */
-  async search(
-    input: SearchFilesInput,
+  async semanticSearch(
+    input: SemanticSearchFilesInput,
     ctx: RequestContext,
-  ): Promise<SearchFilesPage> {
+  ): Promise<SemanticSearchFilesPage> {
     if (this.config.metadata.mode !== 'stored') {
       throw fail('DESCRIPTION_REQUIRES_DATABASE', {
         message: DESCRIPTION_DATABASE_MESSAGE,
@@ -2286,8 +2286,8 @@ export class FileService {
       });
     }
     const parsed = parseSearchInput(input, {
-      minScore: gemini.searchMinScore,
-      maxResults: gemini.searchMaxResults,
+      minScore: gemini.semanticSearchMinScore,
+      maxResults: gemini.semanticSearchMaxResults,
       config: this.config,
     });
     const fingerprint = fingerprintFor(
@@ -2301,7 +2301,9 @@ export class FileService {
     const returned = cursor?.n ?? 0;
     const remaining = parsed.maxResults - returned;
     if (remaining <= 0) {
-      throw fail('SEARCH_QUERY_INVALID', { message: CURSOR_MISMATCH_MESSAGE });
+      throw fail('SEMANTIC_SEARCH_QUERY_INVALID', {
+        message: CURSOR_MISMATCH_MESSAGE,
+      });
     }
     const pageSize = Math.min(parsed.limit, remaining);
     const cacheKey = QueryVectorCache.key(
@@ -2338,7 +2340,7 @@ export class FileService {
         )
       : [];
     const byId = new Map(rows.map((row) => [row.id, row]));
-    const items: SearchFilesPage['items'] = [];
+    const items: SemanticSearchFilesPage['items'] = [];
     for (const hit of ranked.hits) {
       const row = byId.get(hit.assetId);
       if (!row) continue;

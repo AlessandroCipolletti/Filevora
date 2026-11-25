@@ -367,7 +367,7 @@ export function parseListSearchParams(params: URLSearchParams): ListQueryInput {
   };
 }
 
-/** Shared by GET /files and POST /files/search so both apply identical filter semantics. */
+/** Shared by GET /files and POST /files/semantic-search so both apply identical filter semantics. */
 export function storedFilterWhere(
   query: ParsedListQuery,
   tenantId: string,

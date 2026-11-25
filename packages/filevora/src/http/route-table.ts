@@ -173,8 +173,8 @@ export const HTTP_ROUTES: HttpRouteSpec[] = [
   },
   {
     method: 'POST',
-    path: '/files/search',
-    name: 'search',
+    path: '/files/semantic-search',
+    name: 'semanticSearch',
     operation: 'file.list',
     modes: ['stored'],
     auth: 'principal',

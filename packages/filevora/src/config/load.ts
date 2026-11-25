@@ -8,8 +8,8 @@ import { DEFAULT_GEMINI_MODEL } from '../descriptions/gemini.js';
 import {
   DEFAULT_EMBEDDING_DIMENSIONS,
   DEFAULT_EMBEDDING_MODEL,
-  DEFAULT_SEARCH_MAX_RESULTS,
-  DEFAULT_SEARCH_MIN_SCORE,
+  DEFAULT_SEMANTIC_SEARCH_MAX_RESULTS,
+  DEFAULT_SEMANTIC_SEARCH_MIN_SCORE,
 } from '../search/defaults.js';
 import { fail } from '../errors/error.js';
 import { assertConfiguredPreset } from '../presets/expand.js';
@@ -100,8 +100,8 @@ export interface ResolvedConfig {
     model: string;
     embeddingModel: string;
     embeddingDimensions: number;
-    searchMinScore: number;
-    searchMaxResults: number;
+    semanticSearchMinScore: number;
+    semanticSearchMaxResults: number;
     describeAssets: boolean;
     videoHeight: number;
     retryDelayMs: number;
@@ -471,8 +471,8 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
     e.FILEVORA_GEMINI_MODEL ||
     e.FILEVORA_EMBEDDING_MODEL ||
     e.FILEVORA_EMBEDDING_DIMENSIONS !== undefined ||
-    e.FILEVORA_SEARCH_MIN_SCORE !== undefined ||
-    e.FILEVORA_SEARCH_MAX_RESULTS !== undefined ||
+    e.FILEVORA_SEMANTIC_SEARCH_MIN_SCORE !== undefined ||
+    e.FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS !== undefined ||
     e.FILEVORA_DESCRIBE_VIDEO_HEIGHT !== undefined
       ? {
           gemini: {
@@ -491,11 +491,14 @@ function optionsFromEnv(env: NodeJS.ProcessEnv): FilesOptions {
             ...(e.FILEVORA_EMBEDDING_DIMENSIONS !== undefined
               ? { embeddingDimensions: e.FILEVORA_EMBEDDING_DIMENSIONS }
               : {}),
-            ...(e.FILEVORA_SEARCH_MIN_SCORE !== undefined
-              ? { searchMinScore: e.FILEVORA_SEARCH_MIN_SCORE }
+            ...(e.FILEVORA_SEMANTIC_SEARCH_MIN_SCORE !== undefined
+              ? { semanticSearchMinScore: e.FILEVORA_SEMANTIC_SEARCH_MIN_SCORE }
               : {}),
-            ...(e.FILEVORA_SEARCH_MAX_RESULTS !== undefined
-              ? { searchMaxResults: e.FILEVORA_SEARCH_MAX_RESULTS }
+            ...(e.FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS !== undefined
+              ? {
+                  semanticSearchMaxResults:
+                    e.FILEVORA_SEMANTIC_SEARCH_MAX_RESULTS,
+                }
               : {}),
             ...(e.FILEVORA_DESCRIBE_VIDEO_HEIGHT !== undefined
               ? { videoHeight: e.FILEVORA_DESCRIBE_VIDEO_HEIGHT }
@@ -837,9 +840,12 @@ export function resolveConfig(
       embeddingModel: input.gemini?.embeddingModel || DEFAULT_EMBEDDING_MODEL,
       embeddingDimensions:
         input.gemini?.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS,
-      searchMinScore: input.gemini?.searchMinScore ?? DEFAULT_SEARCH_MIN_SCORE,
-      searchMaxResults:
-        input.gemini?.searchMaxResults ?? DEFAULT_SEARCH_MAX_RESULTS,
+      semanticSearchMinScore:
+        input.gemini?.semanticSearchMinScore ??
+        DEFAULT_SEMANTIC_SEARCH_MIN_SCORE,
+      semanticSearchMaxResults:
+        input.gemini?.semanticSearchMaxResults ??
+        DEFAULT_SEMANTIC_SEARCH_MAX_RESULTS,
       describeAssets: input.gemini?.describeAssets ?? false,
       videoHeight: input.gemini?.videoHeight ?? 720,
       retryDelayMs: input.gemini?.retryDelayMs ?? 200,
