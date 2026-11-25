@@ -62,20 +62,17 @@ export async function runAssetDescription(
       options.allowOriginal === true,
     );
     if (!source) return;
-    const result = await askGemini({
+    const { short, long, tags } = await describeBytes({
       apiKey: config.gemini.apiKey,
       model: config.gemini.model,
-      mimeType: source.mime,
+      mime,
+      sourceMime: source.mime,
       bytes: source.bytes,
-      prompt: promptFor(mime),
       retryDelayMs: config.gemini.retryDelayMs,
       ...(config.gemini.fetchImpl
         ? { fetchImpl: config.gemini.fetchImpl }
         : {}),
     });
-    const tags = normaliseTags(result.tags, mime);
-    const long = clip(result.descriptionLong, LONG_LIMIT);
-    const short = clip(result.descriptionShort, SHORT_LIMIT);
     const now = nowIso();
     await sql.transaction(async () => {
       await sql.run(
@@ -108,6 +105,39 @@ export async function runAssetDescription(
       )
       .catch(() => undefined);
   }
+}
+
+/** The Gemini call, prompt, clipping and tag rules a description job uses, without any storage. */
+export async function describeBytes(input: {
+  apiKey: string;
+  model: string;
+  mime: string;
+  /** The type of the bytes sent when it differs from the asset type (a derivative). */
+  sourceMime?: string;
+  bytes: Uint8Array;
+  retryDelayMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<{
+  short: string;
+  long: string;
+  tags: Array<{ category: string; tag: string }>;
+}> {
+  const result = await askGemini({
+    apiKey: input.apiKey,
+    model: input.model,
+    mimeType: input.sourceMime ?? input.mime,
+    bytes: input.bytes,
+    prompt: promptFor(input.mime),
+    ...(input.retryDelayMs !== undefined
+      ? { retryDelayMs: input.retryDelayMs }
+      : {}),
+    ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+  });
+  return {
+    tags: normaliseTags(result.tags, input.mime),
+    long: clip(result.descriptionLong, LONG_LIMIT),
+    short: clip(result.descriptionShort, SHORT_LIMIT),
+  };
 }
 
 function promptFor(mime: string): string {

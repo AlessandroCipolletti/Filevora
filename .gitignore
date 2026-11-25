@@ -18,3 +18,4 @@ graphify-out/
 
 # Real sample files for live search calibration (never committed)
 packages/filevora/test/calibration-files/
+**/descriptions.cache.json

@@ -1,24 +1,31 @@
 {
-  "assets": [
-    {
-      "file": "beach.jpg",
-      "short": "A sunny beach.",
-      "long": "A wide sandy beach with palm trees and a blue sea under a clear sky.",
-      "tags": [
-        ["subject", "beach"],
-        ["emotion", "calm"]
-      ]
-    },
-    {
-      "file": "invoice.pdf",
-      "short": "A supplier invoice.",
-      "long": "A two page invoice with a table of line items and a total due.",
-      "tags": [["subject", "invoice"]]
-    }
+  "_help": [
+    "Put your files in the same folder as this labels.json (packages/filevora/test/calibration-files/, gitignored).",
+    "Every file there becomes an asset. You only have to write queries.",
+    "text is what a user would type. relevant lists the file names that should be found. Use [] when nothing should be found.",
+    "assets is optional. Add an entry only to write a description yourself; leave short, long, or tags out to have Gemini generate them once (cached in descriptions.cache.json).",
+    "Reading the result: in the printed top 5 per query, + means the file is in relevant and - means it is not. 'missed in top 10' lists relevant files that ranked lower."
   ],
   "queries": [
-    { "text": "holiday by the sea", "relevant": ["beach.jpg"] },
-    { "text": "how much do we owe the supplier", "relevant": ["invoice.pdf"] },
-    { "text": "a snowy mountain", "relevant": [] }
+    {
+      "text": "holiday by the sea",
+      "relevant": ["beach.jpg"]
+    },
+    {
+      "text": "how much do we owe the supplier",
+      "relevant": ["invoice.pdf"]
+    },
+    {
+      "text": "a snowy mountain",
+      "relevant": []
+    }
+  ],
+  "assets": [
+    {
+      "file": "invoice.pdf",
+      "short": "Optional. Written here, it replaces the generated description.",
+      "long": "Optional. Leave short, long and tags out to generate them with Gemini once.",
+      "tags": [["subject", "invoice"]]
+    }
   ]
 }

@@ -19,7 +19,7 @@ Stored mode only, because descriptions already live in the host database. No new
 
 ## Decision
 
-Option 2. `gemini-embedding-2` at 768 dimensions (a multimodal model that embeds a file rendition together with its description, and text queries into the same space), L2-normalized client side, stored as little-endian float32 in `filevora_asset_embeddings` (BYTEA on PostgreSQL, BLOB on SQLite and MySQL). `POST /files/search` applies the structured filters in SQL, streams vectors in keyset chunks, and keeps a bounded heap of the best `limit + 1` hits. Pages are ordered by quantized score then asset id. The cursor carries a fingerprint of the query, so a changed query is rejected. `minScore` defaults to 0.55 and is an uncalibrated placeholder. `maxResults` bounds a search across pages.
+Option 2. `gemini-embedding-2` at 768 dimensions (a multimodal model that embeds a file rendition together with its description, and text queries into the same space), L2-normalized client side, stored as little-endian float32 in `filevora_asset_embeddings` (BYTEA on PostgreSQL, BLOB on SQLite and MySQL). `POST /files/search` applies the structured filters in SQL, streams vectors in keyset chunks, and keeps a bounded heap of the best `limit + 1` hits. Pages are ordered by quantized score then asset id. The cursor carries a fingerprint of the query, so a changed query is rejected. `minScore` defaults to 0.65, a provisional value from one live run of the text fixture with `gemini-embedding-2` (precision 0.77, recall 0.82), to be confirmed by a run on real files. `maxResults` bounds a search across pages.
 
 ## Rejected alternatives
 

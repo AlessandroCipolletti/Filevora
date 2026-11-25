@@ -10,13 +10,13 @@ import {
   type EmbedFile,
 } from '../search/embed.js';
 import {
+  convertAudioToMp3,
   EMBED_FILE_LIMITS,
   embeddingFileKind,
   isEmbeddableMedia,
   prepareEmbeddingFile,
-  type EmbeddingFileKind,
 } from '../search/embed-file.js';
-import { readAll } from '../storage/stage.js';
+import { materialize, readAll } from '../storage/stage.js';
 import type { StorageDriver } from '../types/index.js';
 
 export interface EmbedAssetRow {
@@ -135,6 +135,7 @@ async function loadEmbeddingFile(
     );
     const common = {
       ffprobePath: config.processing.ffprobePath,
+      ffmpegPath: config.processing.ffmpegPath,
       maxPixels: config.processing.imageMaxPixels,
     };
     if (kind === 'image') {
@@ -177,9 +178,9 @@ async function loadMedia(
   storage: StorageDriver,
   row: EmbedAssetRow,
   mime: string,
-  kind: EmbeddingFileKind,
+  kind: 'video' | 'audio',
   variants: VariantRow[],
-  common: { ffprobePath: string; maxPixels: number },
+  common: { ffprobePath: string; ffmpegPath: string; maxPixels: number },
 ): Promise<Loaded> {
   const limitMs =
     (kind === 'audio'
@@ -192,9 +193,9 @@ async function loadMedia(
     0,
     ...sameKind.map((entry) => entry.duration_ms ?? 0),
   );
-  if (longest > limitMs) {
+  if (kind === 'video' && longest > limitMs) {
     return {
-      reason: `the ${kind} lasts ${Math.round(longest / 1000)} s; the limit is ${limitMs / 1000} s`,
+      reason: `the video lasts ${Math.round(longest / 1000)} s; the limit is ${limitMs / 1000} s`,
     };
   }
   const usable = sameKind
@@ -202,6 +203,7 @@ async function loadMedia(
       (entry) =>
         isEmbeddableMedia(kind, entry.mime) &&
         entry.duration_ms !== null &&
+        entry.duration_ms <= limitMs &&
         (entry.bytes ?? Infinity) <= EMBED_FILE_LIMITS.maxFileBytes,
     )
     .sort((left, right) => (left.bytes ?? 0) - (right.bytes ?? 0))[0];
@@ -214,16 +216,51 @@ async function loadMedia(
       durationMs: usable.duration_ms ?? 0,
     });
   }
-  if (!isEmbeddableMedia(kind, mime)) {
-    return {
-      reason: `no MP4, MOV, MP3 or WAV rendition exists and the original is ${mime}`,
-    };
+  let reason = `no MP4, MOV, MP3 or WAV rendition exists and the original is ${mime}`;
+  if (isEmbeddableMedia(kind, mime)) {
+    if (!row.original_object_key) {
+      return { reason: 'the asset has no stored bytes' };
+    }
+    if ((row.bytes ?? 0) <= EMBED_FILE_LIMITS.maxFileBytes) {
+      const bytes = await readAll(
+        await storage.getObject(row.original_object_key),
+      );
+      const prepared = await prepareEmbeddingFile({ ...common, bytes, mime });
+      if ('file' in prepared || kind === 'video') return prepared;
+      reason = prepared.reason;
+    } else if (kind === 'video') {
+      return { reason: `the original video is ${row.bytes} bytes` };
+    } else {
+      reason = `the original audio is ${row.bytes} bytes`;
+    }
+  } else if (kind === 'video') {
+    return { reason };
   }
-  if (!row.original_object_key)
-    return { reason: 'the asset has no stored bytes' };
-  if ((row.bytes ?? 0) > EMBED_FILE_LIMITS.maxFileBytes) {
-    return { reason: `the original ${kind} is ${row.bytes} bytes` };
+  return await convertAudio(storage, row, sameKind, common.ffmpegPath, reason);
+}
+
+/** Embedding-only MP3 from the optimized rendition when there is one, otherwise the original. */
+async function convertAudio(
+  storage: StorageDriver,
+  row: EmbedAssetRow,
+  audioVariants: VariantRow[],
+  ffmpegPath: string,
+  why: string,
+): Promise<Loaded> {
+  const source =
+    audioVariants.find((entry) => entry.name === 'optimized')?.storage_key ??
+    row.original_object_key;
+  if (!source) return { reason: 'the asset has no stored bytes' };
+  const local = await materialize(storage, source);
+  try {
+    const converted = await convertAudioToMp3({
+      sourcePath: local.path,
+      ffmpegPath,
+    });
+    return 'reason' in converted
+      ? { reason: `${why}; ${converted.reason}` }
+      : converted;
+  } finally {
+    await local.cleanup();
   }
-  const bytes = await readAll(await storage.getObject(row.original_object_key));
-  return await prepareEmbeddingFile({ ...common, bytes, mime });
 }

@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { createUploadClient } from '../dist/client/index.js';
 import { resolveConfig } from '../dist/config/load.js';
 import { FileSdkError } from '../dist/errors/error.js';
@@ -26,6 +34,7 @@ import {
 } from '../dist/search/embed.js';
 import {
   EMBED_FILE_LIMITS,
+  convertAudioToMp3,
   prepareEmbeddingFile,
 } from '../dist/search/embed-file.js';
 import { QueryVectorCache } from '../dist/search/query-cache.js';
@@ -64,19 +73,22 @@ async function uploadText(
 
 function withFiles(
   name: string,
-  run: (context: {
-    dir: string;
-    gemini: MockGemini;
-    files: ReturnType<typeof createFiles>;
-  }) => Promise<void>,
+  run: (
+    context: {
+      dir: string;
+      gemini: MockGemini;
+      files: ReturnType<typeof createFiles>;
+    },
+    t: TestContext,
+  ) => Promise<void>,
   overrides: Parameters<typeof openSearchFiles>[2] = {},
 ) {
-  return test(name, async () => {
+  return test(name, async (t) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'filevora-search-'));
     const gemini = createMockGemini();
     const files = openSearchFiles(dir, gemini, overrides);
     try {
-      await run({ dir, gemini, files });
+      await run({ dir, gemini, files }, t);
     } finally {
       await files.close();
       rmSync(dir, { recursive: true, force: true });
@@ -516,7 +528,7 @@ test('the schema, config and env defaults expose the search settings', () => {
   const defaults = resolveConfig({}, {});
   assert.equal(defaults.gemini.embeddingModel, 'gemini-embedding-2');
   assert.equal(defaults.gemini.embeddingDimensions, 768);
-  assert.equal(defaults.gemini.searchMinScore, 0.55);
+  assert.equal(defaults.gemini.searchMinScore, 0.65);
   assert.equal(defaults.gemini.searchMaxResults, 100);
   const tuned = resolveConfig(
     {},
@@ -584,14 +596,14 @@ withFiles(
     assert.deepEqual(found.meta, {
       model: 'gemini-embedding-2',
       dimensions: 768,
-      minScore: 0.55,
+      minScore: 0.65,
       maxResults: 100,
       candidatesScored: 4,
       capped: false,
     });
     for (let i = 0; i < found.items.length; i += 1) {
       const item = found.items[i]!;
-      assert.ok(item.score >= 0.55 && item.score <= 1);
+      assert.ok(item.score >= 0.65 && item.score <= 1);
       assert.equal(Number.isInteger(Math.round(item.score * 1e6)), true);
       assert.ok(item.file.description, 'results carry the description');
       if (i > 0) assert.ok(item.score <= found.items[i - 1]!.score);
@@ -1512,3 +1524,152 @@ test('prepareEmbeddingFile renders images and explains every fallback', async ()
   });
   assert.ok('reason' in unprobeable, 'an original with no ffprobe falls back');
 });
+
+function fakeFfmpeg(dir: string, body: string) {
+  const script = path.join(dir, 'ffmpeg-fake.sh');
+  writeFileSync(
+    script,
+    `#!/bin/sh\nfor last; do :; done\necho "$@" > "${dir}/args.txt"\n${body}\n`,
+  );
+  chmodSync(script, 0o755);
+  return script;
+}
+
+test('convertAudioToMp3 asks ffmpeg for a mono MP3 trimmed to 180 s and cleans up', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'filevora-fake-ffmpeg-'));
+  try {
+    const ffmpegPath = fakeFfmpeg(dir, 'printf "ID3fake" > "$last"');
+    const result = await convertAudioToMp3({
+      sourcePath: '/tmp/in.m4a',
+      ffmpegPath,
+    });
+    assert.ok('file' in result);
+    assert.equal(result.file.mime, 'audio/mpeg');
+    assert.equal(Buffer.from(result.file.bytes).toString(), 'ID3fake');
+    const args = readFileSync(path.join(dir, 'args.txt'), 'utf8');
+    assert.match(args, /-i \/tmp\/in\.m4a/);
+    assert.match(args, /-t 180/);
+    assert.match(args, /-ac 1/);
+    assert.match(args, /-c:a libmp3lame/);
+    const output = args.trim().split(' ').at(-1)!;
+    assert.equal(existsSync(output), false, 'the temp output is removed');
+    assert.equal(existsSync(path.dirname(output)), false);
+
+    const failing = await convertAudioToMp3({
+      sourcePath: '/tmp/in.m4a',
+      ffmpegPath: fakeFfmpeg(dir, 'exit 1'),
+    });
+    assert.ok('reason' in failing);
+    assert.match(failing.reason, /conversion to MP3 failed/);
+
+    const empty = await convertAudioToMp3({
+      sourcePath: '/tmp/in.m4a',
+      ffmpegPath: fakeFfmpeg(dir, ': > "$last"'),
+    });
+    assert.ok('reason' in empty);
+
+    const huge = await convertAudioToMp3({
+      sourcePath: '/tmp/in.m4a',
+      ffmpegPath: fakeFfmpeg(
+        dir,
+        `head -c ${EMBED_FILE_LIMITS.maxFileBytes + 1} /dev/zero > "$last"`,
+      ),
+    });
+    assert.ok('reason' in huge);
+    assert.match(huge.reason, /converted MP3 is/);
+
+    const missing = await convertAudioToMp3({
+      sourcePath: '/tmp/in.m4a',
+      ffmpegPath: path.join(dir, 'no-such-ffmpeg'),
+    });
+    assert.ok('reason' in missing);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function toneFile(extension: string, seconds: number): Uint8Array | undefined {
+  const dir = mkdtempSync(path.join(tmpdir(), 'filevora-tone-'));
+  const file = path.join(dir, `tone.${extension}`);
+  try {
+    const result = spawnSync(
+      'ffmpeg',
+      [
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        `sine=frequency=440:sample_rate=8000:duration=${seconds}`,
+        '-ac',
+        '1',
+        file,
+      ],
+      { stdio: 'ignore' },
+    );
+    return result.status === 0 ? new Uint8Array(readFileSync(file)) : undefined;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function mp3Seconds(base64: string): number {
+  const dir = mkdtempSync(path.join(tmpdir(), 'filevora-probe-'));
+  try {
+    const file = path.join(dir, 'probe.mp3');
+    writeFileSync(file, Buffer.from(base64, 'base64'));
+    const out = spawnSync(
+      'ffprobe',
+      [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'csv=p=0',
+        file,
+      ],
+      { encoding: 'utf8' },
+    );
+    return Number(out.stdout.trim());
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+withFiles(
+  'audio without an MP3 or WAV rendition is converted to a mono MP3 for embedding',
+  async ({ dir, gemini, files }, t) => {
+    const ogg = toneFile('ogg', 2);
+    if (!ogg) {
+      t.skip('ffmpeg is not installed');
+      return;
+    }
+    const audio = await uploadBinary(files, 'tone.ogg', 'audio/ogg', ogg);
+    assert.equal(audio.description?.status, 'done');
+    const call = gemini.embedCalls.find((entry) => entry.file);
+    assert.equal(call?.file?.mime, 'audio/mpeg');
+    assert.deepEqual(
+      embeddingRows(dir).map((row) => row.source),
+      ['file+description'],
+    );
+  },
+);
+
+withFiles(
+  'audio longer than 180 s is trimmed to 180 s instead of falling back',
+  async ({ gemini, files }, t) => {
+    const wav = toneFile('wav', 200);
+    if (!wav) {
+      t.skip('ffmpeg is not installed');
+      return;
+    }
+    await uploadBinary(files, 'long.wav', 'audio/wav', wav);
+    const call = gemini.embedCalls.find((entry) => entry.file);
+    assert.equal(call?.file?.mime, 'audio/mpeg');
+    const parts = (
+      call!.body.content as { parts: Array<{ inline_data?: { data: string } }> }
+    ).parts;
+    const seconds = mp3Seconds(parts[1]!.inline_data!.data);
+    assert.ok(seconds > 170 && seconds <= 181, String(seconds));
+  },
+);

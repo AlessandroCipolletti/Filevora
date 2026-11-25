@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
@@ -186,6 +187,77 @@ async function probeBytes(input: PrepareInput) {
     const file = path.join(work, 'probe.bin');
     writeFileSync(file, input.bytes);
     return await probeMedia(input.ffprobePath, file, 15_000);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Convert audio that Google cannot take (or that is too long) into a mono MP3 for embedding only.
+ * Audio past the duration limit is trimmed, because the limit is on duration. Never throws.
+ */
+export async function convertAudioToMp3(input: {
+  sourcePath: string;
+  ffmpegPath: string;
+  timeoutMs?: number;
+}): Promise<PreparedEmbeddingFile> {
+  const work = mkdtempSync(path.join(tmpdir(), 'filevora-embed-audio-'));
+  const output = path.join(work, 'embed.mp3');
+  try {
+    const failure = await new Promise<string | undefined>((resolve) => {
+      const child = spawn(
+        input.ffmpegPath,
+        [
+          '-y',
+          '-i',
+          input.sourcePath,
+          '-vn',
+          '-t',
+          String(EMBED_FILE_LIMITS.audioSeconds),
+          '-ac',
+          '1',
+          '-c:a',
+          'libmp3lame',
+          '-b:a',
+          '64k',
+          output,
+        ],
+        { stdio: 'ignore' },
+      );
+      const timer = setTimeout(
+        () => child.kill('SIGKILL'),
+        input.timeoutMs ?? 60_000,
+      );
+      child.on('error', (error) => {
+        clearTimeout(timer);
+        resolve(error.message);
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve(code === 0 ? undefined : `ffmpeg exited with ${code}`);
+      });
+    });
+    if (failure) {
+      return {
+        reason: `audio conversion to MP3 failed: ${redactString(failure)}`,
+      };
+    }
+    const body = readFileSync(output);
+    if (body.byteLength === 0) {
+      return { reason: 'audio conversion to MP3 produced no data' };
+    }
+    if (body.byteLength > EMBED_FILE_LIMITS.maxFileBytes) {
+      return { reason: `the converted MP3 is ${body.byteLength} bytes` };
+    }
+    return {
+      file: { bytes: new Uint8Array(body), mime: 'audio/mpeg' },
+      rendition: `audio/mpeg;mono;64k;max=${EMBED_FILE_LIMITS.audioSeconds}s`,
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'unknown failure';
+    return {
+      reason: `audio conversion to MP3 failed: ${redactString(detail)}`,
+    };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

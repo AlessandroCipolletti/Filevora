@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["ffmpeg", "pdftoppm", "soffice"],
+  "ignoreBinaries": ["ffmpeg", "ffprobe", "pdftoppm", "soffice"],
   "workspaces": {
     ".": {
       "entry": ["scripts/**/*.ts"],
