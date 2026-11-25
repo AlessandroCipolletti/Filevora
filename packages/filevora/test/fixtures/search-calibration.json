@@ -93,6 +93,354 @@
         ["kind", "speech"],
         ["language", "english"]
       ]
+    },
+    {
+      "id": "horse-meadow",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "horse.webp",
+      "short": "A horse grazes in a meadow.",
+      "long": "A brown horse with a white blaze grazes in a misty green meadow at early morning, with a wooden fence and tall trees behind it.",
+      "tags": [
+        ["subject", "horse"],
+        ["emotion", "calm"]
+      ]
+    },
+    {
+      "id": "parrot-closeup",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "parrot.webp",
+      "short": "A red and blue parrot.",
+      "long": "Close-up of a scarlet macaw perched on a branch, showing bright red, yellow and blue feathers against a blurred jungle background.",
+      "tags": [
+        ["subject", "parrot"],
+        ["subject", "bird"]
+      ]
+    },
+    {
+      "id": "dog-food-bag",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "kibble.webp",
+      "short": "A bag of dry dog food.",
+      "long": "Product photo of a large bag of dry kibble on a white background. The label shows a cartoon dog, the brand name, and a list of ingredients with chicken and rice.",
+      "tags": [
+        ["subject", "packaging"],
+        ["subject", "pet food"]
+      ]
+    },
+    {
+      "id": "receipt-cafe",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "receipt-cafe.pdf",
+      "short": "Receipt from a coffee shop.",
+      "long": "Till receipt from a small coffee shop for two cappuccinos and a croissant, total 9.80 francs, paid by card.",
+      "tags": [
+        ["subject", "receipt"],
+        ["language", "english"]
+      ]
+    },
+    {
+      "id": "receipt-restaurant",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "receipt-dinner.webp",
+      "short": "Receipt from a restaurant dinner.",
+      "long": "Photo of a printed restaurant bill for a dinner for four: starters, four main courses, a bottle of wine, dessert, a service charge line and a total of 214 francs.",
+      "tags": [
+        ["subject", "receipt"],
+        ["subject", "restaurant"]
+      ]
+    },
+    {
+      "id": "quote-pdf",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "quote-consulting.pdf",
+      "short": "Price quote for consulting services.",
+      "long": "Quotation for a three-month consulting project, listing the scope of work, day rates, an estimated total and an offer valid for thirty days. It is an offer, not a request for payment.",
+      "tags": [
+        ["subject", "quote"],
+        ["language", "english"]
+      ]
+    },
+    {
+      "id": "invoice-hotel",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "hotel-invoice.pdf",
+      "short": "Hotel invoice with VAT.",
+      "long": "Invoice from a hotel in Zurich for three nights, with itemised room charges, breakfast, city tax and VAT, issued to a company for a business trip.",
+      "tags": [
+        ["subject", "invoice"],
+        ["language", "english"]
+      ]
+    },
+    {
+      "id": "contract-lease",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "lease.pdf",
+      "short": "Apartment rental agreement.",
+      "long": "Residential lease agreement between a landlord and a tenant for a two-room apartment. It covers monthly rent, deposit, notice period of three months and house rules.",
+      "tags": [
+        ["subject", "contract"],
+        ["subject", "lease"]
+      ]
+    },
+    {
+      "id": "contract-employment",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "employment.pdf",
+      "short": "Employment contract.",
+      "long": "Permanent employment contract for a software engineer, covering salary, working hours, holiday entitlement, probation period and confidentiality.",
+      "tags": [
+        ["subject", "contract"],
+        ["subject", "employment"]
+      ]
+    },
+    {
+      "id": "team-photo",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "team.webp",
+      "short": "Colleagues pose in an office.",
+      "long": "A group of about ten colleagues in casual clothes stand together smiling in a bright open-plan office, with desks and monitors behind them.",
+      "tags": [
+        ["subject", "people"],
+        ["place", "office"]
+      ]
+    },
+    {
+      "id": "portrait-woman",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "portrait.webp",
+      "short": "Portrait of a woman.",
+      "long": "Studio portrait of a woman with curly dark hair and a green jacket, looking at the camera with a soft smile against a plain grey background.",
+      "tags": [
+        ["subject", "person"],
+        ["style", "portrait"]
+      ]
+    },
+    {
+      "id": "wedding-couple",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "wedding.webp",
+      "short": "A bride and groom.",
+      "long": "A bride in a white dress and a groom in a dark suit hold hands and laugh on stone steps outside a church, with guests throwing petals.",
+      "tags": [
+        ["subject", "wedding"],
+        ["emotion", "joyful"]
+      ]
+    },
+    {
+      "id": "kids-birthday",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "party.webp",
+      "short": "Children blow out candles.",
+      "long": "Five children around a table with balloons and paper hats lean over a birthday cake and blow out the candles.",
+      "tags": [
+        ["subject", "children"],
+        ["subject", "party"]
+      ]
+    },
+    {
+      "id": "city-night-tokyo",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "tokyo.webp",
+      "short": "A neon street at night.",
+      "long": "A narrow Tokyo street at night, lit by pink and blue neon signs, with pedestrians holding umbrellas and wet pavement reflecting the lights.",
+      "tags": [
+        ["subject", "city"],
+        ["time", "night"]
+      ]
+    },
+    {
+      "id": "video-timelapse-city",
+      "assetType": "video",
+      "mime": "video/mp4",
+      "name": "traffic.mp4",
+      "short": "Timelapse of a busy junction.",
+      "long": "Daytime timelapse from a high rooftop of cars, trams and pedestrians moving through a large city intersection, with clouds passing quickly overhead.",
+      "tags": [
+        ["subject", "city"],
+        ["subject", "traffic"]
+      ]
+    },
+    {
+      "id": "lake-hills",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "lake.webp",
+      "short": "A calm lake between green hills.",
+      "long": "A still lake in summer reflecting green hills and a small wooden boat, with a blue sky and no snow.",
+      "tags": [
+        ["subject", "lake"],
+        ["emotion", "calm"]
+      ]
+    },
+    {
+      "id": "desert-dunes",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "dunes.webp",
+      "short": "Sand dunes in the desert.",
+      "long": "Wind-shaped orange sand dunes at golden hour with long shadows and a single line of camel tracks.",
+      "tags": [
+        ["subject", "desert"],
+        ["subject", "landscape"]
+      ]
+    },
+    {
+      "id": "pizza",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "pizza.webp",
+      "short": "A margherita pizza.",
+      "long": "A freshly baked margherita pizza with melted mozzarella, tomato sauce and basil leaves on a wooden board in a pizzeria.",
+      "tags": [
+        ["subject", "pizza"],
+        ["subject", "food"]
+      ]
+    },
+    {
+      "id": "sushi",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "sushi.webp",
+      "short": "A platter of sushi.",
+      "long": "A black slate platter with salmon and tuna nigiri, maki rolls, pickled ginger and wasabi, with chopsticks on the side.",
+      "tags": [
+        ["subject", "sushi"],
+        ["subject", "food"]
+      ]
+    },
+    {
+      "id": "birthday-cake",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "cake.webp",
+      "short": "A chocolate birthday cake.",
+      "long": "A chocolate cake with white frosting and lit candles on a white plate, shown close up with no people in the frame.",
+      "tags": [
+        ["subject", "cake"],
+        ["subject", "food"]
+      ]
+    },
+    {
+      "id": "screenshot-dashboard",
+      "assetType": "image",
+      "mime": "image/png",
+      "name": "dashboard.png",
+      "short": "A web analytics dashboard.",
+      "long": "Screenshot of an analytics dashboard in a browser, with line charts of daily visitors, a world map, a table of top pages and a sidebar menu.",
+      "tags": [
+        ["kind", "screenshot"],
+        ["subject", "dashboard"]
+      ]
+    },
+    {
+      "id": "screenshot-error",
+      "assetType": "image",
+      "mime": "image/png",
+      "name": "error.png",
+      "short": "A terminal error message.",
+      "long": "Screenshot of a terminal window showing a red stack trace that ends in a TypeError: cannot read properties of undefined, with file paths and line numbers.",
+      "tags": [
+        ["kind", "screenshot"],
+        ["subject", "error"]
+      ]
+    },
+    {
+      "id": "screenshot-chat",
+      "assetType": "image",
+      "mime": "image/png",
+      "name": "chat.png",
+      "short": "A messaging app conversation.",
+      "long": "Screenshot of a phone chat between two friends planning a dinner on Friday, with emoji reactions and a shared restaurant link.",
+      "tags": [
+        ["kind", "screenshot"],
+        ["subject", "chat"]
+      ]
+    },
+    {
+      "id": "slides-sales",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "q3-sales.pdf",
+      "short": "Quarterly sales presentation.",
+      "long": "Slide deck titled Q3 Sales Review with a bar chart of revenue by region, a slide of key wins, and a closing slide with targets for the next quarter.",
+      "tags": [
+        ["kind", "slides"],
+        ["subject", "sales"]
+      ]
+    },
+    {
+      "id": "sheet-budget",
+      "assetType": "document",
+      "mime": "text/csv",
+      "name": "budget.csv",
+      "short": "Household budget spreadsheet.",
+      "long": "Spreadsheet with monthly columns and rows for rent, groceries, transport, insurance and savings, plus a totals row and a balance for each month.",
+      "tags": [
+        ["kind", "spreadsheet"],
+        ["subject", "budget"]
+      ]
+    },
+    {
+      "id": "sheet-inventory",
+      "assetType": "document",
+      "mime": "text/csv",
+      "name": "inventory.csv",
+      "short": "Warehouse inventory list.",
+      "long": "Spreadsheet listing product codes, descriptions, quantities on hand, shelf locations and reorder levels for a small warehouse.",
+      "tags": [
+        ["kind", "spreadsheet"],
+        ["subject", "inventory"]
+      ]
+    },
+    {
+      "id": "audio-meeting",
+      "assetType": "audio",
+      "mime": "audio/mpeg",
+      "name": "meeting.mp3",
+      "short": "A team meeting recording.",
+      "long": "Recording of five colleagues discussing the launch date of a new product, the marketing plan, open bugs and who owns each task.",
+      "tags": [
+        ["kind", "speech"],
+        ["subject", "meeting"]
+      ]
+    },
+    {
+      "id": "audio-piano",
+      "assetType": "audio",
+      "mime": "audio/mpeg",
+      "name": "piano.mp3",
+      "short": "Solo piano music.",
+      "long": "A slow, gentle solo piano piece in a minor key with soft pedal and no vocals.",
+      "tags": [
+        ["kind", "music"],
+        ["instrument", "piano"]
+      ]
+    },
+    {
+      "id": "video-cooking",
+      "assetType": "video",
+      "mime": "video/mp4",
+      "name": "pasta.mp4",
+      "short": "Cooking pasta step by step.",
+      "long": "A cook in a home kitchen shows how to boil spaghetti, make a tomato sauce with garlic and basil, and plate the finished dish.",
+      "tags": [
+        ["subject", "cooking"],
+        ["kind", "tutorial"]
+      ]
     }
   ],
   "queries": [
@@ -106,13 +454,101 @@
     },
     {
       "text": "animals",
-      "relevant": ["dog-park", "cat-sofa", "puppies-video"]
+      "relevant": [
+        "dog-park",
+        "cat-sofa",
+        "puppies-video",
+        "horse-meadow",
+        "parrot-closeup"
+      ]
     },
     {
       "text": "documento di pagamento con IVA",
+      "relevant": ["invoice-pdf", "fattura-it", "invoice-hotel"]
+    },
+    {
+      "text": "tramonto sulla spiaggia",
+      "relevant": ["beach-sunset"]
+    },
+    {
+      "text": "quantum physics lecture",
+      "relevant": []
+    },
+    {
+      "text": "invoice for consulting services",
       "relevant": ["invoice-pdf", "fattura-it"]
     },
-    { "text": "tramonto sulla spiaggia", "relevant": ["beach-sunset"] },
-    { "text": "quantum physics lecture", "relevant": [] }
+    {
+      "text": "receipt from a restaurant dinner",
+      "relevant": ["receipt-restaurant"]
+    },
+    {
+      "text": "rental agreement for an apartment",
+      "relevant": ["contract-lease"]
+    },
+    {
+      "text": "group photo of colleagues at the office",
+      "relevant": ["team-photo"]
+    },
+    {
+      "text": "bride and groom",
+      "relevant": ["wedding-couple"]
+    },
+    {
+      "text": "snowy mountain peak",
+      "relevant": ["mountain"]
+    },
+    {
+      "text": "neon lights at night in a city",
+      "relevant": ["city-night-tokyo"]
+    },
+    {
+      "text": "raw fish and rice",
+      "relevant": ["sushi"]
+    },
+    {
+      "text": "children at a party",
+      "relevant": ["kids-birthday"]
+    },
+    {
+      "text": "screenshot of an error message",
+      "relevant": ["screenshot-error"]
+    },
+    {
+      "text": "analytics dashboard with charts",
+      "relevant": ["screenshot-dashboard"]
+    },
+    {
+      "text": "quarterly sales presentation",
+      "relevant": ["slides-sales"]
+    },
+    {
+      "text": "household budget spreadsheet",
+      "relevant": ["sheet-budget"]
+    },
+    {
+      "text": "recording of a team meeting about a product launch",
+      "relevant": ["audio-meeting"]
+    },
+    {
+      "text": "how to cook pasta video",
+      "relevant": ["video-cooking"]
+    },
+    {
+      "text": "podcast about slow cooking",
+      "relevant": ["podcast"]
+    },
+    {
+      "text": "electric guitar solo",
+      "relevant": []
+    },
+    {
+      "text": "submarine exploring the deep ocean",
+      "relevant": []
+    },
+    {
+      "text": "lake with a boat in summer",
+      "relevant": ["lake-hills"]
+    }
   ]
 }

@@ -34,9 +34,12 @@ const fixture = JSON.parse(
 const THRESHOLDS = [0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
 const liveKey = process.env.FILEVORA_CALIBRATION_GEMINI_KEY;
 
-async function report(config: Parameters<typeof embedText>[0]) {
+async function report(
+  config: Parameters<typeof embedText>[0],
+  subject: Fixture = fixture,
+) {
   const documents = new Map<string, Float32Array>();
-  for (const asset of fixture.assets) {
+  for (const asset of subject.assets) {
     const canonical = buildCanonicalEmbeddingText({
       assetType: asset.assetType,
       mime: asset.mime,
@@ -58,7 +61,7 @@ async function report(config: Parameters<typeof embedText>[0]) {
   }
   const scores: Array<{ relevant: string[]; scored: Array<[string, number]> }> =
     [];
-  for (const query of fixture.queries) {
+  for (const query of subject.queries) {
     const vector = toFloat32(
       await embedText(config, { text: query.text, task: 'RETRIEVAL_QUERY' }),
     );
@@ -99,26 +102,69 @@ function table(rows: Awaited<ReturnType<typeof report>>) {
     .join('\n');
 }
 
+// The mock only models three concept clusters (animals, invoices, beach or sunset).
+// The first eight assets and first six queries were written around those clusters,
+// so only that subset can be scored exactly. The rest of the fixture is for the live run.
+const MOCK_MODELLED: Fixture = {
+  label: fixture.label,
+  assets: fixture.assets.slice(0, 8),
+  queries: fixture.queries.slice(0, 6).map((query) => ({
+    ...query,
+    relevant: query.relevant.filter((id) =>
+      fixture.assets.slice(0, 8).some((asset) => asset.id === id),
+    ),
+  })),
+};
+
+test('calibration fixture is well formed', () => {
+  const ids = fixture.assets.map((asset) => asset.id);
+  assert.equal(new Set(ids).size, ids.length, 'asset ids are unique');
+  assert.ok(
+    fixture.assets.length >= 30,
+    'enough assets for a threshold picture',
+  );
+  assert.ok(fixture.queries.length >= 20, 'enough labeled queries');
+  assert.ok(
+    fixture.queries.some((query) => query.relevant.length === 0),
+    'at least one query has no relevant asset',
+  );
+  for (const query of fixture.queries) {
+    for (const id of query.relevant) {
+      assert.ok(
+        ids.includes(id),
+        `query "${query.text}" names unknown asset ${id}`,
+      );
+    }
+  }
+});
+
 test('calibration harness on the MOCK embedding model (does not validate the 0.55 default)', async () => {
-  const rows = await report({
+  const mock = {
     apiKey: 'test-key',
     embeddingModel: 'gemini-embedding-001',
     embeddingDimensions: 768,
     retryDelayMs: 0,
     fetchImpl: createMockGemini().fetchImpl,
-  });
+  };
+  const everything = await report(mock);
   console.log(
-    `Calibration fixture: ${fixture.label}\nEmbeddings: MOCK (offline).\n${table(rows)}`,
+    `Calibration fixture: ${fixture.label}\nEmbeddings: MOCK (offline), full fixture of ${fixture.assets.length} assets and ${fixture.queries.length} queries; the mock only models some concepts.\n${table(everything)}`,
   );
+  for (const row of everything) {
+    assert.ok(row.precision >= 0 && row.precision <= 1);
+    assert.ok(row.recall >= 0 && row.recall <= 1);
+  }
+  const loose = [...everything].sort((a, b) => a.threshold - b.threshold);
+  for (let i = 1; i < loose.length; i += 1) {
+    assert.ok(loose[i]!.recall <= loose[i - 1]!.recall);
+  }
+
+  const rows = await report(mock, MOCK_MODELLED);
   assert.equal(DEFAULT_SEARCH_MIN_SCORE, 0.55);
   const atDefault = rows.find((row) => row.threshold === 0.55);
   assert.ok(atDefault && atDefault.precision === 1 && atDefault.recall === 1);
   const atFloor = rows.find((row) => row.threshold === 0.45);
   assert.ok(atFloor && atFloor.precision < 1, 'a low threshold lets noise in');
-  const sorted = [...rows].sort((a, b) => a.threshold - b.threshold);
-  for (let i = 1; i < sorted.length; i += 1) {
-    assert.ok(sorted[i]!.recall <= sorted[i - 1]!.recall);
-  }
 });
 
 test(

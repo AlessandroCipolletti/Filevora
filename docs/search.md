@@ -54,7 +54,7 @@ Keep `query`, `minScore`, `maxResults`, model, and every filter unchanged when y
 2. Run `FILEVORA_CALIBRATION_GEMINI_KEY=... node --experimental-strip-types --test test/search-calibration.test.ts` from `packages/filevora`. It prints precision and recall for `minScore` 0.45 to 0.70 over `test/fixtures/search-calibration.json`.
 3. Replace the fixture descriptions and queries with ones from your own library, then set `FILEVORA_SEARCH_MIN_SCORE`.
 
-The fixture in this repository is hand-written. The offline run uses a mock embedding model and only proves the harness works.
+The fixture in this repository is hand-written: 37 assets (documents, photos, screenshots, slides, spreadsheets, audio, video, with a few near-duplicates) and 25 labeled queries, 3 of which have no relevant asset. The labels were assigned by the author, so treat any threshold from it as a rough guide only. The offline run uses a mock embedding model that only models a few concepts, so it only proves the harness works.
 
 ## Indexing lifecycle
 
