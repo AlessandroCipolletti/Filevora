@@ -189,6 +189,7 @@ async function executeJob(
         retention: config.retention,
         sessionTtlSeconds: config.upload.sessionTtlSeconds,
         dryRun: Boolean(payload.dryRun),
+        purgeEmbeddings: config.metadata.mode === 'stored',
       });
       return { ...report };
     }

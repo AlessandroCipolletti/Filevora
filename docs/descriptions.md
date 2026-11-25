@@ -12,7 +12,7 @@ Filevora can describe an image, video, audio file, or PDF with Google Gemini and
 
 The work is a BullMQ job. Creating the asset does not wait for Gemini and a failed description does not fail the asset. `description_status` is `pending`, `done`, or `failed`. `description_error` explains a failure. `described_at` and `description_model` record the success.
 
-`POST /files/:assetId/describe` runs it again for an asset that already exists.
+`POST /files/:assetId/describe` runs it again for an asset that already exists. When a description finishes, its text is also embedded for [semantic search](search.md). A failed embedding does not fail the description.
 
 ## Stored mode only
 

@@ -15,6 +15,20 @@ import {
   type ListQueryInput,
 } from './list-query.js';
 import { describeIntent } from '../descriptions/policy.js';
+import {
+  DESCRIPTION_DATABASE_MESSAGE,
+  DESCRIPTION_KEY_MESSAGE,
+} from '../descriptions/messages.js';
+import {
+  decodeSearchCursor,
+  encodeSearchCursor,
+  microsToScore,
+  CURSOR_MISMATCH_MESSAGE,
+} from '../search/cursor.js';
+import { embedConfigFrom, embedText, toFloat32 } from '../search/embed.js';
+import { fingerprintFor, parseSearchInput } from '../search/query.js';
+import { QueryVectorCache } from '../search/query-cache.js';
+import { rankEmbeddings } from '../search/rank.js';
 import { fail, isFileSdkError } from '../errors/error.js';
 import {
   addSeconds,
@@ -85,6 +99,8 @@ import type {
   FileVariant,
   Page,
   Principal,
+  SearchFilesInput,
+  SearchFilesPage,
   ProcessingJob,
   StorageDriver,
   UploadPartRecord,
@@ -1104,6 +1120,7 @@ export class FileService {
       retention: this.config.retention,
       sessionTtlSeconds: this.config.upload.sessionTtlSeconds,
       tenantId: ctx.principal.tenantId,
+      purgeEmbeddings: this.config.metadata.mode === 'stored',
       dryRun: Boolean(opts.dryRun),
       remove: async (key) => {
         await storage.deleteObject(key);
@@ -2119,6 +2136,112 @@ export class FileService {
     return { items: page, nextCursor: next };
   }
 
+  private readonly queryVectors = new QueryVectorCache();
+
+  /** Semantic search over described assets. Stored mode and a Gemini key are required. */
+  async search(
+    input: SearchFilesInput,
+    ctx: RequestContext,
+  ): Promise<SearchFilesPage> {
+    if (this.config.metadata.mode !== 'stored') {
+      throw fail('DESCRIPTION_REQUIRES_DATABASE', {
+        message: DESCRIPTION_DATABASE_MESSAGE,
+      });
+    }
+    const { gemini } = this.config;
+    if (!gemini.apiKey) {
+      throw fail('DESCRIPTION_NOT_CONFIGURED', {
+        message: DESCRIPTION_KEY_MESSAGE,
+      });
+    }
+    const parsed = parseSearchInput(input, {
+      minScore: gemini.searchMinScore,
+      maxResults: gemini.searchMaxResults,
+      config: this.config,
+    });
+    const fingerprint = fingerprintFor(
+      parsed,
+      gemini.embeddingModel,
+      gemini.embeddingDimensions,
+    );
+    const cursor = parsed.cursor
+      ? decodeSearchCursor(parsed.cursor, fingerprint)
+      : undefined;
+    const returned = cursor?.n ?? 0;
+    const remaining = parsed.maxResults - returned;
+    if (remaining <= 0) {
+      throw fail('SEARCH_QUERY_INVALID', { message: CURSOR_MISMATCH_MESSAGE });
+    }
+    const pageSize = Math.min(parsed.limit, remaining);
+    const cacheKey = QueryVectorCache.key(
+      gemini.embeddingModel,
+      gemini.embeddingDimensions,
+      parsed.query,
+    );
+    let queryBytes = this.queryVectors.get(cacheKey);
+    if (!queryBytes) {
+      queryBytes = await embedText(embedConfigFrom(this.config), {
+        text: parsed.query,
+        task: 'RETRIEVAL_QUERY',
+      });
+      this.queryVectors.set(cacheKey, queryBytes);
+    }
+    const sql = await this.db();
+    const ranked = await rankEmbeddings({
+      sql,
+      tenantId: ctx.principal.tenantId,
+      model: gemini.embeddingModel,
+      dimensions: gemini.embeddingDimensions,
+      queryVector: toFloat32(queryBytes),
+      filters: parsed.filters,
+      minScoreMicros: parsed.minScoreMicros,
+      ...(cursor
+        ? { after: { scoreMicros: cursor.s, assetId: cursor.id } }
+        : {}),
+      pageSize,
+    });
+    const rows = ranked.hits.length
+      ? await sql.all<FileRow>(
+          `SELECT * FROM files WHERE tenant_id = ? AND deleted_at IS NULL AND id IN (${ranked.hits.map(() => '?').join(', ')})`,
+          [ctx.principal.tenantId, ...ranked.hits.map((hit) => hit.assetId)],
+        )
+      : [];
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const items: SearchFilesPage['items'] = [];
+    for (const hit of ranked.hits) {
+      const row = byId.get(hit.assetId);
+      if (!row) continue;
+      const file = mapFile(row);
+      file.variants = await loadVariants(sql, row.id);
+      await attachTags(sql, file);
+      file.asset = toAssetInfo(file, { detailed: true });
+      items.push({ score: microsToScore(hit.scoreMicros), file });
+    }
+    const last = ranked.hits[ranked.hits.length - 1];
+    const capped = ranked.hasMore && pageSize === remaining;
+    return {
+      items,
+      nextCursor:
+        ranked.hasMore && !capped && last
+          ? encodeSearchCursor({
+              v: 1,
+              s: last.scoreMicros,
+              id: last.assetId,
+              n: returned + ranked.hits.length,
+              qh: fingerprint,
+            })
+          : null,
+      meta: {
+        model: gemini.embeddingModel,
+        dimensions: gemini.embeddingDimensions,
+        minScore: parsed.minScore,
+        maxResults: parsed.maxResults,
+        candidatesScored: ranked.candidatesScored,
+        capped,
+      },
+    };
+  }
+
   private async listStored(
     query: ReturnType<typeof parseListQuery>,
     ctx: RequestContext,
@@ -2183,6 +2306,12 @@ export class FileService {
         `UPDATE variants SET status = 'deleted' WHERE file_id = ?`,
         [row.id],
       );
+      if (this.config.metadata.mode === 'stored') {
+        await sql.run(
+          'DELETE FROM filevora_asset_embeddings WHERE asset_id = ?',
+          [row.id],
+        );
+      }
       await this.audit(sql, ctx.principal, row.id, 'file.delete', {});
     });
   }
@@ -2669,7 +2798,7 @@ export class FileService {
     await this.get(fileId, ctx);
     describeIntent(true, this.config);
     await this.markDescribe(fileId);
-    await this.finishDescribe(fileId);
+    await this.finishDescribe(fileId, { retrigger: true });
     return this.get(fileId, ctx);
   }
 
@@ -2682,7 +2811,10 @@ export class FileService {
     );
   }
 
-  private async finishDescribe(fileId: string): Promise<void> {
+  private async finishDescribe(
+    fileId: string,
+    opts: { retrigger?: boolean } = {},
+  ): Promise<void> {
     if (this.config.metadata.mode !== 'stored') return;
     try {
       const row = await (
@@ -2690,17 +2822,26 @@ export class FileService {
       ).get<{
         detected_mime: string | null;
         declared_mime: string;
-      }>('SELECT detected_mime, declared_mime FROM files WHERE id = ?', [
-        fileId,
-      ]);
+        processing_state: string;
+      }>(
+        'SELECT detected_mime, declared_mime, processing_state FROM files WHERE id = ?',
+        [fileId],
+      );
       const mime = row?.detected_mime || row?.declared_mime || '';
-      if (/^(image|video|audio)\//.test(mime)) return;
+      const media = /^(image|video|audio)\//.test(mime);
+      // Media is described when its optimized variant finishes, unless it already finished.
+      if (media && !(opts.retrigger && row?.processing_state === 'ready')) {
+        return;
+      }
       await enqueueAssetDescription(
         await this.db(),
         await this.driver(),
         this.config,
         fileId,
-        { allowOriginal: true },
+        {
+          allowOriginal: true,
+          ...(opts.retrigger ? { retrigger: true } : {}),
+        },
       );
     } catch {
       // The asset stays available when a description cannot be queued.

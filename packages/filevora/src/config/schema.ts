@@ -6,6 +6,10 @@ const byteString = z
   .string()
   .regex(/^\d+$/)
   .transform((value) => Number(value));
+const fractionString = z
+  .string()
+  .regex(/^(?:\d+\.?\d*|\.\d+)$/)
+  .transform((value) => Number(value));
 const boolString = z
   .enum(['true', 'false', '1', '0'])
   .transform((value) => value === 'true' || value === '1');
@@ -198,6 +202,10 @@ export const filesOptionsSchema = z
       .object({
         apiKey: z.string().min(1).optional(),
         model: z.string().min(1).optional(),
+        embeddingModel: z.string().min(1).optional(),
+        embeddingDimensions: z.number().int().min(128).max(3072).optional(),
+        searchMinScore: z.number().min(0).max(1).optional(),
+        searchMaxResults: z.number().int().min(1).max(1000).optional(),
         describeAssets: z.boolean().optional(),
         videoHeight: z.number().int().min(144).max(2160).optional(),
         retryDelayMs: z.number().int().min(0).max(60_000).optional(),
@@ -338,6 +346,10 @@ const envShape = {
   FILEVORA_GEMINI_API_KEY: z.string().optional(),
   FILEVORA_DESCRIBE_ASSETS: boolString.optional(),
   FILEVORA_GEMINI_MODEL: z.string().optional(),
+  FILEVORA_EMBEDDING_MODEL: z.string().optional(),
+  FILEVORA_EMBEDDING_DIMENSIONS: byteString.optional(),
+  FILEVORA_SEARCH_MIN_SCORE: fractionString.optional(),
+  FILEVORA_SEARCH_MAX_RESULTS: byteString.optional(),
   FILEVORA_DESCRIBE_VIDEO_HEIGHT: byteString.optional(),
   FILEVORA_TYPE_MAX_BYTES: z.string().optional(),
   REDIS_URL: z.string().min(1).optional(),

@@ -367,10 +367,11 @@ export function parseListSearchParams(params: URLSearchParams): ListQueryInput {
   };
 }
 
-export function storedListSql(
+/** Shared by GET /files and POST /files/search so both apply identical filter semantics. */
+export function storedFilterWhere(
   query: ParsedListQuery,
   tenantId: string,
-): { sql: string; params: unknown[] } {
+): { where: string[]; params: unknown[] } {
   const params: unknown[] = [tenantId, 'verified'];
   const where = ['tenant_id = ?', 'deleted_at IS NULL', 'upload_state = ?'];
   if (query.kind) pushKind(where, params, query.kind);
@@ -463,6 +464,14 @@ export function storedListSql(
       "(description_status IS NULL OR description_status != 'done' OR description_long IS NULL OR description_long = '')",
     );
   }
+  return { where, params };
+}
+
+export function storedListSql(
+  query: ParsedListQuery,
+  tenantId: string,
+): { sql: string; params: unknown[] } {
+  const { where, params } = storedFilterWhere(query, tenantId);
   const column = SORT_COLUMN[query.sort];
   if (query.cursor) {
     const op = query.order === 'desc' ? '<' : '>';

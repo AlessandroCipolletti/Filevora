@@ -910,6 +910,41 @@ export const ERROR_CATALOG = {
       ],
     ),
   },
+  SEARCH_QUERY_INVALID: {
+    httpStatus: 400,
+    category: 'config',
+    retryable: false,
+    message:
+      'A search field is invalid. The error names the field and the constraint it breaks.',
+    resolution: resolution(
+      'docs/errors/SEARCH_QUERY_INVALID.md',
+      'POST /files/search rejects an empty or oversized query, a minScore outside 0 to 1, a maxResults outside 1 to 1000, an invalid filter, or a cursor that belongs to another query.',
+      [
+        action(
+          'fix_search_query',
+          'Read the field named in the error. query is 1 to 2000 characters, minScore is 0 to 1, maxResults is 1 to 1000. Keep the query, minScore, maxResults, and every filter unchanged when you pass nextCursor, or omit cursor to start over.',
+        ),
+      ],
+    ),
+  },
+  EMBEDDING_UNAVAILABLE: {
+    httpStatus: 503,
+    category: 'processing',
+    retryable: true,
+    message:
+      'The search query could not be embedded. Retry with backoff; the Gemini embedding call failed or was rate limited.',
+    resolution: resolution(
+      'docs/errors/EMBEDDING_UNAVAILABLE.md',
+      'Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, or returned an unusable vector.',
+      [
+        action(
+          'retry_search',
+          'Retry the search after a short delay. If it keeps failing, check FILEVORA_GEMINI_API_KEY, FILEVORA_EMBEDDING_MODEL, and the Gemini quota.',
+        ),
+      ],
+      doctor,
+    ),
+  },
   DELIVERY_NOT_FOUND: {
     httpStatus: 403,
     category: 'auth',

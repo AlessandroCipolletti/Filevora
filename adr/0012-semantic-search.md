@@ -2,37 +2,37 @@
 
 ## Status
 
-Accepted
+Accepted. Supersedes the earlier decision to leave `semanticSearch` unsupported.
 
 ## Problem
 
-The specification lists embeddings as a later phase. The interfaces should not block it, and this release must not pretend it exists.
+Agents need to find assets by meaning ("animali che giocano") across languages, with pagination and without running a vector database.
 
 ## Constraints
 
-No model calls required for core behavior. No silent upload of private bytes.
+Stored mode only, because descriptions already live in the host database. No new infrastructure. No silent upload of private bytes: only the description text and the search prompt go to Google. No backfill, reindex job, or backward compatibility.
 
 ## Options
 
-1. Leave an unsupported capability and no runtime adapter.
-2. Ship an embedding interface that calls an API when a key is present.
+1. A vector extension or service (pgvector, Qdrant, Redis vectors).
+2. Vectors as binary columns in the host database, ranked exactly in Node.
 
 ## Decision
 
-Option 1. `semanticSearch` is `unsupported` in the capability manifest. No index is written.
+Option 2. `gemini-embedding-001` at 768 dimensions, L2-normalized client side, stored as little-endian float32 in `filevora_asset_embeddings` (BYTEA on PostgreSQL, BLOB on SQLite and MySQL). `POST /files/search` applies the structured filters in SQL, streams vectors in keyset chunks, and keeps a bounded heap of the best `limit + 1` hits. Pages are ordered by quantized score then asset id. The cursor carries a fingerprint of the query, so a changed query is rejected. `minScore` defaults to 0.55 and is an uncalibrated placeholder. `maxResults` bounds a search across pages.
 
 ## Rejected alternatives
 
-A half-built embedding call would risk sending file contents to a third party.
+pgvector and similar: portable across PostgreSQL, MySQL, and SQLite matters more than ANN speed at the library sizes this package targets. Approximate indexes also make cursors unstable. A reindex job: changing model or dimensions means running describe again.
 
 ## Security and reliability
 
-A future adapter must be opt-in, tenant-scoped, and covered by a redaction test before it is marked tested.
+Every query is scoped by `tenant_id`. Errors and logs redact the API key. A failed embedding never fails a description or an asset. Delete and retention remove vectors with the asset.
 
 ## Migration
 
-None until that phase.
+`filevora migrate` creates the table for new databases. There is no backfill.
 
 ## Tests
 
-The manifest test asserts `semanticSearch` is `unsupported`.
+`test/search.test.ts` covers embedding requests, normalization, ranking, ties, pagination, `maxResults`, lifecycle, errors, HTTP, client, and MCP. `test/search-calibration.test.ts` prints precision and recall per threshold for a labeled fixture. Its offline run uses a mock model.

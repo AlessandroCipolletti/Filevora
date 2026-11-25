@@ -1,6 +1,6 @@
 # List and filter assets
 
-`GET /files` is the only list. There is no separate search route. The query uses `LIKE` on the description columns. It does not build a full-text index or a vector index.
+`GET /files` is the only list. Its `q` filter uses `LIKE` on the description columns and builds no full-text index. For meaning-based search use `POST /files/search`, described in [semantic search](search.md).
 
 The default page is 20 assets, newest first (`sort=created&order=desc`), with `id` as the tiebreaker. `limit` is 1 to 100. `cursor` is opaque. Send it back as `cursor` to read the next page. The same sort and filters must stay on that request.
 

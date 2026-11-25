@@ -2,6 +2,12 @@
 
 ## 0.1.0
 
+### Semantic search
+
+- `POST /files/search` finds assets by meaning. It takes a natural-language `query` in any language, the `GET /files` structured filters, `minScore` (default 0.55, uncalibrated), `maxResults` (default 100, cap across pages), `limit`, and `cursor`. Each hit has a `score`. Ordering is score descending, then id descending, and the cursor is tied to the query.
+- Stored mode only. When a description finishes, its text is embedded with `gemini-embedding-001` at 768 dimensions and written to `filevora_asset_embeddings`. `POST /files/:id/describe` replaces it. Delete and retention remove it. There is no bulk reindex: run describe again after changing the model or dimensions.
+- New env vars `FILEVORA_EMBEDDING_MODEL`, `FILEVORA_EMBEDDING_DIMENSIONS`, `FILEVORA_SEARCH_MIN_SCORE`, and `FILEVORA_SEARCH_MAX_RESULTS`. New errors `SEARCH_QUERY_INVALID` and `EMBEDDING_UNAVAILABLE`. `createUploadClient().search` and the live MCP tool `search_assets`.
+
 ### List filters
 
 - `GET /files` accepts `type` (`image`, `video`, `document`, `audio`), `createdFrom`/`createdTo`, `updatedFrom`/`updatedTo`, `tags` (any-of), `tagsAll` (all-of), `tagCategory` or `category:tag`, `q`, `mime`, `filename`, `sizeMin`/`sizeMax`, `durationMin`/`durationMax`, `widthMin`/`heightMin`, `status`, `descriptionStatus`, `visibility`, `preset`, `hasDescription`, `sort`, and `order`.

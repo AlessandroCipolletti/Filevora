@@ -85,7 +85,7 @@
     "frameworkHelpers": "tested",
     "assetDescriptions": "tested",
     "assetListFilters": "tested",
-    "semanticSearch": "unsupported",
+    "semanticSearch": "tested",
     "ocr": "unsupported"
   },
   "notes": [
@@ -94,7 +94,7 @@
     "Local verification recorded in runtimes.node.verifiedOn. GitHub Actions runs typecheck, lint, knip, circular, build, and separate test jobs for Redis, S3, Postgres, and MySQL. Local pnpm run ci and the pre-commit hook are unchanged.",
     "Video posters are image/webp. selectPosterEncoder uses FFmpeg libwebp only when ffmpeg -encoders lists it. FFmpeg 8.1.2 on the machine used for local verification has no libwebp encoder, so posters are encoded by Sharp. doctor check ffmpeg-webp warns in that case and does not fail the report.",
     "S3 tests use an in-process path-style emulator. filevora init --profile local-s3 writes a MinIO Compose file and does not start Docker. A networked S3 test runs when FILEVORA_S3_ENDPOINT, FILEVORA_S3_BUCKET, and the access keys are set. Docker was unavailable on the local machine, so that test was skipped. AWS, R2, and MinIO were not certified in this run.",
-    "Lite metadata is the default and does not create a database file. A FILEVORA_DATABASE_URL selects stored mode. postgres and postgresql use PostgreSQL, mysql and mariadb use MySQL or MariaDB, and sqlite or a file path uses SQLite. Migrate creates only filevora_assets and filevora_asset_versions. The processing queue is Redis only.",
+    "Lite metadata is the default and does not create a database file. A FILEVORA_DATABASE_URL selects stored mode. postgres and postgresql use PostgreSQL, mysql and mariadb use MySQL or MariaDB, and sqlite or a file path uses SQLite. Migrate creates filevora_assets, filevora_asset_versions, and, in stored mode, the tag and filevora_asset_embeddings tables. The processing queue is Redis only.",
     "PDF text extraction reads literal Tj strings from fixtures. pdf.text stores per-page text and document metadata. POST /pdf/merge and POST /files/:id/split create new PDF assets. Office-to-PDF uses LibreOffice soffice and is optional; doctor warns when it is missing and the job fails with PROCESSOR_UNAVAILABLE. Page thumbnails use Poppler pdftoppm (pdf.pages, presets pdf-pages and pdf-cover). When pdftoppm is on PATH, normalize stores a PNG of page 1. A missing binary leaves text extraction working. A page-image job fails with PROCESSOR_UNAVAILABLE. OCR returns OCR_NOT_CONFIGURED.",
     "AI diagnostics were tested with an in-process explainer. No request was sent to OpenAI, Anthropic, or Gemini.",
     "Upload progress is percent plus bytes on the client task. Resume uses the existing resume store. Host env names are in .env.example. Processing progress for video and audio is SSE read with fetch so host Authorization headers still apply, with JSON polling as fallback. Image jobs emit one terminal event. History is in memory for the page load and refetches short-lived delivery URLs.",
@@ -120,6 +120,9 @@
           "ProcessingUpdate",
           "ResumeRecord",
           "ResumeStore",
+          "SearchFileHit",
+          "SearchFilesInput",
+          "SearchFilesPage",
           "UploadClient",
           "UploadClientOptions",
           "UploadHistory",
@@ -224,6 +227,9 @@
           "PutObjectInput",
           "RetentionReport",
           "RowError",
+          "SearchFileHit",
+          "SearchFilesInput",
+          "SearchFilesPage",
           "SignDownloadInput",
           "SignPartInput",
           "SignedPart",
@@ -480,6 +486,47 @@
         "response": {
           "status": 200,
           "body": "Page<FileRecord>"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/files/search",
+        "operation": "file.list",
+        "auth": "principal",
+        "modes": [
+          "stored"
+        ],
+        "request": {
+          "body": {
+            "query": "string (1-2000 chars, any language)",
+            "type": "image|video|document|audio | array?",
+            "createdFrom": "iso?",
+            "createdTo": "iso?",
+            "updatedFrom": "iso?",
+            "updatedTo": "iso?",
+            "visibility": "public|private?",
+            "mime": "string?",
+            "filename": "string?",
+            "tags": "string | string[]?",
+            "tagsAll": "string | string[]?",
+            "tagCategory": "string?",
+            "sizeMin": "number?",
+            "sizeMax": "number?",
+            "widthMin": "number?",
+            "heightMin": "number?",
+            "durationMin": "number?",
+            "durationMax": "number?",
+            "status": "string?",
+            "preset": "string?",
+            "minScore": "number 0-1?",
+            "maxResults": "number 1-1000?",
+            "limit": "number 1-100?",
+            "cursor": "string?"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": "{ items: { score, file: FileRecord }[], nextCursor, meta: { model, dimensions, minScore, maxResults, candidatesScored, capped } }"
         }
       },
       {
@@ -1243,6 +1290,26 @@
         "appliesTo": "both"
       },
       {
+        "key": "gemini.embeddingModel",
+        "type": "string",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.embeddingDimensions",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.searchMinScore",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
+        "key": "gemini.searchMaxResults",
+        "type": "number",
+        "appliesTo": "both"
+      },
+      {
         "key": "gemini.describeAssets",
         "type": "boolean",
         "appliesTo": "both"
@@ -1924,6 +1991,18 @@
         "appliesTo": "both"
       },
       {
+        "key": "FILEVORA_EMBEDDING_DIMENSIONS",
+        "type": "string",
+        "default": 768,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_EMBEDDING_MODEL",
+        "type": "string",
+        "default": "gemini-embedding-001",
+        "appliesTo": "both"
+      },
+      {
         "key": "FILEVORA_EXIF_STRIP",
         "type": "string",
         "enum": [
@@ -2024,6 +2103,18 @@
         "key": "FILEVORA_REMOTE_TIMEOUT_MS",
         "type": "string",
         "default": 120000,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_SEARCH_MAX_RESULTS",
+        "type": "string",
+        "default": 100,
+        "appliesTo": "both"
+      },
+      {
+        "key": "FILEVORA_SEARCH_MIN_SCORE",
+        "type": "string",
+        "default": 0.55,
         "appliesTo": "both"
       },
       {
@@ -2473,6 +2564,22 @@
         "retryable": false,
         "cause": "GET /files rejects an unknown type, sort, date, or range instead of ignoring it.",
         "fix": "Read the parameter named in the error. type is image, video, document, or audio. sort is created, updated, size, or filename. order is asc or desc."
+      },
+      {
+        "code": "SEARCH_QUERY_INVALID",
+        "httpStatus": 400,
+        "category": "config",
+        "retryable": false,
+        "cause": "POST /files/search rejects an empty or oversized query, a minScore outside 0 to 1, a maxResults outside 1 to 1000, an invalid filter, or a cursor that belongs to another query.",
+        "fix": "Read the field named in the error. query is 1 to 2000 characters, minScore is 0 to 1, maxResults is 1 to 1000. Keep the query, minScore, maxResults, and every filter unchanged when you pass nextCursor, or omit cursor to start over."
+      },
+      {
+        "code": "EMBEDDING_UNAVAILABLE",
+        "httpStatus": 503,
+        "category": "processing",
+        "retryable": true,
+        "cause": "Search turns the query into a vector with the Gemini embedding model. The call timed out, was rate limited after retries, or returned an unusable vector.",
+        "fix": "Retry the search after a short delay. If it keeps failing, check FILEVORA_GEMINI_API_KEY, FILEVORA_EMBEDDING_MODEL, and the Gemini quota."
       },
       {
         "code": "DELIVERY_NOT_FOUND",

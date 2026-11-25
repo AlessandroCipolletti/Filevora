@@ -1,0 +1,118 @@
+{
+  "label": "Hand-written, Gemini-style descriptions. Relevance labels were assigned by the author, not by users. Replace or extend with descriptions produced by a real describe run before trusting any threshold.",
+  "assets": [
+    {
+      "id": "dog-park",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "dog.webp",
+      "short": "A dog runs on grass.",
+      "long": "A golden retriever runs across a green park lawn with a ball in its mouth on a sunny day.",
+      "tags": [
+        ["subject", "dog"],
+        ["emotion", "joyful"]
+      ]
+    },
+    {
+      "id": "cat-sofa",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "cat.webp",
+      "short": "A cat sleeps on a sofa.",
+      "long": "A grey cat curled up asleep on a beige sofa next to a cushion.",
+      "tags": [
+        ["subject", "cat"],
+        ["emotion", "calm"]
+      ]
+    },
+    {
+      "id": "puppies-video",
+      "assetType": "video",
+      "mime": "video/mp4",
+      "name": "puppies.mp4",
+      "short": "Puppies play together.",
+      "long": "Three puppies chase each other in a garden while a child laughs.",
+      "tags": [
+        ["subject", "puppy"],
+        ["emotion", "joyful"]
+      ]
+    },
+    {
+      "id": "invoice-pdf",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "fattura-14.pdf",
+      "short": "Invoice for consulting services.",
+      "long": "Invoice number 2026-14 for consulting services with VAT and payment terms of thirty days.",
+      "tags": [
+        ["subject", "invoice"],
+        ["language", "english"]
+      ]
+    },
+    {
+      "id": "fattura-it",
+      "assetType": "document",
+      "mime": "application/pdf",
+      "name": "fattura-15.pdf",
+      "short": "Fattura per servizi di consulenza.",
+      "long": "Fattura numero 15 con IVA e pagamento a trenta giorni.",
+      "tags": [
+        ["subject", "fattura"],
+        ["language", "italian"]
+      ]
+    },
+    {
+      "id": "beach-sunset",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "beach.webp",
+      "short": "A beach at sunset.",
+      "long": "Orange sunset over a quiet beach with gentle waves and a few people walking.",
+      "tags": [
+        ["subject", "beach"],
+        ["emotion", "calm"]
+      ]
+    },
+    {
+      "id": "mountain",
+      "assetType": "image",
+      "mime": "image/webp",
+      "name": "mountain.webp",
+      "short": "Snowy mountain peak.",
+      "long": "A snowy mountain peak above clouds at dawn with a hiking trail below.",
+      "tags": [["subject", "mountain"]]
+    },
+    {
+      "id": "podcast",
+      "assetType": "audio",
+      "mime": "audio/mpeg",
+      "name": "podcast.mp3",
+      "short": "A talk about cooking.",
+      "long": "Two people discuss slow cooking recipes and kitchen tools.",
+      "tags": [
+        ["kind", "speech"],
+        ["language", "english"]
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "text": "dogs and cats playing",
+      "relevant": ["dog-park", "cat-sofa", "puppies-video"]
+    },
+    {
+      "text": "cani e gatti",
+      "relevant": ["dog-park", "cat-sofa", "puppies-video"]
+    },
+    {
+      "text": "animals",
+      "relevant": ["dog-park", "cat-sofa", "puppies-video"]
+    },
+    {
+      "text": "documento di pagamento con IVA",
+      "relevant": ["invoice-pdf", "fattura-it"]
+    },
+    { "text": "tramonto sulla spiaggia", "relevant": ["beach-sunset"] },
+    { "text": "quantum physics lecture", "relevant": [] }
+  ]
+}

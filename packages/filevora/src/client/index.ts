@@ -19,3 +19,8 @@ export type {
   UploadTask,
 } from './upload-client.js';
 export { createUploadClient } from './upload-client.js';
+export type {
+  SearchFilesInput,
+  SearchFilesPage,
+  SearchFileHit,
+} from '../types/index.js';

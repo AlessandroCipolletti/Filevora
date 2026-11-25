@@ -79,7 +79,7 @@ test('filevora manifest --json prints the catalog', async () => {
   assert.equal(body.schemaVersion, 2);
 });
 
-test('the MCP server lists read-only tools', async () => {
+test('the MCP server lists its tools', async () => {
   const listed = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 1,
@@ -93,6 +93,7 @@ test('the MCP server lists read-only tools', async () => {
     'validate_config',
     'doctor',
     'list_files',
+    'search_assets',
     'describe_asset',
   ]);
   const describe = await handleMcpMessage({

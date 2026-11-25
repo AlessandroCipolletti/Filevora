@@ -5,6 +5,13 @@ import path from 'node:path';
 import type { ResolvedConfig } from '../config/load.js';
 import { nowIso } from '../ids.js';
 import type { Sql } from '../metadata/sqlite.js';
+import { redactString } from '../redact.js';
+import { kindFromMime } from '../server/asset-info.js';
+import {
+  buildCanonicalEmbeddingText,
+  embedConfigFrom,
+  embedText,
+} from '../search/embed.js';
 import { readAll } from '../storage/stage.js';
 import type { StorageDriver } from '../types/index.js';
 import { askGemini } from './gemini.js';
@@ -21,6 +28,7 @@ const KINDS = new Set(['music', 'sound-effects', 'speech']);
 interface AssetRow {
   id: string;
   tenant_id: string;
+  original_name: string;
   detected_mime: string | null;
   declared_mime: string;
   original_object_key: string | null;
@@ -36,7 +44,7 @@ export async function runAssetDescription(
   options: { allowOriginal?: boolean } = {},
 ): Promise<void> {
   const row = await sql.get<AssetRow>(
-    `SELECT id, tenant_id, detected_mime, declared_mime, original_object_key,
+    `SELECT id, tenant_id, original_name, detected_mime, declared_mime, original_object_key,
             describe_requested, description_status
      FROM files WHERE id = ?`,
     [fileId],
@@ -90,6 +98,11 @@ export async function runAssetDescription(
         );
       }
     });
+    await embedDescription(sql, config, row, mime, {
+      short,
+      long,
+      tags,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'The description failed.';
@@ -99,6 +112,68 @@ export async function runAssetDescription(
         [clip(message, 300), nowIso(), fileId],
       )
       .catch(() => undefined);
+  }
+}
+
+/** A failed embedding never discards a finished description; the asset is just not searchable yet. */
+async function embedDescription(
+  sql: Sql,
+  config: ResolvedConfig,
+  row: AssetRow,
+  mime: string,
+  description: {
+    short: string;
+    long: string;
+    tags: Array<{ category: string; tag: string }>;
+  },
+): Promise<void> {
+  try {
+    const canonical = buildCanonicalEmbeddingText({
+      assetType: kindFromMime(mime),
+      mime,
+      originalName: row.original_name,
+      descriptionShort: description.short,
+      descriptionLong: description.long,
+      tags: description.tags,
+    });
+    const vector = await embedText(embedConfigFrom(config), {
+      text: canonical.text,
+      title: canonical.title,
+      task: 'RETRIEVAL_DOCUMENT',
+    });
+    const embedding = Buffer.from(
+      vector.buffer,
+      vector.byteOffset,
+      vector.byteLength,
+    );
+    await sql.transaction(async () => {
+      await sql.run(
+        'DELETE FROM filevora_asset_embeddings WHERE asset_id = ?',
+        [row.id],
+      );
+      await sql.run(
+        `INSERT INTO filevora_asset_embeddings
+         (asset_id, tenant_id, model, dimensions, embedding, content_hash, embedded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          row.id,
+          row.tenant_id,
+          config.gemini.embeddingModel,
+          config.gemini.embeddingDimensions,
+          embedding,
+          canonical.contentHash,
+          nowIso(),
+        ],
+      );
+    });
+  } catch (error) {
+    await sql
+      .run('DELETE FROM filevora_asset_embeddings WHERE asset_id = ?', [row.id])
+      .catch(() => undefined);
+    const detail = error instanceof Error ? error.message : 'unknown failure';
+    process.stderr.write(
+      `filevora: embedding for ${row.id} failed: ${redactString(detail)}\n`,
+    );
   }
 }
 

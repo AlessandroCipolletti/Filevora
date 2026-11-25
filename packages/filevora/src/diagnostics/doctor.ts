@@ -360,7 +360,7 @@ export async function runDoctor(
         status: describedReady ? 'pass' : 'warn',
         required: false,
         message: describedReady
-          ? `Gemini descriptions use ${config.gemini.model}. Content is sent to Google only when a description runs.`
+          ? `Gemini descriptions use ${config.gemini.model}. Semantic search embeds them with ${config.gemini.embeddingModel} at ${config.gemini.embeddingDimensions} dimensions. Content is sent to Google only when a description or a search query runs.`
           : config.metadata.mode === 'lite'
             ? 'Descriptions need a database. Set FILEVORA_DATABASE_URL before FILEVORA_GEMINI_API_KEY.'
             : 'Descriptions are off. Set FILEVORA_GEMINI_API_KEY to send assets to Google Gemini.',

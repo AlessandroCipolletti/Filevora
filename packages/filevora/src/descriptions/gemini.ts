@@ -149,8 +149,8 @@ async function deleteFile(
   }).catch(() => undefined);
 }
 
-async function withRetry(
-  input: GeminiRequest,
+export async function withRetry(
+  input: { retryDelayMs?: number },
   send: () => Promise<Response>,
 ): Promise<Response> {
   let last = 'Gemini did not respond.';

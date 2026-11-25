@@ -247,6 +247,66 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
+export interface SearchFilesInput {
+  /** Natural-language prompt in any language, 1 to 2000 characters after trimming. */
+  query: string;
+  type?:
+    | 'image'
+    | 'video'
+    | 'document'
+    | 'audio'
+    | Array<'image' | 'video' | 'document' | 'audio'>;
+  createdFrom?: string;
+  createdTo?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  visibility?: Visibility;
+  /** Exact MIME type, or a prefix ending in `/`. */
+  mime?: string;
+  filename?: string;
+  tags?: string | string[];
+  tagsAll?: string | string[];
+  tagCategory?: string;
+  sizeMin?: number;
+  sizeMax?: number;
+  widthMin?: number;
+  heightMin?: number;
+  durationMin?: number;
+  durationMax?: number;
+  /** Processing state, for example `ready`. */
+  status?: string;
+  preset?: string;
+  /** Minimum cosine similarity from 0 to 1 (maximum distance is `1 - minScore`). */
+  minScore?: number;
+  /** Hard cap on results across all pages, 1 to 1000. */
+  maxResults?: number;
+  /** Page size, 1 to 100. */
+  limit?: number;
+  /** `nextCursor` from the previous page of the same search. */
+  cursor?: string;
+}
+
+export interface SearchFileHit {
+  /** Cosine similarity rounded to 6 decimals. */
+  score: number;
+  file: FileRecord;
+}
+
+export interface SearchFilesPage {
+  items: SearchFileHit[];
+  nextCursor: string | null;
+  meta: {
+    model: string;
+    dimensions: number;
+    minScore: number;
+    maxResults: number;
+    /** Embedded assets that passed the filters and were scored. */
+    candidatesScored: number;
+    /** True when maxResults ended the results while more matches existed. */
+    capped: boolean;
+  };
+}
+
 export type InactivityEvidence =
   'application-touch' | 'url-issued' | 'proxy-access';
 

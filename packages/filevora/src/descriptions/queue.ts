@@ -10,7 +10,7 @@ export async function enqueueAssetDescription(
   storage: StorageDriver,
   config: ResolvedConfig,
   fileId: string,
-  options: { allowOriginal?: boolean } = {},
+  options: { allowOriginal?: boolean; retrigger?: boolean } = {},
 ): Promise<void> {
   if (config.metadata.mode !== 'stored' || !config.gemini.apiKey) return;
   const row = await sql.get<{
@@ -35,9 +35,11 @@ export async function enqueueAssetDescription(
   await enqueueProcessingJob({
     env: config.env,
     redisUrl: config.queue.redisUrl,
-    id: options.allowOriginal
-      ? `describe_ready_${fileId}`
-      : `describe_${fileId}`,
+    id: options.retrigger
+      ? `describe_manual_${fileId}_${Date.now()}`
+      : options.allowOriginal
+        ? `describe_ready_${fileId}`
+        : `describe_${fileId}`,
     fileId,
     tenantId: row.tenant_id,
     type: 'describe',

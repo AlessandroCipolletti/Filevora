@@ -28,6 +28,8 @@ export async function runCleanup(input: {
   retention: RetentionInput & { cleanupIntervalMinutes: number };
   sessionTtlSeconds: number;
   tenantId?: string;
+  /** Stored mode only: also drop search vectors of assets whose bytes are removed. */
+  purgeEmbeddings?: boolean;
   dryRun?: boolean;
   nowMs?: number;
   storage?: StorageDriver;
@@ -87,6 +89,12 @@ export async function runCleanup(input: {
           `UPDATE variants SET status = 'deleted' WHERE file_id = ?`,
           [row.id],
         );
+        if (input.purgeEmbeddings) {
+          await input.sql.run(
+            'DELETE FROM filevora_asset_embeddings WHERE asset_id = ?',
+            [row.id],
+          );
+        }
       }
     }
   }

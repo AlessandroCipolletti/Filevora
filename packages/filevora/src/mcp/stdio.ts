@@ -1,12 +1,14 @@
 import { resolveConfig } from '../config/load.js';
 import { runDoctor } from '../diagnostics/doctor.js';
-import { isFileSdkError } from '../errors/error.js';
+import { fail, isFileSdkError } from '../errors/error.js';
 import { readManifest } from '../manifest/index.js';
 import {
   descriptionsEnabled,
   parseListQuery,
   type ListQueryInput,
 } from '../server/list-query.js';
+import { FileService } from '../server/service.js';
+import type { SearchFilesInput } from '../types/index.js';
 
 interface RpcRequest {
   jsonrpc?: string;
@@ -58,6 +60,51 @@ const tools = [
             'type, createdFrom, createdTo, updatedFrom, updatedTo, tags, tagsAll, tagCategory, q, mime, filename, sizeMin, sizeMax, durationMin, durationMax, widthMin, heightMin, status, descriptionStatus, visibility, preset, hasDescription, sort, order, limit, cursor',
         },
       },
+    },
+  },
+  {
+    name: 'search_assets',
+    description:
+      'Semantic search over described assets in natural language, any language. Runs the search live against FILEVORA_DATABASE_URL with FILEVORA_GEMINI_API_KEY from this process env (or env). Returns { items: [{ score, file }], nextCursor, meta }. Use list_files for exact tag, date, or text filters.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tenantId: {
+          type: 'string',
+          description: 'Tenant whose assets are searched. Required.',
+        },
+        query: { type: 'string', description: '1 to 2000 characters.' },
+        type: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['image', 'video', 'document', 'audio'],
+          },
+        },
+        createdFrom: { type: 'string' },
+        createdTo: { type: 'string' },
+        visibility: { type: 'string', enum: ['public', 'private'] },
+        mime: { type: 'string' },
+        tags: { type: 'array', items: { type: 'string' } },
+        tagsAll: { type: 'array', items: { type: 'string' } },
+        minScore: {
+          type: 'number',
+          description:
+            'Minimum cosine similarity, 0 to 1. Default FILEVORA_SEARCH_MIN_SCORE.',
+        },
+        maxResults: {
+          type: 'number',
+          description:
+            'Hard cap across all pages, 1 to 1000. Default FILEVORA_SEARCH_MAX_RESULTS.',
+        },
+        limit: { type: 'number', description: 'Page size, 1 to 100.' },
+        cursor: {
+          type: 'string',
+          description: 'nextCursor of the previous page.',
+        },
+        env: { type: 'object' },
+      },
+      required: ['tenantId', 'query'],
     },
   },
   {
@@ -156,6 +203,28 @@ async function runTool(
         'GET /files?type=audio&tagsAll=kind:speech&tagsAll=language:italian',
       ],
     });
+  }
+  if (name === 'search_assets') {
+    const tenantId = typeof args.tenantId === 'string' ? args.tenantId : '';
+    if (!tenantId) {
+      throw fail('SEARCH_QUERY_INVALID', {
+        message: 'tenantId is required: the tenant whose assets are searched.',
+      });
+    }
+    const input: Record<string, unknown> = { ...args };
+    delete input.env;
+    delete input.tenantId;
+    const files = new FileService(
+      resolveConfig({}, { ...process.env, ...env }),
+    );
+    try {
+      const page = await files.search(input as unknown as SearchFilesInput, {
+        principal: { id: 'mcp', tenantId },
+      });
+      return JSON.stringify(page);
+    } finally {
+      await files.close();
+    }
   }
   if (name === 'describe_asset') {
     try {

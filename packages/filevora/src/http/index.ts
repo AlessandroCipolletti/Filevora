@@ -7,6 +7,7 @@ import type {
   FileOperation,
   FileRecord,
   Principal,
+  SearchFilesInput,
   UploadPolicy,
 } from '../types/index.js';
 
@@ -435,6 +436,16 @@ async function dispatch(
       ctx,
     );
     return json(page, 200, requestId);
+  }
+  if (route.name === 'search') {
+    return json(
+      await options.files.search(
+        asRecord(await readJson(request)) as unknown as SearchFilesInput,
+        ctx,
+      ),
+      200,
+      requestId,
+    );
   }
   if (route.name === 'batch') {
     const body = (await request.json().catch(() => ({}))) as {

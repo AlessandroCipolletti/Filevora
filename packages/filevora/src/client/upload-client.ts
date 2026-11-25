@@ -1,5 +1,6 @@
 import { ERROR_CODES, type ErrorCode } from '../errors/catalog.js';
 import { FileSdkError, fail } from '../errors/error.js';
+import type { SearchFilesInput, SearchFilesPage } from '../types/index.js';
 import { type ProcessingUpdate, readEventStream } from './progress-stream.js';
 import {
   createIndexedDbResumeStore,
@@ -648,6 +649,21 @@ export function createUploadClient(options: UploadClientOptions) {
     });
   }
 
+  /** Semantic search. A plain string is shorthand for `{ query }`. */
+  async function search(
+    input: string | SearchFilesInput,
+  ): Promise<SearchFilesPage> {
+    const body = typeof input === 'string' ? { query: input } : input;
+    return (await request(doFetch, `${endpoint}/files/search`, {
+      method: 'POST',
+      headers: {
+        ...(await headers(options.headers)),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })) as unknown as SearchFilesPage;
+  }
+
   async function describe(fileId: string) {
     return request(
       doFetch,
@@ -675,6 +691,7 @@ export function createUploadClient(options: UploadClientOptions) {
     uploadDirect,
     fetchSigned,
     list,
+    search,
     describe,
     fromUrl,
     transform,
