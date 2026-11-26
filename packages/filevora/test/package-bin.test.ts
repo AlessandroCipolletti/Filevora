@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -10,6 +16,17 @@ const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
+
+test('package.json bin is a plain relative path with a node shebang', () => {
+  const manifest = JSON.parse(
+    readFileSync(path.join(packageRoot, 'package.json'), 'utf8'),
+  ) as { bin: Record<string, string> };
+  assert.equal(manifest.bin.filevora, 'bin/filevora.js');
+  assert.match(
+    readFileSync(path.join(packageRoot, manifest.bin.filevora), 'utf8'),
+    /^#!\/usr\/bin\/env node\n/,
+  );
+});
 
 test('the bin runs the CLI and CommonJS can load the entries', () => {
   const version = spawnSync(
