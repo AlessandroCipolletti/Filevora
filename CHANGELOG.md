@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Documentation
+
+- The README "Install" section documents `npm install filevora`, the package page at https://www.npmjs.com/package/filevora, and `npx filevora --help`.
+
 ## 0.1.0 - 2026-11-26
 
 ### Library methods
