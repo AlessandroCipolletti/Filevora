@@ -12,6 +12,9 @@ pnpm dev
 pnpm dev:client
 pnpm run ci
 pnpm run verify
+pnpm test:docker
+pnpm services:up
+pnpm services:down
 ```
 
 `pnpm dev` runs Vite in library mode with `--watch`. Each file under `packages/filevora/src` is emitted as its own ES module in `dist/`, which is what the tests, the CLI, and the worker child import. `pnpm dev:client` is the Vite dev server for the browser entry only (`packages/filevora/dev/index.html` on `http://127.0.0.1:5173`). That page is not published.
@@ -20,7 +23,11 @@ pnpm run verify
 
 `pnpm run ci` typechecks, runs ESLint and Prettier, runs knip, and runs madge for circular imports. The pre-commit hook runs that script and blocks the commit when it fails. pnpm treats bare `pnpm ci` as its own command, so use `pnpm run ci`.
 
-`pnpm run verify` runs `pnpm run ci` and then the package tests. Do not call bare `pnpm ci`. pnpm reserves that word and does not run the script.
+`pnpm run verify` runs `pnpm run ci`, a Redis pre-flight, and then the package tests. Do not call bare `pnpm ci`. pnpm reserves that word and does not run the script.
+
+`pnpm test` and `pnpm run verify` first run `pnpm test:preflight`. It stops with a message pointing to `pnpm test:docker` when `REDIS_URL` is unset or nothing answers there. The tests themselves are not weakened.
+
+`pnpm test:docker` is the full local run. It starts `docker-compose.test.yml` (Redis, MinIO with buckets, Postgres, MySQL, pinned to the CI image versions, non-default host ports 16379, 19000, 15432, 13306, tmpfs data), runs `pnpm test` with the variables from `scripts/test-env.ts` so no networked test skips, and always runs `docker compose down -v` afterwards while keeping the test exit code. `pnpm services:up` and `pnpm services:down` start and stop the services alone. `pnpm release` and `pnpm release:dry` run the tests through the same path. The default end-user setup does not change: filesystem storage, and Redis only for worker mode. Keep `docker-compose.test.yml`, `scripts/test-env.ts`, and `.github/workflows/ci.yml` consistent; `scripts/docker-services.test.ts` checks it.
 
 Useful pieces:
 
@@ -62,4 +69,4 @@ Implement in order: M0 foundations, M1 local storage, M2 resumable client, M3 qu
 
 ## Current milestone
 
-M0–M11 are in the tree. Follow-up work added GitHub Actions, gated networked S3 and Postgres tests, PDF page previews, and a conditional FFmpeg WebP poster. The package has not been published. Alessandro still needs to confirm the npm name `filevora` before any publish. Publishing is one maintainer command, `pnpm release` (see `docs/releasing.md`). Agents must never run it, and never read or write `.env.release.local`.
+M0–M11 are in the tree. Follow-up work added GitHub Actions, gated networked S3 and Postgres tests, PDF page previews, and a conditional FFmpeg WebP poster. The package has not been published. Alessandro still needs to confirm the npm name `filevora` before any publish. Publishing is one maintainer command, `pnpm release` (see `docs/releasing.md`), which needs Docker running for the full tests. Agents must never run it, and never read or write `.env.release.local`.

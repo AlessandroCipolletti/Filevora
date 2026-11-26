@@ -28,5 +28,5 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Architecture](docs/architecture.md)
 - [Security](docs/security.md)
 - [Changelog](CHANGELOG.md)
-- [Releasing](docs/releasing.md) — maintainers only. `pnpm release <patch|minor|major|prerelease|X.Y.Z>` checks, builds, verifies the tarball, bumps, tags, publishes to npm, and pushes. `pnpm release:dry` skips the bump, commit, tag, push, and publish. Token in `NPM_TOKEN` or `.env.release.local`. Agents must not run it.
+- [Releasing](docs/releasing.md) — maintainers only. `pnpm release <patch|minor|major|prerelease|X.Y.Z>` checks, builds, verifies the tarball, bumps, tags, publishes to npm, and pushes. `pnpm release:dry` skips the bump, commit, tag, push, and publish. Both run the full tests against Docker services (Redis, MinIO, Postgres, MySQL) and need Docker running; the same run is `pnpm test:docker`. Token in `NPM_TOKEN` or `.env.release.local`. Agents must not run it.
 - [Agents](AGENTS.md)

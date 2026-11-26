@@ -13,12 +13,17 @@ pnpm release 0.1.0              # explicit version: the first publish of the ver
 
 An explicit version must parse as `X.Y.Z` or `X.Y.Z-beta.N` and must not be lower than the current one. The first release uses it, because `0.1.0` is already in `packages/filevora/package.json` and `CHANGELOG.md` has its entry as the undated top heading.
 
+## Before you run it
+
+Docker must be installed and running (Docker Desktop on macOS and Windows, the daemon plus the Compose v2 plugin on Linux). The release runs the full test suite against Redis, MinIO, Postgres, and MySQL containers from `docker-compose.test.yml`, so no networked test is skipped. It checks Docker first and stops with a clear message when the CLI is missing or the daemon is not running. The services use host ports 16379, 19000, 15432, and 13306, so a Redis or Postgres already running on the default ports does not interfere. Run the same thing yourself with `pnpm test:docker`.
+
 ## What it does
 
+0. Checks Docker is installed, that Compose v2 works, and that the daemon is running.
 1. Checks the git tree is clean, the branch is `master`, and `HEAD` equals `origin/master` (it fetches first). Push and wait for CI before releasing.
 2. Loads the npm token and creates a temporary npmrc (see below).
 3. Works out the new version, rewrites `CHANGELOG.md` in memory (and fails here if that is not safe), checks the git tag `vX.Y.Z` is free locally and on origin, and checks `filevora@X.Y.Z` is not on the registry.
-4. Runs `pnpm run ci` (typecheck, lint, knip, circular imports, manifest check) and `pnpm test`. No Redis server is needed: the tests start an in-memory Redis and skip the tests that need S3, Postgres, or MySQL.
+4. Runs `pnpm run ci` (typecheck, lint, knip, circular imports, manifest check), then the full test suite through the Docker services, the same path as `pnpm test:docker`: it starts Redis, MinIO (with its buckets), Postgres, and MySQL, runs `pnpm test` with all the service variables set, and removes the containers and their data afterwards. It does this on success, on failure, and on Ctrl+C. A failing test stops the release before anything is bumped.
 5. Builds with `pnpm build`, which copies `README.md` and `LICENSE` into `packages/filevora`.
 6. Runs `npm pack --json --dry-run` and checks the file list. `LICENSE`, `README.md`, `package.json`, `capabilities.json`, `bin/`, and `dist/` must be there, and nothing else: no tests, no sources.
 7. Bumps `version` in `packages/filevora/package.json`, updates `CHANGELOG.md`, commits `release: vX.Y.Z` (hooks are skipped because step 4 just ran them), and tags `vX.Y.Z`.
@@ -27,7 +32,7 @@ An explicit version must parse as `X.Y.Z` or `X.Y.Z-beta.N` and must not be lowe
 
 If anything fails before the push, including the publish, the script deletes the local tag and resets `master` to where it started, and says so. If the publish succeeded but the push failed, it tells you to push by hand and not to rerun.
 
-`pnpm release:dry` runs steps 1 to 6, then `npm publish --dry-run`. It does not write any file, commit, tag, push, or publish, and it does not need a token. It prints the version it would use. It publishes nothing even with a token present.
+`pnpm release:dry` runs steps 0 to 6 (including the Docker tests), then `npm publish --dry-run`. It does not write any file, commit, tag, push, or publish, and it does not need a token. It prints the version it would use. It publishes nothing even with a token present.
 
 ## CHANGELOG
 

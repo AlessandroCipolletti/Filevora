@@ -15,9 +15,16 @@ import {
   rewriteChangelog,
   scrubSecrets,
   setPackageVersion,
+  stripSecretEnv,
   verifyPackFiles,
   type TempNpmrc,
 } from './release-lib.ts';
+import {
+  checkDocker,
+  emergencyStop,
+  installTeardownSignals,
+  runTestsInDocker,
+} from './docker-services.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkgDir = path.join(root, 'packages/filevora');
@@ -66,11 +73,7 @@ interface RunResult {
 }
 
 function cleanEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.NPM_TOKEN;
-  delete env.NPM_OTP;
-  delete env.NODE_AUTH_TOKEN;
-  return env;
+  return stripSecretEnv(process.env);
 }
 
 function run(
@@ -232,11 +235,24 @@ function checkNotPublished(version: string, hasToken: boolean): void {
   }
 }
 
-function runChecks(): void {
+function checkDockerReady(): void {
+  step('Check Docker (the tests run against Redis, MinIO, Postgres, MySQL)');
+  checkDocker();
+  log('Docker and Docker Compose are available and the daemon is running.');
+}
+
+async function runChecks(): Promise<void> {
   step('Typecheck, lint, knip, circular imports, manifest (pnpm run ci)');
   run('pnpm', ['run', 'ci']);
-  step('Tests (pnpm test)');
-  run('pnpm', ['test']);
+  step(
+    'Full tests against Docker services (same path as pnpm test:docker; no networked test is skipped)',
+  );
+  const code = await runTestsInDocker({ env: cleanEnv(), log });
+  if (code !== 0) {
+    throw new ReleaseError(
+      `The full test suite failed (exit ${code}). Nothing was published. Fix the failures, or run pnpm test:docker to reproduce.`,
+    );
+  }
 }
 
 function build(): void {
@@ -296,7 +312,7 @@ function publish(version: string, tag: 'latest' | 'next'): void {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   if (args.includes('--help')) {
     process.stdout.write(`${usage}\n`);
     return;
@@ -308,6 +324,7 @@ function main(): void {
   const label = dry ? 'release:dry' : 'release';
   log(`${label}: ${target}`);
 
+  checkDockerReady();
   const startSha = checkGit();
   loadToken();
 
@@ -337,7 +354,7 @@ function main(): void {
   }
   checkNotPublished(next, secrets.length > 0);
 
-  runChecks();
+  await runChecks();
   build();
   verifyPack();
 
@@ -391,15 +408,10 @@ function main(): void {
   log(`\nReleased filevora@${next} (dist-tag ${tag}) as ${gitTag}.`);
 }
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    cleanup();
-    process.exit(130);
-  });
-}
+installTeardownSignals(cleanup, log);
 
 try {
-  main();
+  await main();
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`\nrelease: ${scrubSecrets(message, secrets)}\n`);
@@ -410,5 +422,6 @@ try {
   }
   process.exitCode = 1;
 } finally {
+  emergencyStop(log);
   cleanup();
 }

@@ -1,0 +1,96 @@
+# Local services for the full test suite. Used by `pnpm test:docker`,
+# `pnpm services:up`, and `pnpm release`. Data lives in tmpfs, so every
+# `pnpm services:down` throws it away.
+#
+# Host ports are not the defaults (6379, 9000, 5432, 3306), so these containers
+# can run next to a Redis or Postgres you already have. The matching URLs live
+# in scripts/test-env.ts, and scripts/docker-services.test.ts checks that the
+# two files agree. Versions match .github/workflows/ci.yml.
+name: filevora-test
+
+services:
+  redis:
+    image: redis:7
+    ports:
+      - '127.0.0.1:16379:6379'
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  minio:
+    image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: local
+      MINIO_ROOT_PASSWORD: localpassword
+    ports:
+      - '127.0.0.1:19000:9000'
+    tmpfs:
+      - /data
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - |-
+          exec 3<>/dev/tcp/127.0.0.1/9000
+          printf 'GET /minio/health/live HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
+          read -r status <&3
+          [[ "$$status" == *200* ]]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  minio-buckets:
+    image: amazon/aws-cli:2.17.0
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: 'no'
+    environment:
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: localpassword
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -e
+        for bucket in filevora-ci filevora-pack; do
+          aws --endpoint-url http://minio:9000 s3api head-bucket --bucket "$$bucket" 2>/dev/null \
+            || aws --endpoint-url http://minio:9000 s3api create-bucket --bucket "$$bucket"
+        done
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: filevora
+      POSTGRES_PASSWORD: filevora
+      POSTGRES_DB: filevora
+    ports:
+      - '127.0.0.1:15432:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U filevora -d filevora']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: filevora
+      MYSQL_DATABASE: filevora
+    ports:
+      - '127.0.0.1:13306:3306'
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -pfilevora']
+      interval: 3s
+      timeout: 5s
+      retries: 40

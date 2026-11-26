@@ -479,8 +479,11 @@ pnpm install
 pnpm dev          # Vite library build, watch
 pnpm dev:client   # browser client only, http://127.0.0.1:5173
 pnpm run ci       # typecheck, lint, knip, circular, manifest check
-pnpm test
+pnpm test:docker  # full tests with Redis, MinIO, Postgres, and MySQL in Docker
+pnpm test         # needs REDIS_URL; networked S3, Postgres, and MySQL tests skip without their variables
 ```
+
+The Docker services are for testing this repository only. The default setup for your app is unchanged: filesystem storage, and Redis only when you run a worker.
 
 Use `pnpm run ci`, not bare `pnpm ci`. Public imports are `filevora/server`, `filevora/client`, `filevora/http`, `filevora/next`, `filevora/express`, `filevora/fastify`, `filevora/hono`, `filevora/react`, `filevora/worker`, `filevora/types`, `filevora/testing`, and `filevora/manifest`. Contributor rules are in [AGENTS.md](AGENTS.md).
 

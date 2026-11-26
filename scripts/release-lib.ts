@@ -258,6 +258,17 @@ export function scrubSecrets(
     .replace(/(Bearer\s+)\S+/gi, `$1${REDACTED}`);
 }
 
+/** Copy of an environment without npm credentials, for child processes that must not see them. */
+export function stripSecretEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): NodeJS.ProcessEnv {
+  const copy: NodeJS.ProcessEnv = { ...env };
+  for (const key of ['NPM_TOKEN', 'NPM_OTP', 'NODE_AUTH_TOKEN']) {
+    delete copy[key];
+  }
+  return copy;
+}
+
 export function parseEnvFile(text: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const rawLine of text.split(/\r?\n/)) {

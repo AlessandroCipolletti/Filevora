@@ -13,6 +13,7 @@ import {
   rewriteChangelog,
   scrubSecrets,
   setPackageVersion,
+  stripSecretEnv,
   verifyPackFiles,
 } from './release-lib.ts';
 
@@ -197,4 +198,15 @@ test('verifyPackFiles requires the shipped files and rejects tests and sources',
   assert.ok(bad.some((p) => p.includes('test/m0.test.ts')));
   assert.ok(bad.some((p) => p.includes('dist/server/x.test.js')));
   assert.ok(bad.some((p) => p.includes('dist/server/y.ts')));
+});
+
+test('stripSecretEnv drops npm credentials and keeps the rest', () => {
+  const env = stripSecretEnv({
+    NPM_TOKEN: 'npm_secret',
+    NPM_OTP: '123456',
+    NODE_AUTH_TOKEN: 'x',
+    REDIS_URL: 'redis://127.0.0.1:1',
+    PATH: '/usr/bin',
+  });
+  assert.deepEqual(env, { REDIS_URL: 'redis://127.0.0.1:1', PATH: '/usr/bin' });
 });
