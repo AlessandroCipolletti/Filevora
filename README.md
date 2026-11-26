@@ -4,10 +4,19 @@ Filevora is a headless TypeScript SDK for the file lifecycle: resumable upload, 
 
 Your application keeps users, permissions, and business records. Filevora keeps bytes, versions, and processing jobs.
 
-The package is not on npm yet. Install it from this repository. Node `>=22.13`.
+## Install
+
+The package is on npm: [filevora](https://www.npmjs.com/package/filevora). Node `>=22.13`.
+
+```bash
+npm install filevora
+```
+
+`pnpm add filevora` installs the same package. The CLI is `npx filevora` after install. `npx filevora --help` lists the commands.
 
 ## Contents
 
+- [Install](#install)
 - [Quick start](#quick-start)
 - [Lite and stored](#lite-and-stored)
 - [Features](#features)
