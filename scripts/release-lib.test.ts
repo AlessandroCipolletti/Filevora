@@ -12,6 +12,7 @@ import {
   resolveTargetVersion,
   rewriteChangelog,
   scrubSecrets,
+  setFilevoraVersionSource,
   setPackageVersion,
   stripSecretEnv,
   verifyPackFiles,
@@ -47,6 +48,19 @@ test('setPackageVersion changes only the version line', () => {
   assert.equal(
     setPackageVersion(text, '0.1.1'),
     '{\n  "name": "filevora",\n  "version": "0.1.1",\n  "x": 1\n}\n',
+  );
+});
+
+test('setFilevoraVersionSource changes only the runtime version constant', () => {
+  const text =
+    "/** Keep in sync. */\nexport const FILEVORA_VERSION = '0.1.1';\n\n/** Other. */\nexport const JOB_SCHEMA_VERSION = 1;\n";
+  assert.equal(
+    setFilevoraVersionSource(text, '0.1.2'),
+    "/** Keep in sync. */\nexport const FILEVORA_VERSION = '0.1.2';\n\n/** Other. */\nexport const JOB_SCHEMA_VERSION = 1;\n",
+  );
+  assert.throws(
+    () => setFilevoraVersionSource('export const OTHER = 1;\n', '0.1.2'),
+    ReleaseError,
   );
 });
 

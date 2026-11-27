@@ -14,6 +14,7 @@ import {
   resolveTargetVersion,
   rewriteChangelog,
   scrubSecrets,
+  setFilevoraVersionSource,
   setPackageVersion,
   stripSecretEnv,
   verifyPackFiles,
@@ -29,6 +30,7 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkgDir = path.join(root, 'packages/filevora');
 const pkgJsonPath = path.join(pkgDir, 'package.json');
+const versionSourcePath = path.join(pkgDir, 'src/version.ts');
 const changelogPath = path.join(root, 'CHANGELOG.md');
 const tokenFile = path.join(root, '.env.release.local');
 
@@ -371,9 +373,18 @@ async function main(): Promise<void> {
   try {
     if (next !== current) {
       writeFileSync(pkgJsonPath, setPackageVersion(pkgJsonText, next));
+      writeFileSync(
+        versionSourcePath,
+        setFilevoraVersionSource(readFileSync(versionSourcePath, 'utf8'), next),
+      );
     }
     if (changelog.changed) writeFileSync(changelogPath, changelog.text);
-    git(['add', 'packages/filevora/package.json', 'CHANGELOG.md']);
+    git([
+      'add',
+      'packages/filevora/package.json',
+      'packages/filevora/src/version.ts',
+      'CHANGELOG.md',
+    ]);
     git(['commit', '--no-verify', '--allow-empty', '-m', `release: ${gitTag}`]);
     committed = true;
     git(['tag', '-a', gitTag, '-m', `filevora ${next}`]);

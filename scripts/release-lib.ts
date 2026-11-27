@@ -140,6 +140,24 @@ export function setPackageVersion(
   return packageJsonText.replace(pattern, `$1${version}$2`);
 }
 
+/**
+ * Rewrites `FILEVORA_VERSION` in packages/filevora/src/version.ts. The runtime
+ * version (doctor, CLI, manifest) comes from this constant, so a release must
+ * update it together with package.json or the version test fails.
+ */
+export function setFilevoraVersionSource(
+  versionTsText: string,
+  version: string,
+): string {
+  const pattern = /^(export const FILEVORA_VERSION = ')[^']*(';)/m;
+  if (!pattern.test(versionTsText)) {
+    throw new ReleaseError(
+      'src/version.ts has no "export const FILEVORA_VERSION" to update.',
+    );
+  }
+  return versionTsText.replace(pattern, `$1${version}$2`);
+}
+
 export function readPackageVersion(packageJsonText: string): string {
   const parsed = JSON.parse(packageJsonText) as { version?: unknown };
   if (typeof parsed.version !== 'string') {
