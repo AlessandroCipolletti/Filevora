@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "name": "filevora",
   "package": "filevora",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "needsAccount": false,
   "managedProvider": "unsupported",
   "billing": "unsupported",

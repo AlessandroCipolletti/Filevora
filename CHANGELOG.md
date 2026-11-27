@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- `filevora --version`, `filevora doctor`, and the capability manifest reported `0.1.0` in the `0.1.1` package. The runtime version constant now matches `package.json`, and `pnpm release` updates it together with `package.json`.
+
 ### Documentation
 
 - New agent guide `docs/agents/feedback-and-contributions.md` for agents in applications that use Filevora. It explains how to tell a misuse from a bug, report a security issue privately, open an issue with a reproduction, and open a pull request with the checks to run. It is linked from `llms.txt` and from the README "For coding agents" section.
