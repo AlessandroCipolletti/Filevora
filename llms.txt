@@ -8,6 +8,7 @@ Navigation index for coding agents. This is not a capability claim. Trust `docs/
 - [Decision guide](docs/agents/decision-guide.md)
 - [Troubleshooting](docs/agents/troubleshooting.md)
 - [Verification](docs/agents/verification.md)
+- [Feedback and contributions](docs/agents/feedback-and-contributions.md) — how an agent in another project reports a bug, requests a change, or opens a pull request. Security issues go to a private advisory. Do not patch `node_modules`.
 - [Capabilities](docs/agents/capabilities.json) — versioned manifest of exports, HTTP routes, env vars, error codes, and the progress event. `filevora manifest --json` and `import { readManifest } from 'filevora/manifest'`. `filevora mcp` exposes it over stdio with no extra dependency.
 - [Manifest](docs/agents/manifest.md)
 - [Init](docs/agents/init.md) — `filevora init --json --dry-run` detects Express, Fastify, Hono, Next.js, or Node and writes handler, client, and env files. It does not overwrite without `--force`.

@@ -6,7 +6,7 @@ Your application keeps users, permissions, and business records. Filevora keeps 
 
 ## Install
 
-The package is on npm: [filevora](https://www.npmjs.com/package/filevora). Node `>=22.13`.
+The package is on npm: [filevora](https://www.npmjs.com/package/filevora). Source code, issues, and pull requests are on GitHub: https://github.com/AlessandroCipolletti/Filevora. Node `>=22.13`.
 
 ```bash
 npm install filevora
@@ -462,6 +462,7 @@ Start at [llms.txt](llms.txt). The manifest is the source of truth for routes, e
 - [docs/agents/retention.md](docs/agents/retention.md)
 - [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md)
 - [docs/agents/verification.md](docs/agents/verification.md)
+- [docs/agents/feedback-and-contributions.md](https://github.com/AlessandroCipolletti/Filevora/blob/master/docs/agents/feedback-and-contributions.md) — how to report a bug, request a change, or open a pull request
 - [Framework helpers](docs/frameworks.md) — Next, Express, Fastify, Hono, and React hooks with no UI
 - [Presets](docs/presets.md) — built-in image and video presets and custom recipes
 - [docs/agents/presets.md](docs/agents/presets.md)
@@ -481,9 +482,17 @@ npx filevora mcp
 import { readManifest } from 'filevora/manifest';
 ```
 
+### Reporting problems or proposing changes
+
+If Filevora blocks your task because of a bug or a missing feature, read [feedback-and-contributions](https://github.com/AlessandroCipolletti/Filevora/blob/master/docs/agents/feedback-and-contributions.md) before you open an issue or a pull request. Report security vulnerabilities through a private GitHub security advisory, never a public issue. Do not edit files under `node_modules/filevora`; a fix there is lost on the next install.
+
 ## Develop this repository
 
+Repository: https://github.com/AlessandroCipolletti/Filevora
+
 ```bash
+git clone https://github.com/AlessandroCipolletti/Filevora.git
+cd Filevora
 pnpm install
 pnpm dev          # Vite library build, watch
 pnpm dev:client   # browser client only, http://127.0.0.1:5173

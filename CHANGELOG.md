@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Documentation
+
+- New agent guide `docs/agents/feedback-and-contributions.md` for agents in applications that use Filevora. It explains how to tell a misuse from a bug, report a security issue privately, open an issue with a reproduction, and open a pull request with the checks to run. It is linked from `llms.txt` and from the README "For coding agents" section.
+- The README states the GitHub repository URL in the Install and "Develop this repository" sections.
+
 ## 0.1.1 - 2026-11-26
 
 ### Documentation
