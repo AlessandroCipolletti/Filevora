@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.2 - 2026-11-27
+
 ### Fixed
 
 - `filevora --version`, `filevora doctor`, and the capability manifest reported `0.1.0` in the `0.1.1` package. The runtime version constant now matches `package.json`, and `pnpm release` updates it together with `package.json`.
